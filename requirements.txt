@@ -1,0 +1,5 @@
+google-cloud-speech
+google-cloud-texttospeech
+openai
+python-dotenv
+git+https://github.com/google/aiyprojects-raspbian.git@aiyprojects#egg=aiy-projects-python
