@@ -22,9 +22,13 @@ def synthesize_speech(text):
                 model="tts-1-hd",
                 voice="onyx",
                 input=text
-            ) as response:
-        for data in response.iter_bytes:
+            ) as response, \
+            BytesPlayer() as player:
+        play = player.play(AUDIO_FORMAT)
+        for data in response.iter_bytes():
             logger.info("playing {data}")
+            play(data)
+        play(None)
     logger.info(f"said {text}")
 
 
