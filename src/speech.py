@@ -18,7 +18,7 @@ AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
 def synthesize_speech(text):
     logger.info('Synthesizing speech for: %s', text)
     with tempfile.NamedTemporaryFile(suffix='.wav', dir=RUN_DIR) as f, \
-            openai.audio.speech.with_streaming_response.create(
+            openai.audio.speech.create(
                 model="tts-1-hd",
                 voice="onyx",
                 response_format="wav",
