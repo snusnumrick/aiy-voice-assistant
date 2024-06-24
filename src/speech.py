@@ -1,11 +1,12 @@
 import logging
 from google.cloud import texttospeech
 from google.cloud import speech
-import aiy.audio
 import aiy.cloudspeech
+from aiy.assistant import auth_helpers
 
 logger = logging.getLogger(__name__)
-tts_client = texttospeech.TextToSpeechClient()
+credentials = auth_helpers.get_assistant_credentials()
+tts_client = texttospeech.TextToSpeechClient(credentials=credentials)
 speech_client = speech.SpeechClient()
 recognizer = aiy.cloudspeech.get_recognizer()
 

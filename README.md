@@ -8,7 +8,7 @@ This project uses the Google AIY Voice Kit to create a voice assistant that inte
 
 - Raspberry Pi with Raspbian installed
 - Google AIY Voice Kit assembled
-- Python 3
+- Follow oficial instructions to flash microsd card with AIY Voice Kit image
 
 ### Installation
 
@@ -17,7 +17,7 @@ This project uses the Google AIY Voice Kit to create a voice assistant that inte
 2. Create and activate a virtual environment:
 
     ```bash
-    python3 -m venv venv
+    python3 -m venv --system-site-packages venv
     source venv/bin/activate
     ```
 
