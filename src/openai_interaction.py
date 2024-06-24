@@ -15,7 +15,7 @@ def get_openai_response(text):
         ],
         max_tokens=100
     )
-    text2return = response.choices[0].message.strip()
+    text2return = response.choices[0].message.content.strip()
     logger.info(f"OpenAI response: {text} -> {text2return}")
 
     return text2return
