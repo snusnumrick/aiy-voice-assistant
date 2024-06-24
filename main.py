@@ -9,13 +9,13 @@ from aiy.leds import (Leds, Pattern, PrivacyLed, RgbLeds, Color)
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
+load_dotenv()
 
 from src.speech import transcribe_speech, synthesize_speech
 from src.openai_interaction import get_openai_response
 
 
 def main():
-    load_dotenv()
     with Board() as board:
         with Leds() as leds:
 
