@@ -21,6 +21,7 @@ def synthesize_speech(text):
             openai.audio.speech.with_streaming_response.create(
                 model="tts-1-hd",
                 voice="onyx",
+                response_format="wav",
                 input=text
             ) as response, \
             BytesPlayer() as player:
