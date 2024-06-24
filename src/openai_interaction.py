@@ -2,8 +2,6 @@ from openai import OpenAI
 import os
 import logging
 
-# Load environment variables from .env file
-openai.api_key = os.getenv('OPENAI_API_KEY')
 logger = logging.getLogger(__name__)
 
 
