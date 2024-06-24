@@ -26,6 +26,7 @@ def synthesize_speech(text):
             BytesPlayer() as player:
         play = player.play(AUDIO_FORMAT)
         for data in response.iter_bytes:
+            logger.info("playing {data}")
             play(data)
         play(None)
 
