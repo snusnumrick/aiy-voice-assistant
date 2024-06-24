@@ -1,5 +1,6 @@
 import logging
-import os
+import signal
+import sys
 from dotenv import load_dotenv
 from src.speech import transcribe_speech, synthesize_speech
 from src.openai_interaction import get_openai_response
@@ -20,6 +21,10 @@ led = aiy.voicehat.get_led()
 
 # Main function to handle interactions
 def main():
+    logging.basicConfig(level=logging.DEBUG)
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
+
+
     while True:
         text = transcribe_speech(button, led)
         if text:
