@@ -1,4 +1,4 @@
-import openai
+from openai import OpenAI
 import os
 import logging
 
@@ -8,7 +8,8 @@ logger = logging.getLogger(__name__)
 
 
 def get_openai_response(text):
-    response = openai.ChatCompletion.create(
+    client = OpenAI()
+    response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
