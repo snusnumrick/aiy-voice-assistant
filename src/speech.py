@@ -1,43 +1,25 @@
 import logging
-from google.cloud import texttospeech
-from google.cloud import speech
-import aiy.cloudspeech
-from aiy.assistant import auth_helpers
+import openai
+import os
+from aiy.leds import (Leds, Pattern, PrivacyLed, RgbLeds, Color)
+
 
 logger = logging.getLogger(__name__)
-credentials = auth_helpers.get_assistant_credentials()
-tts_client = texttospeech.TextToSpeechClient(credentials=credentials)
-speech_client = speech.SpeechClient()
-recognizer = aiy.cloudspeech.get_recognizer()
 
 
 def synthesize_speech(text):
-    synthesis_input = texttospeech.SynthesisInput(text=text)
-    voice = texttospeech.VoiceSelectionParams(
-        language_code="en-US",
-        ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL
-    )
-    audio_config = texttospeech.AudioConfig(
-        audio_encoding=texttospeech.AudioEncoding.LINEAR16
-    )
-    response = tts_client.synthesize_speech(
-        input=synthesis_input, voice=voice, audio_config=audio_config
-    )
-    output_file = 'output.wav'
-    with open(output_file, 'wb') as out:
-        out.write(response.audio_content)
-        logger.info('Synthesized speech saved to %s', output_file)
-    return output_file
+    logger.info('Synthesizing speech for: %s', text)
 
 
-def transcribe_speech(button, led):
-    recognizer.expect_phrase('Hello')
+def transcribe_speech(button, leds):
     logger.info('Press the button and speak')
     button.wait_for_press()
-    led_on(led)
+    leds.update(Leds.rgb_on(Color.GREEN))
+
     logger.info('Listening...')
-    text = recognizer.recognize()
-    led_off(led)
+    # text = recognizer.recognize()
+    text = "привет"
+    leds.update(Leds.rgb_off())
     if text:
         logger.info('You said: %s', text)
         return text
