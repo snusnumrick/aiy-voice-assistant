@@ -1,6 +1,7 @@
 import logging
 import signal
 import sys
+import time
 from dotenv import load_dotenv
 from aiy.board import Board
 from aiy.leds import (Leds, Pattern, PrivacyLed, RgbLeds, Color)
@@ -21,6 +22,10 @@ def main():
 
         button = board.button
         player = FilePlayer()
+
+        leds.update(Leds.rgb_on(Color.WHITE))
+        time.sleep(1)
+        leds.update(Leds.rgb_off())
 
         while True:
             text = transcribe_speech(button, leds)
