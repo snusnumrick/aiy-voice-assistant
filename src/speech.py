@@ -27,9 +27,12 @@ def synthesize_speech(text, filename):
 
 
 def transcribe_speech(button, leds):
-    timeout2off_lights_sec = 5
+    timeout2off_lights_sec = 60
     button_was_pressed = False
     recording_filename = "recording.wav"
+    period_ms = 10000
+    leds.pattern = Pattern.breathe(period_ms)
+    DARK_GREEN = (0x00, 0x01, 0x00)
 
     # remove recording file if it exists
     if os.path.exists(recording_filename):
@@ -48,6 +51,7 @@ def transcribe_speech(button, leds):
     # Set the function to be called when the button is pressed
     button.when_pressed = button_pressed
     logger.info('Press the button and speak')
+    leds.update(Leds.rgb_pattern(DARK_GREEN))
     button.wait_for_press(timeout2off_lights_sec)
     leds.update(Leds.rgb_off())
     if not button_was_pressed:
