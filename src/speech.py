@@ -28,7 +28,6 @@ def synthesize_speech(text, filename):
 
 def transcribe_speech(button, leds):
     timeout2off_lights_sec = 60
-    button_was_pressed = False
     recording_filename = "recording.wav"
     period_ms = 10000
     leds.pattern = Pattern.breathe(period_ms)
@@ -40,20 +39,17 @@ def transcribe_speech(button, leds):
         os.remove(recording_filename)
 
     def button_pressed():
-        # declare button_was_pressed as a nonlocal variable
-        nonlocal button_was_pressed, recording_event, button, recording_filename
-
+        nonlocal button_was_pressed
         button_was_pressed = True
-        recording_event.clear()
-        leds.update(Leds.rgb_on(Color.GREEN))
-        logger.info('Listening...')
-        record_file(AudioFormat.CD, filename=recording_filename, wait=button.wait_for_release, filetype='wav')
-        logger.info(f"recorded {recording_filename}")
-        recording_event.set()
 
     # Set the function to be called when the button is pressed
     button.when_pressed = button_pressed
+
+    button_was_pressed = False
     logger.info('Press the button and speak')
+
+    # wait for button press.
+    # set breathing light for the first timeout seconds then turn light off
     leds.update(Leds.rgb_pattern(DARK_GREEN))
     button.wait_for_press(timeout2off_lights_sec)
     leds.update(Leds.rgb_off())
@@ -62,8 +58,13 @@ def transcribe_speech(button, leds):
         logger.info('No button press detected during timeout. Switching off lights.')
         button.wait_for_press()
 
+    # button was pressed
+    leds.update(Leds.rgb_on(Color.GREEN))
+    logger.info('Listening...')
+    record_file(AudioFormat.CD, filename=recording_filename, wait=button.wait_for_release, filetype='wav')
+    logger.info(f"recorded {recording_filename}")
+
     # check if recording file exists
-    recording_event.wait()
     text = ""
     if not os.path.exists(recording_filename):
         logger.warning('No recording file found')
