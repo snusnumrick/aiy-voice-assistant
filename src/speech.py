@@ -36,11 +36,12 @@ def transcribe_speech(button, leds):
     record_file(AudioFormat.CD, filename=recording_filename, wait=button.wait_for_release, filetype='wav')
     logger.info(f"recorded {recording_filename}")
 
-    text = openai.audio.transcriptions.create(
-        model="whisper-1",
-        file=recording_filename,
-        response_format="text"
-    ).text
+    with open(recording_filename, 'rb') as f:
+        text = openai.audio.transcriptions.create(
+            model="whisper-1",
+            file=f,
+            response_format="text"
+        ).text
     leds.update(Leds.rgb_off())
     if text:
         logger.info('You said: %s', text)
