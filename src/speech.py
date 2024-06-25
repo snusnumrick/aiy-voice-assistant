@@ -23,7 +23,7 @@ def synthesize_speech(text, filename):
         response_format="wav",
         input=text
     ).stream_to_file(filename)
-    logger.debugb (f"saved at {filename}")
+    logger.debug (f"saved at {filename}")
 
 
 
