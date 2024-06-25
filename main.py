@@ -27,8 +27,8 @@ def main():
                     ai_response = get_openai_response(text)
                     logger.info('AI says: %s', ai_response)
 
-                    speech_audio_file = synthesize_speech(ai_response)
-                    aiy.audio.play_wave(speech_audio_file)
+                    speech_audio_file = synthesize_speech(ai_response, 'speech.wav')
+                    # aiy.audio.play_wave(speech_audio_file)
 
 
 if __name__ == '__main__':
