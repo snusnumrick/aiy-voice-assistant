@@ -41,7 +41,7 @@ def transcribe_speech(button, leds):
 
     def button_pressed():
         # declare button_was_pressed as a nonlocal variable
-        nonlocal button_was_pressed, recording_event
+        nonlocal button_was_pressed, recording_event, button, recording_filename
 
         button_was_pressed = True
         recording_event.clear()

@@ -7,7 +7,7 @@ from aiy.leds import (Leds, Pattern, PrivacyLed, RgbLeds, Color)
 from aiy.voice.audio import FilePlayer
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
 load_dotenv()
