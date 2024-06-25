@@ -13,7 +13,7 @@ def get_openai_response(text):
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": text}
         ],
-        max_tokens=100
+        max_tokens=4096
     )
     text2return = response.choices[0].message.content.strip()
     logger.info(f"OpenAI response: {text} -> {text2return}")
