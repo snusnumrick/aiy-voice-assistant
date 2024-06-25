@@ -2,7 +2,7 @@ import logging
 import openai
 import os
 from aiy.leds import (Leds, Pattern, PrivacyLed, RgbLeds, Color)
-from aiy.voice.audio import AudioFormat, Recorder, BytesPlayer
+from aiy.voice.audio import AudioFormat, play_wav, record_file, Recorder
 from openai import OpenAI
 import tempfile
 
@@ -31,10 +31,16 @@ def transcribe_speech(button, leds):
     logger.info('Press the button and speak')
     button.wait_for_press()
     leds.update(Leds.rgb_on(Color.GREEN))
-
     logger.info('Listening...')
-    # text = recognizer.recognize()
-    text = "привет"
+    recording_filename = "recording.wav"
+    record_file(AudioFormat.CD, filename=recording_filename, wait=button.wait_for_release, filetype='wav')
+    logger.info(f"recorded {recording_filename}")
+
+    text = openai.audio.transcriptions.create(
+        model="whisper-1",
+        file=recording_filename,
+        response_format="text"
+    ).text
     leds.update(Leds.rgb_off())
     if text:
         logger.info('You said: %s', text)
