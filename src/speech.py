@@ -9,7 +9,7 @@ import tempfile
 logger = logging.getLogger(__name__)
 openai = OpenAI()
 RUN_DIR = '/run/user/%d' % os.getuid()
-AUDIO_SAMPLE_RATE_HZ = 16000
+AUDIO_SAMPLE_RATE_HZ = 24000
 AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
                            num_channels=1,
                            bytes_per_sample=2)
@@ -17,26 +17,26 @@ AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
 
 def synthesize_speech(text, filename):
     logger.info('Synthesizing speech for: %s', text)
-    response = openai.audio.speech.create(
-        model="tts-1-hd",
-        voice="onyx",
-        response_format="wav",
-        input=text
-    )
-    response.stream_to_file(filename)
-    # with tempfile.NamedTemporaryFile(suffix='.wav', dir=RUN_DIR) as f, \
-    #         BytesPlayer() as player:
-    #     response = openai.audio.speech.create(
-    #             model="tts-1-hd",
-    #             voice="onyx",
-    #             response_format="wav",
-    #             input=text
-    #         )
-    #     play = player.play(AUDIO_FORMAT)
-    #     for data in response.iter_bytes():
-    #         logger.info("playing {data}")
-    #         play(data)
-    #     play(None)
+    # response = openai.audio.speech.create(
+    #     model="tts-1-hd",
+    #     voice="onyx",
+    #     response_format="wav",
+    #     input=text
+    # )
+    # response.stream_to_file(filename)
+    with tempfile.NamedTemporaryFile(suffix='.wav', dir=RUN_DIR) as f, \
+            BytesPlayer() as player:
+        response = openai.audio.speech.create(
+                model="tts-1-hd",
+                voice="onyx",
+                response_format="wav",
+                input=text
+            )
+        play = player.play(AUDIO_FORMAT)
+        for data in response.iter_bytes():
+            logger.info("playing {data}")
+            play(data)
+        play(None)
     logger.info(f"saved at {filename}")
 
 
