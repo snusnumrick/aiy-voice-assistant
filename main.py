@@ -4,6 +4,7 @@ import sys
 from dotenv import load_dotenv
 from aiy.board import Board
 from aiy.leds import (Leds, Pattern, PrivacyLed, RgbLeds, Color)
+from aiy.voice.audio import FilePlayer
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -20,6 +21,7 @@ def main():
         with Leds() as leds:
 
             button = board.button
+            player = FilePlayer()
 
             while True:
                 text = transcribe_speech(button, leds)
@@ -27,8 +29,9 @@ def main():
                     ai_response = get_openai_response(text)
                     logger.info('AI says: %s', ai_response)
 
-                    speech_audio_file = synthesize_speech(ai_response, 'speech.wav')
-                    # aiy.audio.play_wave(speech_audio_file)
+                    audio_file_name = "speech.wav"
+                    synthesize_speech(ai_response, audio_file_name)
+                    player.play_wav(audio_file_name)
 
 
 if __name__ == '__main__':
