@@ -15,22 +15,29 @@ AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
                            bytes_per_sample=2)
 
 
-def synthesize_speech(text):
+def synthesize_speech(text, filename):
     logger.info('Synthesizing speech for: %s', text)
-    with tempfile.NamedTemporaryFile(suffix='.wav', dir=RUN_DIR) as f, \
-            BytesPlayer() as player:
-        response = openai.audio.speech.create(
-                model="tts-1-hd",
-                voice="onyx",
-                response_format="wav",
-                input=text
-            )
-        play = player.play(AUDIO_FORMAT)
-        for data in response.iter_bytes():
-            logger.info("playing {data}")
-            play(data)
-        play(None)
-    logger.info(f"said {text}")
+    response = openai.audio.speech.create(
+        model="tts-1-hd",
+        voice="onyx",
+        response_format="wav",
+        input=text
+    )
+    response.stream_to_file(filename)
+    # with tempfile.NamedTemporaryFile(suffix='.wav', dir=RUN_DIR) as f, \
+    #         BytesPlayer() as player:
+    #     response = openai.audio.speech.create(
+    #             model="tts-1-hd",
+    #             voice="onyx",
+    #             response_format="wav",
+    #             input=text
+    #         )
+    #     play = player.play(AUDIO_FORMAT)
+    #     for data in response.iter_bytes():
+    #         logger.info("playing {data}")
+    #         play(data)
+    #     play(None)
+    logger.info(f"saved at {filename}")
 
 
 
