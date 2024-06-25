@@ -30,7 +30,7 @@ def main():
 
             while True:
                 text = transcribe_speech(button, leds)
-                leds.update(Leds.rgb_pattern(Color.GREEN))
+                leds.update(Leds.rgb_pattern(DARK_GREEN))
                 if text:
                     ai_response = get_openai_response(text)
                     logger.info('AI says: %s', ai_response)
