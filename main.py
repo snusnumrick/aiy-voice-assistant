@@ -7,7 +7,7 @@ from aiy.leds import (Leds, Pattern, PrivacyLed, RgbLeds, Color)
 from aiy.voice.audio import FilePlayer
 
 # Set up logging
-# logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
 load_dotenv()
@@ -23,8 +23,12 @@ def main():
             button = board.button
             player = FilePlayer()
 
+            leds.pattern = Pattern.breathe(5000)
+            leds.update(Leds.rgb_pattern(Color.GREEN))
+
             while True:
                 text = transcribe_speech(button, leds)
+                leds.update(Leds.rgb_pattern(Color.GREEN))
                 if text:
                     ai_response = get_openai_response(text)
                     logger.info('AI says: %s', ai_response)
