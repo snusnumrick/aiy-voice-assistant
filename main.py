@@ -17,27 +17,26 @@ from src.openai_interaction import get_openai_response
 
 
 def main():
-    with Board() as board:
-        with Leds() as leds:
+    with Board() as board, Leds() as leds:
 
-            button = board.button
-            player = FilePlayer()
+        button = board.button
+        player = FilePlayer()
 
-            period_ms = 10000
-            leds.pattern = Pattern.breathe(period_ms)
-            DARK_GREEN = (0x00, 0x01, 0x00)
+        period_ms = 10000
+        leds.pattern = Pattern.breathe(period_ms)
+        DARK_GREEN = (0x00, 0x01, 0x00)
+        leds.update(Leds.rgb_pattern(DARK_GREEN))
+
+        while True:
+            text = transcribe_speech(button, leds)
             leds.update(Leds.rgb_pattern(DARK_GREEN))
+            if text:
+                ai_response = get_openai_response(text)
+                logger.info('AI says: %s', ai_response)
 
-            while True:
-                text = transcribe_speech(button, leds)
-                leds.update(Leds.rgb_pattern(DARK_GREEN))
-                if text:
-                    ai_response = get_openai_response(text)
-                    logger.info('AI says: %s', ai_response)
-
-                    audio_file_name = "speech.wav"
-                    synthesize_speech(ai_response, audio_file_name)
-                    player.play_wav(audio_file_name)
+                audio_file_name = "speech.wav"
+                synthesize_speech(ai_response, audio_file_name)
+                player.play_wav(audio_file_name)
 
 
 if __name__ == '__main__':
