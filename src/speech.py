@@ -4,7 +4,7 @@ import os
 from aiy.leds import (Leds, Pattern, PrivacyLed, RgbLeds, Color)
 from aiy.voice.audio import AudioFormat, play_wav, record_file, Recorder
 from openai import OpenAI
-import tempfile
+from threading import Event
 
 logger = logging.getLogger(__name__)
 openai = OpenAI()
@@ -33,6 +33,7 @@ def transcribe_speech(button, leds):
     period_ms = 10000
     leds.pattern = Pattern.breathe(period_ms)
     DARK_GREEN = (0x00, 0x01, 0x00)
+    recording_event = Event()
 
     # remove recording file if it exists
     if os.path.exists(recording_filename):
@@ -40,13 +41,15 @@ def transcribe_speech(button, leds):
 
     def button_pressed():
         # declare button_was_pressed as a nonlocal variable
-        nonlocal button_was_pressed
+        nonlocal button_was_pressed, recording_event
 
+        button_was_pressed = True
+        recording_event.clear()
         leds.update(Leds.rgb_on(Color.GREEN))
         logger.info('Listening...')
         record_file(AudioFormat.CD, filename=recording_filename, wait=button.wait_for_release, filetype='wav')
         logger.info(f"recorded {recording_filename}")
-        button_was_pressed = True
+        recording_event.set()
 
     # Set the function to be called when the button is pressed
     button.when_pressed = button_pressed
@@ -60,6 +63,7 @@ def transcribe_speech(button, leds):
         button.wait_for_press()
 
     # check if recording file exists
+    recording_event.wait()
     text = ""
     if not os.path.exists(recording_filename):
         logger.warning('No recording file found')
