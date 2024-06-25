@@ -23,7 +23,7 @@ def main():
             button = board.button
             player = FilePlayer()
 
-            period_ms = 3000
+            period_ms = 10000
             leds.pattern = Pattern.breathe(period_ms)
             DARK_GREEN = (0x00, 0x01, 0x00)
             leds.update(Leds.rgb_pattern(DARK_GREEN))
