@@ -24,7 +24,7 @@ def main():
             player = FilePlayer()
 
             period_ms = 10 * 1000
-            leds.pattern = Pattern(period_ms, 0.03, period_ms * 0.3, period_ms * 0.3)
+            leds.pattern = Pattern(period_ms, 0.03, period_ms * 0.1, period_ms * 0.1)
             leds.update(Leds.rgb_pattern(Color.GREEN))
 
             while True:
