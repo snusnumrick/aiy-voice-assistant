@@ -52,6 +52,7 @@ def transcribe_speech(button, leds):
     leds.update(Leds.rgb_off())
     if not button_was_pressed:
         # if the button was not pressed, continue waiting with lights off
+        logger.info('No button press detected during timeout. Switching off lights.')
         button.wait_for_press()
 
     # check if recording file exists
