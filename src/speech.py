@@ -41,7 +41,7 @@ def transcribe_speech(button, leds):
             model="whisper-1",
             file=f,
             response_format="text"
-        ).text
+        )
     leds.update(Leds.rgb_off())
     if text:
         logger.info('You said: %s', text)
