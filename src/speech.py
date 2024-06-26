@@ -87,10 +87,12 @@ def transcribe_speech(button, leds, player_process=None):
     def button_pressed():
         nonlocal button_ia_pressed
         button_ia_pressed = True
+        logger.info('Button pressed')
 
     def button_released():
         nonlocal button_ia_pressed
         button_ia_pressed = False
+        logger.info('Button released')
 
     # Set the function to be called when the button is pressed
     button.when_pressed = button_pressed
