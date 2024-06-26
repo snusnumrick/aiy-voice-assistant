@@ -24,7 +24,6 @@ def main_loop(button: Button, leds: Leds, sst_engine: STTEngine, config: Config)
                 logger.info('AI says: %s', ai_response)
 
                 audio_file_name = config.get('audio_file_name', 'speech.wav')
-                logger.info('Synthesizing speech to: %s', audio_file_name)
                 synthesize_speech(ai_response, audio_file_name)
                 player_process = play_wav_async(audio_file_name)
 

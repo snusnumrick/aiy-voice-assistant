@@ -40,12 +40,14 @@ def synthesize_speech(text, filename):
 
     def text_to_speech_chunk(text, chunk_index, output_dir):
         filename = os.path.join(output_dir, f"chunk_{chunk_index}.wav")
+        logger.info(f"Synthesizing chunk {chunk_index}: {text} into {filename}")
         openai.audio.speech.create(
             model="tts-1-hd",
             voice="onyx",
             response_format="wav",
             input=text
         ).stream_to_file(filename)
+        logger.info(f"Saved chunk {chunk_index} to {filename}")
         return filename
 
     def combine_audio_files(file_list, output_filename):
@@ -55,7 +57,7 @@ def synthesize_speech(text, filename):
             combined += audio
         combined.export(output_filename, format="wav")
 
-    logger.debug('Synthesizing speech for: %s', text)
+    logger.info('Synthesizing speech for: %s', text)
     chunks = split_text(text)
     temp_dir = tempfile.mkdtemp()
     try:
