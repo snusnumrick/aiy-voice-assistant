@@ -106,7 +106,7 @@ def transcribe_speech(button, leds):
         button.wait_for_press()
 
     # button was pressed
-    leds.update(Leds.rgb_on(DARK_BLUE))
+    leds.update(Leds.rgb_on(Color.GREEN))
     logger.info('Listening...')
     record_file(AudioFormat.CD, filename=recording_filename, wait=button.wait_for_release, filetype='wav')
     leds.update(Leds.rgb_off())
@@ -117,7 +117,7 @@ def transcribe_speech(button, leds):
     if not os.path.exists(recording_filename):
         logger.warning('No recording file found')
     else:
-        leds.update(Leds.rgb_pattern(Color.GREEN))
+        leds.update(Leds.rgb_pattern(DARK_BLUE))
         with open(recording_filename, 'rb') as f:
             text = openai.audio.transcriptions.create(
                 model="whisper-1",
