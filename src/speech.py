@@ -71,7 +71,7 @@ def synthesize_speech(text, filename):
     logger.debug(f"saved at {filename}")
 
 
-def transcribe_speech(button, leds):
+def transcribe_speech(button, leds, player_process=None):
     timeout2off_lights_sec = 60
     recording_filename = "recording.wav"
     period_ms = 10000
@@ -106,6 +106,9 @@ def transcribe_speech(button, leds):
         button.wait_for_press()
 
     # button was pressed
+    if player_process:
+        player_process.terminate()
+        player_process = None
     leds.update(Leds.rgb_on(Color.GREEN))
     logger.info('Listening...')
     record_file(AudioFormat.CD, filename=recording_filename, wait=button.wait_for_release, filetype='wav')

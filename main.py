@@ -22,20 +22,21 @@ def main():
 
         button = board.button
         player = FilePlayer()
+        player_process = None
 
         leds.update(Leds.rgb_on(Color.WHITE))
         time.sleep(1)
         leds.update(Leds.rgb_off())
 
         while True:
-            text = transcribe_speech(button, leds)
+            text = transcribe_speech(button, leds, player_process)
             if text:
                 ai_response = get_openai_response(text)
                 logger.info('AI says: %s', ai_response)
 
                 audio_file_name = "speech.wav"
                 synthesize_speech(ai_response, audio_file_name)
-                player.play_wav(audio_file_name)
+                player_process = player.play_wav_async(audio_file_name)
 
 
 if __name__ == '__main__':

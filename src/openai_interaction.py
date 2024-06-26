@@ -16,7 +16,7 @@ model = "gpt-4o"
 
 MAX_MESSAGES = 10
 message_history = deque(maxlen=MAX_MESSAGES)
-message_history.append({"role": "system", "content": "Your name is Robie."})
+message_history.append({"role": "system", "content": "Your name is Robi."})
 
 
 def get_openai_response(text):
