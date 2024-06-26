@@ -5,7 +5,7 @@ import time
 from dotenv import load_dotenv
 from aiy.board import Board
 from aiy.leds import (Leds, Pattern, PrivacyLed, RgbLeds, Color)
-from aiy.voice.audio import FilePlayer
+from aiy.voice.audio import FilePlayer, play_wav_async
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +21,7 @@ def main():
     with Board() as board, Leds() as leds:
 
         button = board.button
-        player = FilePlayer()
+        # player = FilePlayer()
         player_process = None
 
         leds.update(Leds.rgb_on(Color.WHITE))
@@ -36,7 +36,7 @@ def main():
 
                 audio_file_name = "speech.wav"
                 synthesize_speech(ai_response, audio_file_name)
-                player_process = player.play_wav_async(audio_file_name)
+                player_process = play_wav_async(audio_file_name)
 
 
 if __name__ == '__main__':
