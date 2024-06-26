@@ -25,12 +25,8 @@ def main_loop(button: Button, leds: Leds, sst_engine: STTEngine, config: Config)
 
                 audio_file_name = config.get('audio_file_name', 'speech.wav')
                 synthesize_speech(ai_response, audio_file_name)
+                logger.info(f"Play {audio_file_name}")
                 player_process = play_wav_async(audio_file_name)
-
-                # Cleanup
-                if config.get('cleanup_audio_files', True):
-                    os.remove(audio_file_name)
-                    os.remove(config.get('recording_file_name', 'recording.wav'))
 
         except Exception as e:
             logger.error(f"An error occurred: {str(e)}")

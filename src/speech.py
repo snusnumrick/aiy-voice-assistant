@@ -72,6 +72,6 @@ def synthesize_speech(text, filename):
         combine_audio_files(chunk_files, filename)
     finally:
         shutil.rmtree(temp_dir)
-    logger.debug(f"saved at {filename}")
+    logger.info(f"saved at {filename}")
 
 
