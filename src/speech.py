@@ -85,13 +85,18 @@ def transcribe_speech(button, leds, player_process=None):
         os.remove(recording_filename)
 
     def button_pressed():
-        nonlocal button_was_pressed
-        button_was_pressed = True
+        nonlocal button_ia_pressed
+        button_ia_pressed = True
+
+    def button_released():
+        nonlocal button_ia_pressed
+        button_ia_pressed = False
 
     # Set the function to be called when the button is pressed
     button.when_pressed = button_pressed
+    button.when_released = button_released
 
-    button_was_pressed = False
+    button_ia_pressed = False
     logger.info('Press the button and speak')
 
     # wait for button press.
@@ -100,7 +105,7 @@ def transcribe_speech(button, leds, player_process=None):
     leds.update(Leds.rgb_pattern(DARK_GREEN))
     button.wait_for_press(timeout2off_lights_sec)
     leds.update(Leds.rgb_off())
-    if not button_was_pressed:
+    if not button_ia_pressed:
         # if the button was not pressed, continue waiting with lights off
         logger.info('No button press detected during timeout. Switching off lights.')
         button.wait_for_press()
@@ -109,11 +114,13 @@ def transcribe_speech(button, leds, player_process=None):
     if player_process:
         player_process.terminate()
         player_process = None
-    leds.update(Leds.rgb_on(Color.GREEN))
-    logger.info('Listening...')
-    record_file(AudioFormat.CD, filename=recording_filename, wait=button.wait_for_release, filetype='wav')
-    leds.update(Leds.rgb_off())
-    logger.info(f"recorded {recording_filename}")
+
+    if button_ia_pressed:
+        leds.update(Leds.rgb_on(Color.GREEN))
+        logger.info('Listening...')
+        record_file(AudioFormat.CD, filename=recording_filename, wait=button.wait_for_release, filetype='wav')
+        leds.update(Leds.rgb_off())
+        logger.info(f"recorded {recording_filename}")
 
     # check if recording file exists
     text = ""
