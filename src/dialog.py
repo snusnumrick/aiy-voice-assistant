@@ -3,7 +3,7 @@ from aiy.leds import Leds
 from .voice import STTEngine, SpeechTranscriber
 from .config import Config
 from .openai_interaction import get_openai_response
-from .speech import synthesize_speech
+from .speech import synthesize_speech, TTSEngine
 from aiy.voice.audio import play_wav_async
 
 import os
@@ -12,7 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def main_loop(button: Button, leds: Leds, sst_engine: STTEngine, config: Config) -> None:
+def main_loop(button: Button, leds: Leds, sst_engine: STTEngine, tts_engine: TTSEngine, config: Config) -> None:
     transcriber = SpeechTranscriber(button, leds, sst_engine, config)
     player_process = None
 
@@ -24,8 +24,7 @@ def main_loop(button: Button, leds: Leds, sst_engine: STTEngine, config: Config)
                 logger.info('AI says: %s', ai_response)
 
                 audio_file_name = config.get('audio_file_name', 'speech.wav')
-                synthesize_speech(ai_response, audio_file_name)
-                logger.info(f"Play {audio_file_name}")
+                synthesize_speech(tts_engine, ai_response, audio_file_name, config)
                 player_process = play_wav_async(audio_file_name)
 
         except Exception as e:

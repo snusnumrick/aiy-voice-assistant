@@ -4,8 +4,7 @@ import sys
 import time
 from dotenv import load_dotenv
 from aiy.board import Board, Button
-from aiy.leds import (Leds, Pattern, PrivacyLed, RgbLeds, Color)
-from aiy.voice.audio import FilePlayer, play_wav_async
+from aiy.leds import Leds, Color
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -14,7 +13,6 @@ signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
 load_dotenv()
 
 from src.voice import OpenAISTTEngine
-from src.openai_interaction import get_openai_response
 from src.dialog import main_loop
 from src.config import Config
 
