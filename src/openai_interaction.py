@@ -1,87 +1,129 @@
 import re
-
-from openai import OpenAI
 import os
 import logging
 from collections import deque
+from abc import ABC, abstractmethod
+from typing import List, Dict
+from .config import Config
+
+logger = logging.getLogger(__name__)
+
+
+class AIModel(ABC):
+    @abstractmethod
+    def get_response(self, messages: List[Dict[str, str]]) -> str:
+        pass
+
+
+class OpenAIModel(AIModel):
+    def __init__(self, config: Config):
+        from openai import OpenAI
+        self.client = OpenAI()
+        self.model = config.get('openai_model', 'gpt-4o')
+        self.max_tokens = config.get('max_tokens', 4096)
+
+    def get_response(self, messages: List[Dict[str, str]]) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=self.max_tokens
+        )
+        return response.choices[0].message.content.strip()
+
+
+
+
+
+class ClaudeAIModel(AIModel):
+    def __init__(self, config: Config):
+        import anthropic
+        self.client = anthropic.Anthropic(api_key=config.get('anthropic_api_key'))
+        self.model = config.get('claude_model', 'claude-2.1')
+        self.max_tokens = config.get('max_tokens', 1000)
+
+    def get_response(self, messages: List[Dict[str, str]]) -> str:
+        # Convert the message format from OpenAI to Anthropic
+        prompt = ClaudeAIModel._convert_messages_to_prompt(messages)
+
+        response = self.client.completions.create(
+            model=self.model,
+            prompt=prompt,
+            max_tokens_to_sample=self.max_tokens
+        )
+        return response.completion.strip()
+
+    def _convert_messages_to_prompt(messages: List[Dict[str, str]]) -> str:
+        prompt = ""
+        for message in messages:
+            if message['role'] == 'system':
+                prompt += f"System: {message['content']}\n\n"
+            elif message['role'] == 'user':
+                prompt += f"Human: {message['content']}\n\n"
+            elif message['role'] == 'assistant':
+                prompt += f"Assistant: {message['content']}\n\n"
+        prompt += "Assistant:"
+        return prompt
+
+
+class ConversationManager:
+    def __init__(self, config: Config, ai_model: AIModel):
+        self.config = config
+        self.ai_model = ai_model
+        self.max_messages = config.get('max_messages', 10)
+        self.message_history = deque(maxlen=self.max_messages)
+        self.message_history.append({"role": "system", "content": config.get('system_message', "Your name is Robi.")})
+
+    def estimate_tokens_russian(self, text: str) -> int:
+        words = len(re.findall(r'\b\w+\b', text))
+        punctuation = len(re.findall(r'[.,!?;:"]', text))
+        return int(words * 1.5 + punctuation)
+
+    def get_token_count(self, messages: List[Dict[str, str]]) -> int:
+        return sum(self.estimate_tokens_russian(msg["content"]) for msg in messages)
+
+    def summarize_and_compress_history(self):
+        summary_prompt = self.config.get('summary_prompt',
+                                         "Сделайте краткое изложение ключевых моментов этой беседы, "
+                                         "сосредоточившись на самых важных фактах и контексте. Будьте лаконичны:")
+        for msg in self.message_history:
+            if msg["role"] != "system":
+                summary_prompt += f"\n{msg['role']}: {msg['content']}"
+
+        summary = self.ai_model.get_response([{"role": "user", "content": summary_prompt}])
+
+        system_message = self.message_history[0]
+        self.message_history.clear()
+        self.message_history.append(system_message)
+        self.message_history.append({"role": "system", "content": f"Краткое изложение беседы: {summary}"})
+
+    def get_response(self, text: str) -> str:
+        self.message_history.append({"role": "user", "content": text})
+
+        while self.get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
+            self.summarize_and_compress_history()
+
+        response_text = self.ai_model.get_response(list(self.message_history))
+        self.message_history.append({"role": "assistant", "content": response_text})
+
+        logger.info(f"AI response: {text} -> {response_text}")
+        return response_text
+
+
+def test():
+    config = Config()
+    ai_model = OpenAIModel(config)
+    conversation_manager = ConversationManager(config, ai_model)
+
+    while True:
+        text = input("You: ")
+        if text.lower() in ['exit', 'quit', 'bye']:
+            break
+        response = conversation_manager.get_response(text)
+        print(f"Robi: {response}")
+
 
 if __name__ == '__main__':
     from dotenv import load_dotenv
 
     load_dotenv()
-
-logger = logging.getLogger(__name__)
-client = OpenAI()
-model = "gpt-4o"
-
-MAX_MESSAGES = 10
-message_history = deque(maxlen=MAX_MESSAGES)
-message_history.append({"role": "system", "content": "Your name is Robi."})
-
-
-def get_openai_response(text):
-    def estimate_tokens_russian(text):
-        # Count words (including numbers)
-        words = len(re.findall(r'\b\w+\b', text))
-
-        # Count punctuation marks
-        punctuation = len(re.findall(r'[.,!?;:"]', text))
-
-        # Estimate: Each word is roughly 1.5 tokens, each punctuation is 1 token
-        return int(words * 1.5 + punctuation)
-
-    def get_token_count(messages):
-        return sum(estimate_tokens_russian(msg["content"]) for msg in messages)
-
-    def summarize_and_compress_history():
-        summary_prompt = \
-            ("Сделайте краткое изложение ключевых моментов этой беседы, "
-             "сосредоточившись на самых важных фактах и контексте. Будьте лаконичны:")
-        for msg in message_history:
-            if msg["role"] != "system":
-                summary_prompt += f"\n{msg['role']}: {msg['content']}"
-
-        summary_response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": summary_prompt}],
-            max_tokens=400  # Reduced for more conservative token usage
-        )
-        summary = summary_response.choices[0].message.content.strip()
-
-        # Clear the message history except for the system message
-        system_message = message_history[0]
-        message_history.clear()
-        message_history.append(system_message)
-
-        # Add the summary as a system message
-        message_history.append({"role": "system", "content": f"Краткое изложение беседы: {summary}"})
-
-    # Add user message to history
-    message_history.append({"role": "user", "content": text})
-
-    # Check estimated token count and summarize if necessary
-    # Using a lower threshold due to potential underestimation
-    while get_token_count(message_history) > 2500:
-        summarize_and_compress_history()
-
-    response = client.chat.completions.create(
-        model=model,
-        messages=list(message_history),
-        max_tokens=1000  # Adjust as needed
-    )
-    response_text = response.choices[0].message.content.strip()
-
-    # Add assistant response to history
-    message_history.append({"role": "assistant", "content": response_text})
-
-    logger.info(f"OpenAI response: {text} -> {response_text}")
-    return response_text
-
-
-if __name__ == '__main__':
-    while True:
-        text = input("You: ")
-        if text.lower() in ['exit', 'quit', 'bye']:
-            break
-        response = get_openai_response(text)
-        print(f"Robie: {response}")
+    test()
