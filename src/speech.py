@@ -106,7 +106,7 @@ def transcribe_speech(button, leds):
 
     # button was pressed
     leds.pattern = Pattern.blink(blink_period_ms)
-    leds.update(Leds.rgb_on(Color.GREEN))
+    leds.update(Leds.rgb_on(DARK_GREEN))
     logger.info('Listening...')
     record_file(AudioFormat.CD, filename=recording_filename, wait=button.wait_for_release, filetype='wav')
     leds.update(Leds.rgb_off())
