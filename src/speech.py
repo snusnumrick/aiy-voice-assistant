@@ -77,6 +77,7 @@ def transcribe_speech(button, leds):
     period_ms = 10000
     blink_period_ms = 500
     DARK_GREEN = (0x00, 0x01, 0x00)
+    DARK_BLUE = (0x01, 0x00, 0x00)
     recording_event = Event()
 
     # remove recording file if it exists
@@ -105,8 +106,7 @@ def transcribe_speech(button, leds):
         button.wait_for_press()
 
     # button was pressed
-    leds.pattern = Pattern.blink(blink_period_ms)
-    leds.update(Leds.rgb_on(DARK_GREEN))
+    leds.update(Leds.rgb_on(DARK_BLUE))
     logger.info('Listening...')
     record_file(AudioFormat.CD, filename=recording_filename, wait=button.wait_for_release, filetype='wav')
     leds.update(Leds.rgb_off())
