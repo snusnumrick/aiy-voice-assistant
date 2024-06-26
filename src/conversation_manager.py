@@ -31,9 +31,6 @@ class OpenAIModel(AIModel):
         return response.choices[0].message.content.strip()
 
 
-
-
-
 class ClaudeAIModel(AIModel):
     def __init__(self, config: Config):
         import anthropic
