@@ -120,7 +120,13 @@ def transcribe_speech(button, leds, player_process=None):
     if button_ia_pressed:
         leds.update(Leds.rgb_on(Color.GREEN))
         logger.info('Listening...')
-        record_file(AudioFormat.CD, filename=recording_filename, wait=button.wait_for_release, filetype='wav')
+
+        def wait_to_stop_recording():
+            if not button_ia_pressed:
+                return
+            button.wait_for_release()
+
+        record_file(AudioFormat.CD, filename=recording_filename, wait=wait_to_stop_recording, filetype='wav')
         leds.update(Leds.rgb_off())
         logger.info(f"recorded {recording_filename}")
 
