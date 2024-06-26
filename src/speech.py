@@ -4,7 +4,6 @@ import os
 from aiy.leds import (Leds, Pattern, PrivacyLed, RgbLeds, Color)
 from aiy.voice.audio import AudioFormat, play_wav, record_file, Recorder
 from openai import OpenAI
-from threading import Event
 import re
 from pydub import AudioSegment
 import tempfile
@@ -71,79 +70,3 @@ def synthesize_speech(text, filename):
     logger.debug(f"saved at {filename}")
 
 
-def transcribe_speech(button, leds, player_process=None):
-    timeout2off_lights_sec = 60
-    recording_filename = "recording.wav"
-    period_ms = 10000
-    blink_period_ms = 500
-    DARK_GREEN = (0x00, 0x01, 0x00)
-    DARK_BLUE = (0x01, 0x00, 0x00)
-    recording_event = Event()
-
-    # remove recording file if it exists
-    if os.path.exists(recording_filename):
-        os.remove(recording_filename)
-
-    def button_pressed():
-        nonlocal button_ia_pressed
-        button_ia_pressed = True
-        logger.info('Button pressed')
-
-    def button_released():
-        nonlocal button_ia_pressed
-        button_ia_pressed = False
-        logger.info('Button released')
-
-    # Set the function to be called when the button is pressed
-    button.when_pressed = button_pressed
-    button.when_released = button_released
-
-    button_ia_pressed = False
-    logger.info('Press the button and speak')
-
-    # wait for button press.
-    # set breathing light for the first timeout seconds then turn light off
-    leds.pattern = Pattern.breathe(period_ms)
-    leds.update(Leds.rgb_pattern(DARK_GREEN))
-    button.wait_for_press(timeout2off_lights_sec)
-    leds.update(Leds.rgb_off())
-    if not button_ia_pressed:
-        # if the button was not pressed, continue waiting with lights off
-        logger.info('No button press detected during timeout. Switching off lights.')
-        button.wait_for_press()
-
-    # button was pressed
-    if player_process:
-        player_process.terminate()
-        player_process = None
-
-    if button_ia_pressed:
-        leds.update(Leds.rgb_on(Color.GREEN))
-        logger.info('Listening...')
-
-        def wait_to_stop_recording():
-            if not button_ia_pressed:
-                return
-            button.wait_for_release()
-
-        record_file(AudioFormat.CD, filename=recording_filename, wait=wait_to_stop_recording, filetype='wav')
-        leds.update(Leds.rgb_off())
-        logger.info(f"recorded {recording_filename}")
-
-    # check if recording file exists
-    text = ""
-    if not os.path.exists(recording_filename):
-        logger.warning('No recording file found')
-    else:
-        leds.update(Leds.rgb_pattern(DARK_BLUE))
-        with open(recording_filename, 'rb') as f:
-            text = openai.audio.transcriptions.create(
-                model="whisper-1",
-                file=f,
-                response_format="text"
-            )
-        if not text:
-            logger.warning('Sorry, I did not hear you.')
-        else:
-            logger.info('You said: %s', text)
-    return text
