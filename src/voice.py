@@ -43,7 +43,7 @@ class OpenAISTTEngine(STTEngine):
                 file=f,
                 language="ru",
                 response_format="text"
-            ).text
+            )
 
 
 class GoogleSTTEngine(STTEngine):
