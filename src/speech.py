@@ -51,11 +51,14 @@ def synthesize_speech(text, filename):
         return filename
 
     def combine_audio_files(file_list, output_filename):
+        logger.info(f"Combining {len(file_list)} audio files into {output_filename}")
         combined = AudioSegment.empty()
         for file in file_list:
             audio = AudioSegment.from_wav(file)
             combined += audio
+        logger.info(f"Exporting combined audio to {output_filename}")
         combined.export(output_filename, format="wav")
+        logger.info(f"Exported combined audio to {output_filename}")
 
     logger.info('Synthesizing speech for: %s', text)
     chunks = split_text(text)
