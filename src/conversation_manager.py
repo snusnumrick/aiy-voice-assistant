@@ -4,7 +4,7 @@ import logging
 from collections import deque
 from abc import ABC, abstractmethod
 from typing import List, Dict
-from .config import Config
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -93,13 +93,18 @@ class ConversationManager:
         self.message_history.append(system_message)
         self.message_history.append({"role": "system", "content": f"Краткое изложение беседы: {summary}"})
 
+        logger.info(f"Summarized conversation: {summary}")
+
+    def formatted_message_history(self):
+        return "\n".join([f'{y["role"]}:{y["content"].strip()}' for y in self.message_history])
+
     def get_response(self, text: str) -> str:
         self.message_history.append({"role": "user", "content": text})
 
         while self.get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
             self.summarize_and_compress_history()
 
-        logger.info(f"Message history: {self.message_history}")
+        logger.info(f"Message history: \n{self.formatted_message_history()}")
 
         response_text = self.ai_model.get_response(list(self.message_history))
         self.message_history.append({"role": "assistant", "content": response_text})
@@ -122,6 +127,10 @@ def test():
 
 
 if __name__ == '__main__':
+    x =  deque([{'role': 'assistant', 'content': 'Почти! Столица Канады — Оттава. \n\nПродолжим? Следующая страна: Бразилия.\n\nКакая у неё столица?'}, {'role': 'user', 'content': 'Бразилия\n'}, {'role': 'assistant', 'content': 'Столица Бразилии — Бразилиа.\n\nПродолжим? Назови столицу Австралии.'}, {'role': 'user', 'content': 'Комбинация\n'}, {'role': 'assistant', 'content': 'На самом деле, столица Австралии — Канберра.\n\nПродолжим? Назови, пожалуйста, столицу Индии.'}, {'role': 'user', 'content': 'Не удали.\n'}, {'role': 'assistant', 'content': 'Конечно, продолжим! Столица Индии — Нью-Дели.\n\nТеперь твоя очередь: какая столица Турции?'}, {'role': 'user', 'content': 'Долица Турции это Анкара.\n'}, {'role': 'assistant', 'content': 'Верно! Столица Турции — это Анкара.\n\nТеперь давай попробуем следующую страну: какая столица Египта?'}, {'role': 'user', 'content': 'Солица Египта это Каир.\n'}], maxlen=10)
+    print("\n".join([f'{y["role"]}:{y["content"].strip()}' for y in x]))
+
+
     from dotenv import load_dotenv
 
     load_dotenv()

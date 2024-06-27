@@ -81,14 +81,14 @@ def split_text(text: str, max_length: int) -> List[str]:
 
 
 def combine_audio_files(file_list: List[str], output_filename: str) -> None:
-    logger.info(f"Combining {len(file_list)} audio files into {output_filename}")
+    logger.debug(f"Combining {len(file_list)} audio files into {output_filename}")
     combined = AudioSegment.empty()
     for file in file_list:
         audio = AudioSegment.from_wav(file)
         combined += audio
-    logger.info(f"Exporting combined audio to {output_filename}")
+    logger.debug(f"Exporting combined audio to {output_filename}")
     combined.export(output_filename, format="wav")
-    logger.info(f"Exported combined audio to {output_filename}")
+    logger.debug(f"Exported combined audio to {output_filename}")
 
 
 def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Config) -> None:
