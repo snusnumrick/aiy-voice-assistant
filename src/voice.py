@@ -10,7 +10,11 @@ from abc import ABC, abstractmethod
 from aiy.leds import Leds, Color, Pattern
 from aiy.voice.audio import record_file, AudioFormat
 from aiy.board import Board, Button
-from .config import Config
+
+if __name__ == '__main__':
+    from config import Config
+else:
+    from .config import Config
 
 
 logger = logging.getLogger(__name__)
@@ -122,9 +126,6 @@ class SpeechTranscriber:
     def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
         recording_file_name = self.config.get('recording_file_name', 'recording.wav')
 
-        if os.path.exists(recording_file_name):
-            os.remove(recording_file_name)
-
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
         self.wait_for_button_press()
@@ -133,8 +134,19 @@ class SpeechTranscriber:
             player_process.terminate()
 
         if self.button_is_pressed:
+            if os.path.exists(recording_file_name):
+                os.remove(recording_file_name)
             self.record_audio(recording_file_name)
 
         return self.transcribe_audio(recording_file_name)
 
 
+def test():
+    config = Config()
+
+
+if __name__ == '__main__':
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    test()

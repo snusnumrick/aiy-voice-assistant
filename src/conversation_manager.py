@@ -131,10 +131,6 @@ def test():
 
 
 if __name__ == '__main__':
-    x =  deque([{'role': 'assistant', 'content': 'Почти! Столица Канады — Оттава. \n\nПродолжим? Следующая страна: Бразилия.\n\nКакая у неё столица?'}, {'role': 'user', 'content': 'Бразилия\n'}, {'role': 'assistant', 'content': 'Столица Бразилии — Бразилиа.\n\nПродолжим? Назови столицу Австралии.'}, {'role': 'user', 'content': 'Комбинация\n'}, {'role': 'assistant', 'content': 'На самом деле, столица Австралии — Канберра.\n\nПродолжим? Назови, пожалуйста, столицу Индии.'}, {'role': 'user', 'content': 'Не удали.\n'}, {'role': 'assistant', 'content': 'Конечно, продолжим! Столица Индии — Нью-Дели.\n\nТеперь твоя очередь: какая столица Турции?'}, {'role': 'user', 'content': 'Долица Турции это Анкара.\n'}, {'role': 'assistant', 'content': 'Верно! Столица Турции — это Анкара.\n\nТеперь давай попробуем следующую страну: какая столица Египта?'}, {'role': 'user', 'content': 'Солица Египта это Каир.\n'}], maxlen=10)
-    print("\n".join([f'{y["role"]}:{y["content"].strip()}' for y in x]))
-
-
     from dotenv import load_dotenv
 
     load_dotenv()
