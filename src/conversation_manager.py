@@ -4,7 +4,12 @@ import logging
 from collections import deque
 from abc import ABC, abstractmethod
 from typing import List, Dict
-from config import Config
+
+if __name__ == '__main__':
+    from config import Config
+else:
+    from .config import Config
+
 
 logger = logging.getLogger(__name__)
 
