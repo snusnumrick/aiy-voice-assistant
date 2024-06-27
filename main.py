@@ -50,21 +50,22 @@ def main():
                 config=self._make_config(language_code, hint_phrases))
 
             with Recorder() as recorder:
-                chunks = recorder.record(AUDIO_FORMAT,
-                                         chunk_duration_sec=0.1,
-                                         on_start=self.start_listening,
-                                         on_stop=self.stop_listening)
+                for chunk in recorder.record(AUDIO_FORMAT,
+                                             chunk_duration_sec=0.1,
+                                             on_start=self.start_listening,
+                                             on_stop=self.stop_listening):
 
-                requests = (speech.types.StreamingRecognizeRequest(audio_content=data) for data in chunks)
-                responses = self._client.streaming_recognize(config=streaming_config, requests=requests)
+                    requests = (speech.types.StreamingRecognizeRequest(audio_content=chunk))
+                    responses = self._client.streaming_recognize(config=streaming_config, requests=requests)
 
-                for response in responses:
-                    if response.speech_event_type == END_OF_SINGLE_UTTERANCE:
-                        recorder.done()
+                    for response in responses:
+                        if response.speech_event_type == END_OF_SINGLE_UTTERANCE:
+                            recorder.done()
 
-                    for result in response.results:
-                        if True: #result.is_final:
-                            return result.alternatives[0].transcript
+                        for result in response.results:
+                            print (result.alternatives[0].transcript)
+                            # if #result.is_final:
+                            #     return result.alternatives[0].transcript
 
             return None
 
