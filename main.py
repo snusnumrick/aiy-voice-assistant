@@ -19,58 +19,10 @@ from src.speech import OpenAITTSEngine
 
 
 def main():
-    from google.cloud import speech
-    from aiy.cloudspeech import CloudSpeechClient, AUDIO_FORMAT, END_OF_SINGLE_UTTERANCE
-    from aiy.voice.audio import Recorder
 
-    class SpeechListener(CloudSpeechClient):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
+    from aiy.cloudspeech import CloudSpeechClient
 
-        def recognize(self, language_code='en-US', hint_phrases=None):
-            """
-            Performs speech-to-text for a single utterance using the default ALSA soundcard driver.
-            Once it detects the user is done speaking, it stops listening and delivers the top
-            result as text.
-
-            By default, this method calls :meth:`start_listening` and :meth:`stop_listening` as the
-            recording begins and ends, respectively.
-
-            Args:
-                language_code:  Language expected from the user, in IETF BCP 47 syntax (default is
-                    "en-US"). See the `list of Cloud's supported languages`_.
-                hint_phrase: A list of strings containing words and phrases that may be expected from
-                    the user. These hints help the speech recognizer identify them in the dialog and
-                    improve the accuracy of your results.
-
-            Returns:
-                The text transcription of the user's dialog.
-            """
-            streaming_config=speech.types.StreamingRecognitionConfig(
-                config=self._make_config(language_code, hint_phrases))
-
-            with Recorder() as recorder:
-                for chunk in recorder.record(AUDIO_FORMAT,
-                                             chunk_duration_sec=1,
-                                             on_start=self.start_listening,
-                                             on_stop=self.stop_listening):
-
-                    requests = [speech.types.StreamingRecognizeRequest(audio_content=chunk)]
-                    responses = self._client.streaming_recognize(config=streaming_config, requests=requests)
-
-                    for response in responses:
-                        if response.speech_event_type == END_OF_SINGLE_UTTERANCE:
-                            recorder.done()
-
-                        for result in response.results:
-                            print (result.alternatives[0].transcript)
-                            # if #result.is_final:
-                            #     return result.alternatives[0].transcript
-
-            return None
-
-
-    client = SpeechListener("/home/anton/gcloud.json")
+    client = CloudSpeechClient("/home/anton/gcloud.json")
     while True:
         logging.info('Say something.')
         text = client.recognize(language_code="ru-RU")
