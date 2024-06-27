@@ -21,7 +21,7 @@ from src.speech import OpenAITTSEngine
 def main():
 
     from aiy.cloudspeech import CloudSpeechClient
-    client = CloudSpeechClient("/home/anton/assistant.json")
+    client = CloudSpeechClient("/home/anton/gcloud.json")
     while True:
         logging.info('Say something.')
         text = client.recognize(language_code="ru-RU")
