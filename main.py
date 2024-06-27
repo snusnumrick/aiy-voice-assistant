@@ -19,6 +19,17 @@ from src.speech import OpenAITTSEngine
 
 
 def main():
+
+    from aiy.cloudspeach import CloudSpeechClient
+    client = CloudSpeechClient()
+    while True:
+        logging.info('Say something.')
+        text = client.recognize(language_code="ru-RU")
+        if text is None:
+            logging.info('You said nothing.')
+            continue
+        logging.info('You said: "%s"' % text)
+
     config = Config()
     with Board() as board, Leds() as leds:
 
