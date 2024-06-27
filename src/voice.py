@@ -15,6 +15,8 @@ if __name__ == '__main__':
     from STTEngine import STTEngine
 else:
     from .config import Config
+    from .STTEngine import STTEngine
+
 
 
 logger = logging.getLogger(__name__)
@@ -27,10 +29,10 @@ DARK_BLUE = (0x01, 0x00, 0x00)
 
 
 class SpeechTranscriber:
-    def __init__(self, button: Button, leds: Leds, tts_engine: STTEngine, config: Config):
+    def __init__(self, button: Button, leds: Leds, stt_engine: STTEngine, config: Config):
         self.button = button
         self.leds = leds
-        self.tts_engine = tts_engine
+        self.tts_engine = stt_engine
         self.button_is_pressed = False
         self.config = config
 
