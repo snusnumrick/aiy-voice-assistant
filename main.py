@@ -51,7 +51,7 @@ def main():
 
             with Recorder() as recorder:
                 for chunk in recorder.record(AUDIO_FORMAT,
-                                             chunk_duration_sec=0.1,
+                                             chunk_duration_sec=1,
                                              on_start=self.start_listening,
                                              on_stop=self.stop_listening):
 
