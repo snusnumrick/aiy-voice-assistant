@@ -55,7 +55,7 @@ def main():
                                              on_start=self.start_listening,
                                              on_stop=self.stop_listening):
 
-                    requests = (speech.types.StreamingRecognizeRequest(audio_content=chunk))
+                    requests = [speech.types.StreamingRecognizeRequest(audio_content=chunk)]
                     responses = self._client.streaming_recognize(config=streaming_config, requests=requests)
 
                     for response in responses:
