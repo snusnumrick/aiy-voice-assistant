@@ -71,8 +71,7 @@ class ConversationManager:
     def __init__(self, config: Config, ai_model: AIModel):
         self.config = config
         self.ai_model = ai_model
-        self.max_messages = config.get('max_messages', 10)
-        self.message_history = deque(maxlen=self.max_messages)
+        self.message_history = deque()
         self.message_history.append({"role": "system", "content": config.get('system_message', "Your name is Robi.")})
 
     def estimate_tokens_russian(self, text: str) -> int:
