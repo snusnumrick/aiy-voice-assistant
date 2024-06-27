@@ -20,7 +20,7 @@ from src.speech import OpenAITTSEngine
 
 def main():
 
-    from aiy.cloudspeach import CloudSpeechClient
+    from aiy.cloudspeech import CloudSpeechClient
     client = CloudSpeechClient()
     while True:
         logging.info('Say something.')
