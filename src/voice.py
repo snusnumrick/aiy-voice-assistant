@@ -66,7 +66,12 @@ class SpeechTranscriber:
                 return
             self.button.wait_for_release()
 
-        record_file(AudioFormat.CD, filename=recording_file_name, wait=wait_to_stop_recording, filetype='wav')
+        AUDIO_SAMPLE_RATE_HZ = 16000
+        AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
+                                   num_channels=1,
+                                   bytes_per_sample=2)
+
+        record_file(AUDIO_FORMAT, filename=recording_file_name, wait=wait_to_stop_recording, filetype='wav')
         self.leds.update(Leds.rgb_off())
         logger.debug(f"Recorded {recording_file_name}")
 
