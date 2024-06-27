@@ -6,13 +6,13 @@ import os
 import logging
 from subprocess import Popen
 from typing import Optional
-from abc import ABC, abstractmethod
 from aiy.leds import Leds, Color, Pattern
 from aiy.voice.audio import record_file, AudioFormat
 from aiy.board import Board, Button
 
 if __name__ == '__main__':
     from config import Config
+    from STTEngine import STTEngine
 else:
     from .config import Config
 
@@ -24,48 +24,6 @@ TIMEOUT_LIGHTS_OFF_SEC = 60
 BREATHING_PERIOD_MS = 10000
 DARK_GREEN = (0x00, 0x01, 0x00)
 DARK_BLUE = (0x01, 0x00, 0x00)
-
-
-class STTEngine(ABC):
-    """
-    Abstract class for Speech-to-Text Engine
-    """
-    @abstractmethod
-    def transcribe(self, audio_file: str) -> str:
-        pass
-
-
-class OpenAISTTEngine(STTEngine):
-    """
-    Implementation of STTEngine using OpenAI API
-    """
-    def transcribe(self, audio_file: str) -> str:
-        import openai
-        with open(audio_file, 'rb') as f:
-            return openai.audio.transcriptions.create(
-                model="whisper-1",
-                file=f,
-                language="ru",
-                response_format="text"
-            )
-
-
-class GoogleSTTEngine(STTEngine):
-    """
-    Implementation of STTEngine using Google Speech Recognition API
-    """
-    def transcribe(self, audio_file: str) -> str:
-        import speech_recognition as sr
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(audio_file) as source:
-            audio = recognizer.record(source)
-        try:
-            return recognizer.recognize_google(audio)
-        except sr.UnknownValueError:
-            return ""
-        except sr.RequestError:
-            logger.error("Could not request results from Google Speech Recognition service")
-            return ""
 
 
 class SpeechTranscriber:
@@ -141,12 +99,3 @@ class SpeechTranscriber:
         return self.transcribe_audio(recording_file_name)
 
 
-def test():
-    config = Config()
-
-
-if __name__ == '__main__':
-    from dotenv import load_dotenv
-
-    load_dotenv()
-    test()
