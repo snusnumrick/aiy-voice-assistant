@@ -92,7 +92,7 @@ def combine_audio_files(file_list: List[str], output_filename: str) -> None:
 
 
 def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Config) -> None:
-    logger.info('Synthesizing speech for: %s', text)
+    logger.debug('Synthesizing speech for: %s', text)
     max_size_tts = config.get('max_size_tts', 4096)  # Default to 4096 if not in config
     chunks = split_text(text, max_length=max_size_tts)
     temp_dir = tempfile.mkdtemp()
@@ -100,12 +100,12 @@ def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Confi
         chunk_files = []
         for i, chunk in enumerate(chunks):
             chunk_file = os.path.join(temp_dir, f"chunk_{i}.wav")
-            logger.info(f"Synthesizing chunk {i}: {chunk} into {chunk_file}")
+            logger.debug(f"Synthesizing chunk {i}: {chunk} into {chunk_file}")
             engine.synthesize(chunk, chunk_file)
-            logger.info(f"Saved chunk {i} to {chunk_file}")
+            logger.debug(f"Saved chunk {i} to {chunk_file}")
             chunk_files.append(chunk_file)
 
         combine_audio_files(chunk_files, filename)
     finally:
         shutil.rmtree(temp_dir)
-    logger.info(f"saved at {filename}")
+    logger.debug(f"saved at {filename}")

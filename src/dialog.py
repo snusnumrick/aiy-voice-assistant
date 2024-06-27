@@ -20,6 +20,7 @@ def main_loop(button: Button, leds: Leds, sst_engine: STTEngine, tts_engine: TTS
     while True:
         try:
             text = transcriber.transcribe_speech(player_process)
+            logger.info('You said: %s', text)
             if text:
                 ai_response = conversation_manager.get_response(text)
                 logger.info('AI says: %s', ai_response)

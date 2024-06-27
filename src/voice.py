@@ -74,11 +74,11 @@ class SpeechTranscriber:
 
     def button_pressed(self):
         self.button_is_pressed = True
-        logger.info('Button pressed')
+        logger.debug('Button pressed')
 
     def button_released(self):
         self.button_is_pressed = False
-        logger.info('Button released')
+        logger.debug('Button released')
 
     def setup_button_callbacks(self):
         self.button.when_pressed = self.button_pressed
@@ -90,12 +90,12 @@ class SpeechTranscriber:
         self.button.wait_for_press(TIMEOUT_LIGHTS_OFF_SEC)
         self.leds.update(Leds.rgb_off())
         if not self.button_is_pressed:
-            logger.info('No button press detected during timeout. Switching off lights.')
+            logger.debug('No button press detected during timeout. Switching off lights.')
             self.button.wait_for_press()
 
     def record_audio(self, recording_file_name: str):
         self.leds.update(Leds.rgb_on(Color.GREEN))
-        logger.info('Listening...')
+        logger.debug('Listening...')
 
         def wait_to_stop_recording():
             if not self.button_is_pressed:
@@ -104,7 +104,7 @@ class SpeechTranscriber:
 
         record_file(AudioFormat.CD, filename=recording_file_name, wait=wait_to_stop_recording, filetype='wav')
         self.leds.update(Leds.rgb_off())
-        logger.info(f"Recorded {recording_file_name}")
+        logger.debug(f"Recorded {recording_file_name}")
 
     def transcribe_audio(self, recording_file_name: str):
         if not os.path.exists(recording_file_name):
@@ -116,7 +116,7 @@ class SpeechTranscriber:
         if not text:
             logger.warning('Sorry, I did not hear you.')
         else:
-            logger.info('You said: %s', text)
+            logger.debug('You said: %s', text)
         return text
 
     def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:

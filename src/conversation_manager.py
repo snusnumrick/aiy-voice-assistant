@@ -99,10 +99,12 @@ class ConversationManager:
         while self.get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
             self.summarize_and_compress_history()
 
+        logger.info(f"Message history: {self.message_history}"
+
         response_text = self.ai_model.get_response(list(self.message_history))
         self.message_history.append({"role": "assistant", "content": response_text})
 
-        logger.info(f"AI response: {text} -> {response_text}")
+        logger.debug(f"AI response: {text} -> {response_text}")
         return response_text
 
 
