@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
 load_dotenv()
 
-from src.voice import OpenAISTTEngine
+from src.STTEngine import OpenAISTTEngine
 from src.dialog import main_loop
 from src.config import Config
 from src.speech import OpenAITTSEngine
