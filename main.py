@@ -63,7 +63,7 @@ def main():
                         recorder.done()
 
                     for result in response.results:
-                        if result.is_final:
+                        if True: #result.is_final:
                             return result.alternatives[0].transcript
 
             return None
