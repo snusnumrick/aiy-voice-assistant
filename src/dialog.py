@@ -1,6 +1,6 @@
 from aiy.board import Button
 from aiy.leds import Leds
-from .voice import STTEngine, SpeechTranscriber
+from .voice import STTEngine, SpeechTranscriber2
 from .config import Config
 from .speech import synthesize_speech, TTSEngine
 from .conversation_manager import ConversationManager, OpenAIModel
@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 def main_loop(button: Button, leds: Leds, sst_engine: STTEngine, tts_engine: TTSEngine, config: Config) -> None:
-    transcriber = SpeechTranscriber(button, leds, sst_engine, config)
+    # transcriber = SpeechTranscriber(button, leds, sst_engine, config)
+    transcriber = SpeechTranscriber2(button, leds, config)
     player_process = None
     conversation_manager = ConversationManager(config, OpenAIModel(config))
 
