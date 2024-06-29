@@ -180,8 +180,12 @@ class SpeechTranscriber2:
         requests = (speech.types.StreamingRecognizeRequest(audio_content=data) for data in chunks)
         responses = self.speech_client.streaming_recognize(config=streaming_config, requests=requests)
 
+        logger.info(f"{len(chunks)} chunks; {len(responses)} responses")
+
         text = ""
         for response in responses:
+            logger.info(f"Speech event type: {response.speech_event_type}")
+            logger.info(f"Results: {response.results}")
             if response.speech_event_type == END_OF_SINGLE_UTTERANCE:
                 for result in response.results:
                     if result.is_final:
