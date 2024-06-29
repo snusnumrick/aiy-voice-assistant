@@ -164,6 +164,10 @@ class SpeechTranscriber2:
             player_process.terminate()
 
         text = ""
+
+        self.leds.update(Leds.rgb_on(Color.GREEN))
+        logger.debug('Listening...')
+
         with Recorder() as recorder:
             # Create a generator that yields audio chunks
             def generate_audio_chunks():
@@ -174,6 +178,7 @@ class SpeechTranscriber2:
                 for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.1):
                     yield chunk
                     if not self.button_is_pressed:
+                        self.leds.update(Leds.rgb_off())
                         break
 
             # Create a streaming recognize request
