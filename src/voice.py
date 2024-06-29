@@ -130,7 +130,7 @@ class SpeechTranscriber2:
             language_code=self.language_code,
             enable_automatic_punctuation=True,
         )
-        self.streaming_config = speech.StreamingRecognitionConfig(config=config, interim_results=True)
+        self.streaming_config = speech.types.StreamingRecognitionConfig(config=config, interim_results=True)
 
     def button_pressed(self):
         self.button_is_pressed = True
