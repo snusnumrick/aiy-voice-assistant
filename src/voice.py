@@ -142,7 +142,7 @@ class SpeechTranscriber2:
             logger.debug('No button press detected during timeout. Switching off lights.')
             self.button.wait_for_press()
 
-    def record_audio(self, recording_file_name: str):
+    def record_audio(self):
         self.leds.update(Leds.rgb_on(Color.GREEN))
         logger.debug('Listening...')
 
@@ -195,8 +195,6 @@ class SpeechTranscriber2:
         return text
 
     def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
-        recording_file_name = self.config.get('recording_file_name', 'recording.wav')
-
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
         self.wait_for_button_press()
@@ -204,9 +202,8 @@ class SpeechTranscriber2:
         if player_process:
             player_process.terminate()
 
+        text = ""
         if self.button_is_pressed:
-            if os.path.exists(recording_file_name):
-                os.remove(recording_file_name)
-            self.record_audio(recording_file_name)
-
-        return self.transcribe_audio(recording_file_name)
+            chunks = self.record_audio()
+            text = self.transcribe_audio(chunks)
+        return text
