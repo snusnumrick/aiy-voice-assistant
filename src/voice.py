@@ -180,7 +180,7 @@ class SpeechTranscriber2:
         requests = (speech.types.StreamingRecognizeRequest(audio_content=data) for data in chunks)
         responses = self.speech_client.streaming_recognize(config=streaming_config, requests=requests)
 
-        logger.info(f"{len(chunks)} chunks; {len(responses)} responses")
+        logger.info(f"{len(chunks)} chunks; {len(list(responses))} responses")
 
         text = ""
         for response in responses:
