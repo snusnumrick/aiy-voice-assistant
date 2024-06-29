@@ -117,7 +117,7 @@ class SpeechTranscriber2:
         self.language_code = self.config.get("language_code", "ru-RU")
 
         service_accout_file = self.config.get('service_account_file', '~/gcloud.json')
-        service_accout_file = os.path.expanduser('~/cloud_speech.json')
+        service_accout_file = os.path.expanduser(service_accout_file)
         credentials = service_account.Credentials.from_service_account_file(service_accout_file)
         self.speech_client = speech.SpeechClient(credentials=credentials)
 
