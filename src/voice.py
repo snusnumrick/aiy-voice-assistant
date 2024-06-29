@@ -179,7 +179,7 @@ class SpeechTranscriber2:
             # Create a streaming recognize request
             audio_generator = generate_audio_chunks()
             requests = (
-                speech.StreamingRecognizeRequest(audio_content=chunk)
+                speech.types.StreamingRecognizeRequest(audio_content=chunk)
                 for chunk in audio_generator
             )
 
