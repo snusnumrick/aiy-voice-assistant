@@ -169,9 +169,13 @@ class SpeechTranscriber2:
     def transcribe_audio(self, chunks: list):
         from google.cloud import speech
         END_OF_SINGLE_UTTERANCE = speech.types.StreamingRecognizeResponse.END_OF_SINGLE_UTTERANCE
+        AUDIO_SAMPLE_RATE_HZ = 16000
 
-        streaming_config = speech.types.StreamingRecognitionConfig(
-            config=self._make_config(language_code=self.language_code))
+        config = speech.types.RecognitionConfig(
+            encoding=speech.types.RecognitionConfig.LINEAR16,
+            sample_rate_hertz=AUDIO_SAMPLE_RATE_HZ,
+            language_code=self.language_code)
+        streaming_config = speech.types.StreamingRecognitionConfig(config=config)
 
         requests = (speech.types.StreamingRecognizeRequest(audio_content=data) for data in chunks)
         responses = self.speech_client.streaming_recognize(config=streaming_config, requests=requests)
