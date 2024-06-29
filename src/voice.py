@@ -124,7 +124,7 @@ class SpeechTranscriber2:
         END_OF_SINGLE_UTTERANCE = speech.types.StreamingRecognizeResponse.END_OF_SINGLE_UTTERANCE
         AUDIO_SAMPLE_RATE_HZ = 16000
 
-        config = speech.RecognitionConfig(
+        config = speech.types.RecognitionConfig(
             encoding=speech.types.RecognitionConfig.LINEAR16,
             sample_rate_hertz=AUDIO_SAMPLE_RATE_HZ,
             language_code=self.language_code,
