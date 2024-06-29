@@ -121,6 +121,17 @@ class SpeechTranscriber2:
         credentials = service_account.Credentials.from_service_account_file(service_accout_file)
         self.speech_client = speech.SpeechClient(credentials=credentials)
 
+        END_OF_SINGLE_UTTERANCE = speech.types.StreamingRecognizeResponse.END_OF_SINGLE_UTTERANCE
+        AUDIO_SAMPLE_RATE_HZ = 16000
+
+        config = speech.RecognitionConfig(
+            encoding=speech.types.RecognitionConfig.LINEAR16,
+            sample_rate_hertz=AUDIO_SAMPLE_RATE_HZ,
+            language_code=self.language_code,
+            enable_automatic_punctuation=True,
+        )
+        self.streaming_config = speech.StreamingRecognitionConfig(config=config, interim_results=True)
+
     def button_pressed(self):
         self.button_is_pressed = True
         logger.debug('Button pressed')
@@ -142,63 +153,9 @@ class SpeechTranscriber2:
             logger.debug('No button press detected during timeout. Switching off lights.')
             self.button.wait_for_press()
 
-    def record_audio(self):
-        self.leds.update(Leds.rgb_on(Color.GREEN))
-        logger.debug('Listening...')
-
-        def wait_to_stop_recording():
-            if not self.button_is_pressed:
-                return
-            self.button.wait_for_release()
-
-        AUDIO_SAMPLE_RATE_HZ = 16000
-        AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
-                                   num_channels=1,
-                                   bytes_per_sample=2)
-
-        chunks = []
-        with Recorder() as recorder:
-            for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.1):
-                chunks.append(chunk)
-                if not self.button_is_pressed:
-                    break
-
-        self.leds.update(Leds.rgb_off())
-        return chunks
-
-    def transcribe_audio(self, chunks: list):
-        from google.cloud import speech
-        END_OF_SINGLE_UTTERANCE = speech.types.StreamingRecognizeResponse.END_OF_SINGLE_UTTERANCE
-        AUDIO_SAMPLE_RATE_HZ = 16000
-
-        config = speech.types.RecognitionConfig(
-            encoding=speech.types.RecognitionConfig.LINEAR16,
-            sample_rate_hertz=AUDIO_SAMPLE_RATE_HZ,
-            language_code=self.language_code)
-        streaming_config = speech.types.StreamingRecognitionConfig(config=config)
-
-        requests = (speech.types.StreamingRecognizeRequest(audio_content=data) for data in chunks)
-        responses = self.speech_client.streaming_recognize(config=streaming_config, requests=requests)
-
-        logger.info(f"{len(chunks)} chunks; {len(requests)} requests; {len(list(responses))} responses")
-
-        text = ""
-        for response in responses:
-            logger.info(f"Speech event type: {response.speech_event_type}")
-            logger.info(f"Results: {response.results}")
-            if response.speech_event_type == END_OF_SINGLE_UTTERANCE:
-                for result in response.results:
-                    if result.is_final:
-                        text += result.alternatives[0].transcript
-
-        self.leds.update(Leds.rgb_pattern(DARK_BLUE))
-        if not text:
-            logger.warning('Sorry, I did not hear you.')
-        else:
-            logger.debug('You said: %s', text)
-        return text
-
     def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
+        from google.cloud import speech
+
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
         self.wait_for_button_press()
@@ -207,7 +164,31 @@ class SpeechTranscriber2:
             player_process.terminate()
 
         text = ""
-        if self.button_is_pressed:
-            chunks = self.record_audio()
-            text = self.transcribe_audio(chunks)
+        with Recorder() as recorder:
+            # Create a generator that yields audio chunks
+            def generate_audio_chunks():
+                AUDIO_SAMPLE_RATE_HZ = 16000
+                AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
+                                           num_channels=1,
+                                           bytes_per_sample=2)
+                for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.1):
+                    yield chunk
+                    if not self.button_is_pressed:
+                        break
+
+            # Create a streaming recognize request
+            audio_generator = generate_audio_chunks()
+            requests = (
+                speech.StreamingRecognizeRequest(audio_content=chunk)
+                for chunk in audio_generator
+            )
+
+            # Send the requests and process the responses
+            responses = self.speech_client.streaming_recognize(self.streaming_config, requests)
+
+            for response in responses:
+                for result in response.results:
+                    if result.is_final:
+                        text += result.alternatives[0].transcript
+
         return text
