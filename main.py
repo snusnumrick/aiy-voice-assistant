@@ -15,7 +15,7 @@ load_dotenv()
 from src.STTEngine import OpenAISTTEngine
 from src.dialog import main_loop
 from src.config import Config
-from src.speech import OpenAITTSEngine
+from src.speech import OpenAITTSEngine, GoogleTTSEngine
 
 
 def main():
@@ -27,7 +27,7 @@ def main():
         time.sleep(1)
         leds.update(Leds.rgb_off())
 
-        main_loop(board.button, leds, OpenAISTTEngine(), OpenAITTSEngine(), config)
+        main_loop(board.button, leds, OpenAISTTEngine(),  GoogleTTSEngine(config, "ru-RU"), config)
 
 
 if __name__ == '__main__':
