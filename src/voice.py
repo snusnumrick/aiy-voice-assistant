@@ -177,7 +177,7 @@ class SpeechTranscriber2:
                 AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
                                            num_channels=1,
                                            bytes_per_sample=2)
-                for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.1):
+                for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.3):
                     yield chunk
                     if not self.button_is_pressed:
                         self.leds.update(Leds.rgb_off())
