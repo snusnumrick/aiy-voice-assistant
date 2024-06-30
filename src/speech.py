@@ -44,8 +44,13 @@ class OpenAITTSEngine(TTSEngine):
 
 class GoogleTTSEngine(TTSEngine):
     def __init__(self, language_code="en-US"):
+        from google.oauth2 import service_account
         from google.cloud import texttospeech
-        self.client = texttospeech.TextToSpeechClient()
+
+        service_accout_file = self.config.get('service_account_file', '~/gcloud.json')
+        service_accout_file = os.path.expanduser(service_accout_file)
+        credentials = service_account.Credentials.from_service_account_file(service_accout_file)
+        self.client = texttospeech.TextToSpeechClient(credentials=credentials)
         self.language_code = language_code
 
     def synthesize(self, text: str, filename: str) -> None:
