@@ -9,8 +9,11 @@ from typing import List
 from pydub import AudioSegment
 import tempfile
 import shutil
-from .config import Config
 
+if __name__ == '__main__':
+    from config import Config
+else:
+    from .config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -109,3 +112,16 @@ def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Confi
     finally:
         shutil.rmtree(temp_dir)
     logger.debug(f"saved at {filename}")
+
+
+def test():
+    config = Config()
+    tts = GoogleTTSEngine("ru-RU")
+    tts.synthesize("Привет, как дела?", "test.wav")
+
+
+if __name__ == '__main__':
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    test()

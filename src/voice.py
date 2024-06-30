@@ -191,7 +191,10 @@ class SpeechTranscriber2:
                             logger.debug('Player process terminated')
                         except Exception as e:
                             logger.error(f"Error terminating player process: {str(e)}")
-                    self.leds.update(Leds.rgb_on(Color.GREEN))
+
+                    self.leds.pattern = Pattern.blink()
+                    self.leds.update(Leds.rgb_pattern(DARK_GREEN))
+
                     logger.info('Listening...')
                     status = 1
 
@@ -248,4 +251,5 @@ class SpeechTranscriber2:
                     if result.is_final:
                         text += result.alternatives[0].transcript
 
+        self.leds.update(Leds.rgb_on(Color.GREEN))
         return text
