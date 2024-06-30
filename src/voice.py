@@ -174,7 +174,7 @@ class SpeechTranscriber2:
                 if status < 2 or status == 2 and record_more > 0:
                     record_more -= 1
                     q.append(chunk)
-                    if status == 0 and len(q) > 5:
+                    if status == 0 and len(q) > 2:
                         q.popleft()
 
                 logger.info(f"2. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
@@ -206,7 +206,7 @@ class SpeechTranscriber2:
                 if status == 1 and not self.button_is_pressed:
                     # self.leds.update(Leds.rgb_off())
                     status = 2
-                    record_more = 5
+                    record_more = 2
 
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
