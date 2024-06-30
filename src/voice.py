@@ -188,6 +188,7 @@ class SpeechTranscriber2:
                     yield q.popleft()
 
                 if status == 1 and not self.button_is_pressed:
+                    self.leds.update(Leds.rgb_off())
                     status = 2
 
         self.setup_button_callbacks()
