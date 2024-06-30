@@ -174,7 +174,8 @@ class SpeechTranscriber2:
             for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.3):
                 # logger.info(f"1. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
                 if status < 2 or status == 2 and record_more > 0:
-                    record_more -= 1
+                    if status == 2:
+                        record_more -= 1
                     q.append(chunk)
                     if status == 0 and len(q) > 3:
                         q.popleft()
@@ -189,7 +190,7 @@ class SpeechTranscriber2:
                         except Exception as e:
                             logger.error(f"Error terminating player process: {str(e)}")
                     self.leds.update(Leds.rgb_on(Color.GREEN))
-                    logger.debug('Listening...')
+                    logger.info('Listening...')
                     status = 1
 
                 if not q:
