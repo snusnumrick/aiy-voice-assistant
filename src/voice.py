@@ -131,7 +131,7 @@ class SpeechTranscriber2:
             enable_automatic_punctuation=True
         )
         self.streaming_config = speech.types.StreamingRecognitionConfig(config=config,
-                                                                        # interim_results=True,
+                                                                        interim_results=True,
                                                                         single_utterance=True)
 
     def button_pressed(self):
