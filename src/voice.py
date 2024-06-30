@@ -179,10 +179,12 @@ class SpeechTranscriber2:
                                            bytes_per_sample=2)
                 final_count = -1
                 for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.1):
+                    logger.info(f"final count: {final_count}")
                     yield chunk
                     if final_count > 0:
                         final_count -= 1
                         if final_count == 0:
+                            recorder.done()
                             break
                     if not self.button_is_pressed:
                         self.leds.update(Leds.rgb_off())
