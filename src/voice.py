@@ -167,6 +167,7 @@ class SpeechTranscriber2:
                                        bytes_per_sample=2)
             q = deque()
             status = 0  # 0 - not started, 1 - started, 2 - finished
+            chunks = []
             for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.3):
                 logger.info(f"1. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
                 if status < 2:
@@ -183,10 +184,21 @@ class SpeechTranscriber2:
                     status = 1
 
                 if not q:
+                    import wave
+
+                    with wave.open("recording.wav", 'wb') as wav_file:
+                        wav_file.setnchannels(AUDIO_FORMAT.num_channels)
+                        wav_file.setsampwidth(AUDIO_FORMAT.bytes_per_sample)
+                        wav_file.setframerate(AUDIO_FORMAT.sample_rate_hz)
+                        for chunk in chunks:
+                            wav_file.writeframes(chunk)
+
                     break
 
                 if status > 0:
-                    yield q.popleft()
+                    chunk = q.popleft()
+                    chunks.append(chunk)
+                    yield chunk
 
                 logger.info(f"3. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
                 if status == 1 and not self.button_is_pressed:
