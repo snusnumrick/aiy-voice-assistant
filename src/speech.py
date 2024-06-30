@@ -43,10 +43,11 @@ class OpenAITTSEngine(TTSEngine):
 
 
 class GoogleTTSEngine(TTSEngine):
-    def __init__(self, language_code="en-US"):
+    def __init__(self, config: Config, language_code="en-US"):
         from google.oauth2 import service_account
         from google.cloud import texttospeech
 
+        self.config = config
         service_accout_file = self.config.get('service_account_file', '~/gcloud.json')
         service_accout_file = os.path.expanduser(service_accout_file)
         credentials = service_account.Credentials.from_service_account_file(service_accout_file)
@@ -121,7 +122,7 @@ def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Confi
 
 def test():
     config = Config()
-    tts = GoogleTTSEngine("ru-RU")
+    tts = GoogleTTSEngine(config, "ru-RU")
     tts.synthesize("Привет, как дела?", "test.wav")
 
 
