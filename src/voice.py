@@ -130,7 +130,8 @@ class SpeechTranscriber2:
             language_code=self.language_code,
             enable_automatic_punctuation=True
         )
-        self.streaming_config = speech.types.StreamingRecognitionConfig(config=config, interim_results=True,
+        self.streaming_config = speech.types.StreamingRecognitionConfig(config=config,
+                                                                        # interim_results=True,
                                                                         single_utterance=True)
 
     def button_pressed(self):
@@ -197,6 +198,7 @@ class SpeechTranscriber2:
             logger.info(f"{len(chunks)} chunks recorded; {len(list(responses))} responses received")
 
             for response in responses:
+                logger.info(response)
                 for result in response.results:
                     if result.is_final:
                         text += result.alternatives[0].transcript
