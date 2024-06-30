@@ -172,14 +172,14 @@ class SpeechTranscriber2:
             self.leds.pattern = Pattern.breathe(BREATHING_PERIOD_MS)
             self.leds.update(Leds.rgb_pattern(DARK_GREEN))
             for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.3):
-                logger.info(f"1. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
+                # logger.info(f"1. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
                 if status < 2 or status == 2 and record_more > 0:
                     record_more -= 1
                     q.append(chunk)
                     if status == 0 and len(q) > 3:
                         q.popleft()
 
-                logger.info(f"2. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
+                # logger.info(f"2. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
                 if status == 0 and self.button_is_pressed:
                     if player_process:
                         player_process.terminate()
@@ -188,14 +188,14 @@ class SpeechTranscriber2:
                     status = 1
 
                 if not q:
-                    import wave
-
-                    with wave.open("recording.wav", 'wb') as wav_file:
-                        wav_file.setnchannels(AUDIO_FORMAT.num_channels)
-                        wav_file.setsampwidth(AUDIO_FORMAT.bytes_per_sample)
-                        wav_file.setframerate(AUDIO_FORMAT.sample_rate_hz)
-                        for chunk in chunks:
-                            wav_file.writeframes(chunk)
+                    # import wave
+                    #
+                    # with wave.open("recording.wav", 'wb') as wav_file:
+                    #     wav_file.setnchannels(AUDIO_FORMAT.num_channels)
+                    #     wav_file.setsampwidth(AUDIO_FORMAT.bytes_per_sample)
+                    #     wav_file.setframerate(AUDIO_FORMAT.sample_rate_hz)
+                    #     for chunk in chunks:
+                    #         wav_file.writeframes(chunk)
 
                     break
 
@@ -204,7 +204,7 @@ class SpeechTranscriber2:
                     chunks.append(chunk)
                     yield chunk
 
-                logger.info(f"3. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
+                # logger.info(f"3. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
                 if status == 1 and not self.button_is_pressed:
                     self.leds.update(Leds.rgb_off())
                     status = 2
@@ -228,7 +228,7 @@ class SpeechTranscriber2:
 
             for response in responses:
                 for result in response.results:
-                    logger.info(f"trascript: {result.alternatives[0].transcript}")
+                    # logger.info(f"trascript: {result.alternatives[0].transcript}")
                     if result.is_final:
                         text += result.alternatives[0].transcript
 
