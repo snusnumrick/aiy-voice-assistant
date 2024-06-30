@@ -180,7 +180,6 @@ class SpeechTranscriber2:
                 final_count = -1
                 for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.1):
                     logger.info(f"final count: {final_count}")
-                    yield chunk
                     if final_count > 0:
                         final_count -= 1
                         if final_count == 0:
@@ -189,6 +188,7 @@ class SpeechTranscriber2:
                     if not self.button_is_pressed:
                         self.leds.update(Leds.rgb_off())
                         final_count = 3
+                    yield chunk
 
             # Create a streaming recognize request
             audio_generator = generate_audio_chunks()
