@@ -191,6 +191,8 @@ class SpeechTranscriber2:
             # Send the requests and process the responses
             responses = self.speech_client.streaming_recognize(self.streaming_config, requests)
 
+            logger.info(f"{len(list(responses))} responses received")
+
             for response in responses:
                 for result in response.results:
                     if result.is_final:
