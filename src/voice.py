@@ -169,6 +169,7 @@ class SpeechTranscriber2:
             q = deque()
             status = 0  # 0 - not started, 1 - started, 2 - finished
             for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.3):
+                logger.info(f"status: {status}")
                 if status < 2:
                     q.append(chunk)
                     if len(q) > 2:
