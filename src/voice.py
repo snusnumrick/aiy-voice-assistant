@@ -158,36 +158,44 @@ class SpeechTranscriber2:
     def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
         from google.cloud import speech
 
+        def generate_audio_chunks():
+            from collections import deque
+
+            AUDIO_SAMPLE_RATE_HZ = 16000
+            AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
+                                       num_channels=1,
+                                       bytes_per_sample=2)
+            final_count = -1
+            q = deque()
+            status = 0  # 0 - not started, 1 - started, 2 - finished
+            for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.3):
+                if status < 2:
+                    q.append(chunk)
+                    if len(q) > 2:
+                        q.popleft()
+
+                if status == 0 and self.button_is_pressed:
+                    if player_process:
+                        player_process.terminate()
+                    self.leds.update(Leds.rgb_on(Color.GREEN))
+                    logger.debug('Listening...')
+                    status = 1
+
+                if not q:
+                    break
+
+                if status > 0:
+                    yield q.popleft()
+
+                if status == 1 and not self.button_is_pressed:
+                    status = 2
+
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
-        self.wait_for_button_press()
-
-        if player_process:
-            player_process.terminate()
 
         text = ""
 
-        self.leds.update(Leds.rgb_on(Color.GREEN))
-        logger.debug('Listening...')
-
         with Recorder() as recorder:
-            # Create a generator that yields audio chunks
-            def generate_audio_chunks():
-                AUDIO_SAMPLE_RATE_HZ = 16000
-                AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
-                                           num_channels=1,
-                                           bytes_per_sample=2)
-                final_count = -1
-                for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.3):
-                    yield chunk
-                    if not self.button_is_pressed and final_count < 0:
-                        self.leds.update(Leds.rgb_off())
-                        final_count = 2
-                    if final_count > 0:
-                        final_count -= 1
-                    if final_count == 0:
-                        break
-
             # Create a streaming recognize request
             audio_generator = generate_audio_chunks()
             requests = (
