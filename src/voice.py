@@ -4,6 +4,7 @@ return text from speech
 
 import os
 import logging
+import time
 from subprocess import Popen
 from typing import Optional
 from aiy.leds import Leds, Color, Pattern
@@ -173,7 +174,14 @@ class SpeechTranscriber2:
             record_more = 0
             self.leds.pattern = Pattern.breathe(BREATHING_PERIOD_MS)
             self.leds.update(Leds.rgb_pattern(DARK_GREEN))
+            time_breathing_started = time.time()
+            max_breathing_duration = self.config.get('max_breathing_duration', 60)
+            breathing_on = True
             for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.3):
+                # if breathing is on for more than maX_breathing_duration seconds, switch off LED
+                if time.time() - time_breathing_started > max_breathing_duration and breathing_on:
+                    self.leds.update(Leds.rgb_off())
+                    breathing_on = False
                 logger.info(f"1. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(chunks_deque)}")
                 if status < 2 or status == 2 and record_more > 0:
                     if status == 2:
