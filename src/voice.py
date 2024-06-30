@@ -196,7 +196,7 @@ class SpeechTranscriber2:
             for response in responses:
                 for result in response.results:
                     logger.info(f"trascript: {result.alternatives[0].transcript}")
-                    # if result.is_final:
-                    text += result.alternatives[0].transcript
+                    if result.is_final:
+                        text += result.alternatives[0].transcript
 
         return text
