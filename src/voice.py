@@ -179,7 +179,7 @@ class SpeechTranscriber2:
                     if status == 0 and len(q) > 3:
                         q.popleft()
 
-                # logger.info(f"2. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
+                logger.info(f"2. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
                 if status == 0 and self.button_is_pressed:
                     if player_process:
                         player_process.terminate()
