@@ -165,14 +165,13 @@ class SpeechTranscriber2:
             AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
                                        num_channels=1,
                                        bytes_per_sample=2)
-            final_count = -1
             q = deque()
             status = 0  # 0 - not started, 1 - started, 2 - finished
-            for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.1):
+            for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.3):
                 logger.info(f"status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
                 if status < 2:
                     q.append(chunk)
-                    if len(q) > 5:
+                    if status == 0 and len(q) > 5:
                         q.popleft()
 
                 if status == 0 and self.button_is_pressed:
