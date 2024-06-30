@@ -172,7 +172,7 @@ class SpeechTranscriber2:
             self.leds.pattern = Pattern.breathe(BREATHING_PERIOD_MS)
             self.leds.update(Leds.rgb_pattern(DARK_GREEN))
             for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.3):
-                # logger.info(f"1. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
+                logger.info(f"1. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
                 if status < 2 or status == 2 and record_more > 0:
                     if status == 2:
                         record_more -= 1
@@ -208,6 +208,7 @@ class SpeechTranscriber2:
                 if status > 0:
                     chunk = q.popleft()
                     chunks.append(chunk)
+                    logger.info(f"chunk: {len(chunk)}")
                     yield chunk
 
                 # logger.info(f"3. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
