@@ -170,7 +170,6 @@ class SpeechTranscriber2:
         self.leds.update(Leds.rgb_on(Color.GREEN))
         logger.debug('Listening...')
 
-        chunks = []
         with Recorder() as recorder:
             # Create a generator that yields audio chunks
             def generate_audio_chunks():
@@ -178,12 +177,16 @@ class SpeechTranscriber2:
                 AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
                                            num_channels=1,
                                            bytes_per_sample=2)
+                final_count = -1
                 for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.1):
-                    chunks.append(chunk)
                     yield chunk
+                    if final_count > 0:
+                        final_count -= 1
+                        if final_count == 0:
+                            break
                     if not self.button_is_pressed:
                         self.leds.update(Leds.rgb_off())
-                        break
+                        final_count = 3
 
             # Create a streaming recognize request
             audio_generator = generate_audio_chunks()
@@ -194,8 +197,6 @@ class SpeechTranscriber2:
 
             # Send the requests and process the responses
             responses = self.speech_client.streaming_recognize(self.streaming_config, requests)
-
-            # logger.info(f"{len(chunks)} chunks recorded; {len(list(responses))} responses received")
 
             for response in responses:
                 logger.info(response)
