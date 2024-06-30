@@ -132,7 +132,7 @@ class SpeechTranscriber2:
         )
         self.streaming_config = speech.types.StreamingRecognitionConfig(config=config,
                                                                         interim_results=True,
-                                                                        single_utterance=True)
+                                                                        single_utterance=False)
 
     def button_pressed(self):
         self.button_is_pressed = True
