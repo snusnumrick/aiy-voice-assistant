@@ -177,10 +177,15 @@ class SpeechTranscriber2:
                 AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
                                            num_channels=1,
                                            bytes_per_sample=2)
-                for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.3):
+                final_count = -1
+                for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.1):
                     yield chunk
-                    if not self.button_is_pressed:
+                    if not self.button_is_pressed and final_count < 0:
                         self.leds.update(Leds.rgb_off())
+                        final_count = 10
+                    if final_count > 0:
+                        final_count -= 1
+                    if final_count == 0:
                         break
 
             # Create a streaming recognize request
