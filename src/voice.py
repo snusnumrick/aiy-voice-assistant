@@ -127,8 +127,7 @@ class SpeechTranscriber2:
         config = speech.types.RecognitionConfig(
             encoding=speech.types.RecognitionConfig.LINEAR16,
             sample_rate_hertz=AUDIO_SAMPLE_RATE_HZ,
-            language_code=self.language_code,
-            enable_automatic_punctuation=True,
+            language_code=self.language_code
         )
         self.streaming_config = speech.types.StreamingRecognitionConfig(config=config, interim_results=True)
 
