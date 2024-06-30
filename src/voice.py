@@ -183,7 +183,9 @@ class SpeechTranscriber2:
                 if status == 0 and self.button_is_pressed:
                     if player_process:
                         try:
+                            logger.debug('Terminating player process')
                             player_process.terminate()
+                            logger.debug('Player process terminated')
                         except Exception as e:
                             logger.error(f"Error terminating player process: {str(e)}")
                     self.leds.update(Leds.rgb_on(Color.GREEN))
