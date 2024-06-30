@@ -157,30 +157,32 @@ class SpeechTranscriber2:
 
     def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
         from google.cloud import speech
+        from collections import deque
+
+        chunks_deque = deque()
+        status = 0  # 0 - not started, 1 - started, 2 - finished
 
         def generate_audio_chunks():
-            from collections import deque
+            global status, chunks_deque
 
             AUDIO_SAMPLE_RATE_HZ = 16000
             AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
                                        num_channels=1,
                                        bytes_per_sample=2)
-            q = deque()
-            status = 0  # 0 - not started, 1 - started, 2 - finished
-            chunks = []
+            # chunks = []
             record_more = 0
             self.leds.pattern = Pattern.breathe(BREATHING_PERIOD_MS)
             self.leds.update(Leds.rgb_pattern(DARK_GREEN))
             for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.3):
-                logger.info(f"1. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
+                logger.info(f"1. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(chunks_deque)}")
                 if status < 2 or status == 2 and record_more > 0:
                     if status == 2:
                         record_more -= 1
-                    q.append(chunk)
-                    if status == 0 and len(q) > 3:
-                        q.popleft()
+                    chunks_deque.append(chunk)
+                    if status == 0 and len(chunks_deque) > 3:
+                        chunks_deque.popleft()
 
-                logger.info(f"2. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
+                logger.info(f"2. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(chunks_deque)}")
                 if status == 0 and self.button_is_pressed:
                     if player_process:
                         try:
@@ -193,7 +195,7 @@ class SpeechTranscriber2:
                     logger.info('Listening...')
                     status = 1
 
-                if not q:
+                if not chunks_deque:
                     # import wave
                     #
                     # with wave.open("recording.wav", 'wb') as wav_file:
@@ -206,8 +208,8 @@ class SpeechTranscriber2:
                     break
 
                 if status > 0:
-                    chunk = q.popleft()
-                    chunks.append(chunk)
+                    chunk = chunks_deque.popleft()
+                    # chunks.append(chunk)
                     logger.info(f"chunk: {len(chunk)}")
                     yield chunk
 
@@ -225,6 +227,11 @@ class SpeechTranscriber2:
         with Recorder() as recorder:
             # Create a streaming recognize request
             audio_generator = generate_audio_chunks()
+
+            for chunk in audio_generator:
+                if status:
+                    break
+
             requests = (
                 speech.types.StreamingRecognizeRequest(audio_content=chunk)
                 for chunk in audio_generator
