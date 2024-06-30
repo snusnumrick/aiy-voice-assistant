@@ -128,9 +128,10 @@ class SpeechTranscriber2:
             encoding=speech.types.RecognitionConfig.LINEAR16,
             sample_rate_hertz=AUDIO_SAMPLE_RATE_HZ,
             language_code=self.language_code,
-            enable_automatic_punctuation=True,
+            enable_automatic_punctuation=True
         )
-        self.streaming_config = speech.types.StreamingRecognitionConfig(config=config, interim_results=False)
+        self.streaming_config = speech.types.StreamingRecognitionConfig(config=config, interim_results=True,
+                                                                        single_utterance=True)
 
     def button_pressed(self):
         self.button_is_pressed = True
