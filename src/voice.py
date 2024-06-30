@@ -178,7 +178,7 @@ class SpeechTranscriber2:
                 if status == 0 and self.button_is_pressed:
                     if player_process:
                         player_process.terminate()
-                    self.leds.update(Leds.rgb_on(Color.GREEN))
+                    # self.leds.update(Leds.rgb_on(Color.GREEN))
                     logger.debug('Listening...')
                     status = 1
 
@@ -189,7 +189,7 @@ class SpeechTranscriber2:
                     yield q.popleft()
 
                 if status == 1 and not self.button_is_pressed:
-                    self.leds.update(Leds.rgb_off())
+                    # self.leds.update(Leds.rgb_off())
                     status = 2
 
         self.setup_button_callbacks()
