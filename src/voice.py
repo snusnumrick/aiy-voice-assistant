@@ -163,7 +163,7 @@ class SpeechTranscriber2:
         status = 0  # 0 - not started, 1 - started, 2 - finished
 
         def generate_audio_chunks():
-            global status, chunks_deque
+            nonlocal status, chunks_deque
 
             AUDIO_SAMPLE_RATE_HZ = 16000
             AUDIO_FORMAT = AudioFormat(sample_rate_hz=AUDIO_SAMPLE_RATE_HZ,
@@ -228,7 +228,7 @@ class SpeechTranscriber2:
             # Create a streaming recognize request
             audio_generator = generate_audio_chunks()
 
-            for chunk in audio_generator:
+            for _ in audio_generator:
                 if status:
                     break
 
