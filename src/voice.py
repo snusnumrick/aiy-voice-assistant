@@ -231,11 +231,13 @@ class SpeechTranscriber2:
             )
 
             # Send the requests and process the responses
+            logger.info(f"call to recognize")
             responses = self.speech_client.streaming_recognize(self.streaming_config, requests)
 
             for response in responses:
+                logger.info(f"response: {response}")
                 for result in response.results:
-                    # logger.info(f"trascript: {result.alternatives[0].transcript}")
+                    logger.info(f"trascript: {result.alternatives[0].transcript}")
                     if result.is_final:
                         text += result.alternatives[0].transcript
 
