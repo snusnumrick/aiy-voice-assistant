@@ -188,7 +188,7 @@ class SpeechTranscriber2:
                             break
                     if not self.button_is_pressed and final_count < 0:
                         self.leds.update(Leds.rgb_off())
-                        final_count = 3
+                        final_count = 10
 
             # Create a streaming recognize request
             audio_generator = generate_audio_chunks()
