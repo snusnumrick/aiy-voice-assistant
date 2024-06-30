@@ -27,7 +27,7 @@ class TTSEngine(ABC):
 
 
 class OpenAITTSEngine(TTSEngine):
-    def __init__(self, model="tts-1-hd", voice="onyx"):
+    def __init__(self, model="tts-1", voice="onyx"):
         from openai import OpenAI
         self.client = OpenAI()
         self.model = model

@@ -27,7 +27,7 @@ def main():
         time.sleep(1)
         leds.update(Leds.rgb_off())
 
-        main_loop(board.button, leds, OpenAISTTEngine(),  GoogleTTSEngine(config, "ru-RU"), config)
+        main_loop(board.button, leds, OpenAISTTEngine(),  OpenAITTSEngine(), config)
 
 
 if __name__ == '__main__':
