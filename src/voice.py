@@ -168,9 +168,11 @@ class SpeechTranscriber2:
             q = deque()
             status = 0  # 0 - not started, 1 - started, 2 - finished
             chunks = []
+            record_more = 0
             for chunk in recorder.record(AUDIO_FORMAT, chunk_duration_sec=0.3):
                 logger.info(f"1. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
-                if status < 2:
+                if status < 2 or status == 2 and record_more > 0:
+                    record_more -= 1
                     q.append(chunk)
                     if status == 0 and len(q) > 5:
                         q.popleft()
@@ -204,6 +206,7 @@ class SpeechTranscriber2:
                 if status == 1 and not self.button_is_pressed:
                     # self.leds.update(Leds.rgb_off())
                     status = 2
+                    record_more = 5
 
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
