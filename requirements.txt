@@ -1,7 +1,8 @@
 wheel
+git+https://github.com/google/aiyprojects-raspbian.git@aiyprojects#egg=aiy-projects-python
 google-cloud-speech
 google-cloud-texttospeech
 openai
-python-dotenv
-git+https://github.com/google/aiyprojects-raspbian.git@aiyprojects#egg=aiy-projects-python
+anthropic
 pydub
+python-dotenv

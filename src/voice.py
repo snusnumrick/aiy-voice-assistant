@@ -14,10 +14,10 @@ from aiy.voice.audio import Recorder
 
 if __name__ == '__main__':
     from config import Config
-    from STTEngine import STTEngine
+    from stt_engine import STTEngine
 else:
     from .config import Config
-    from .STTEngine import STTEngine
+    from .stt_engine import STTEngine
 
 logger = logging.getLogger(__name__)
 
