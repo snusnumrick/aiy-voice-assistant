@@ -19,7 +19,8 @@ from pydub import AudioSegment
 import tempfile
 import shutil
 import re
-from .tts_engine import TTSEngine
+from src.tts_engine import TTSEngine
+from src.config import Config
 
 logger = logging.getLogger(__name__)
 
