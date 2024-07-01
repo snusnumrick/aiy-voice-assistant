@@ -15,6 +15,11 @@ import logging
 import os
 from collections import deque
 import time
+import os
+from pydub import AudioSegment
+import tempfile
+import shutil
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +54,12 @@ class SpeechTranscriber:
         self.button_is_pressed = False
         self.setup_speech_client()
         self.breathing_period_ms = self.config.get('ready_breathing_period_ms', 10000)
-        self.led_breathing_color = self.config.get('ready_breathing_color', (0, 1, 0)) # dark green
+        self.led_breathing_color = self.config.get('ready_breathing_color', (0, 1, 0))  # dark green
         self.led_breathing_duration = self.config.get('ready_breathing_duration', 60)
-        self.led_processing_color = self.config.get('processing_color', (0, 1, 0)) # dark green
+        self.led_processing_color = self.config.get('processing_color', (0, 1, 0))  # dark green
         self.led_processing_blink_period_ms = self.config.get('processing_blink_period_ms', 300)
         self.audio_sample_rate = self.config.get('audio_sample_rate', 16000)
         self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.3)
-
 
     def setup_speech_client(self):
         """
@@ -165,7 +169,6 @@ class SpeechTranscriber:
             )
 
             # Send the requests and process the responses
-            logger.debug(f"call to recognize")
             responses = self.speech_client.streaming_recognize(self.streaming_config, requests)
 
             for response in responses:
@@ -208,16 +211,81 @@ class SpeechTranscriber:
         self.leds.update(Leds.rgb_off())
 
 
-def synthesize_speech(engine, text: str, filename: str, config):
+def split_text(text: str, max_length: int) -> List[str]:
     """
-    Synthesize speech from text and save it to a file.
+    Split text into chunks of maximum length.
 
     Args:
-        engine: The TTS engine to use for synthesis.
-        text (str): The text to synthesize.
-        filename (str): The filename to save the synthesized audio.
+        text (str): The text to split.
+        max_length (int): The maximum length of each chunk.
+
+    Returns:
+        List[str]: A list of text chunks.
+    """
+    sentences = re.split('(?<=[.!?]) +', text)
+    chunks = []
+    current_chunk = ""
+
+    for sentence in sentences:
+        if len(current_chunk) + len(sentence) < max_length:
+            current_chunk += sentence + " "
+        else:
+            chunks.append(current_chunk.strip())
+            current_chunk = sentence + " "
+
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+
+    return chunks
+
+
+def combine_audio_files(file_list: List[str], output_filename: str) -> None:
+    """
+    Combine multiple audio files into a single file.
+
+    Args:
+        file_list (List[str]): List of audio file paths to combine.
+        output_filename (str): Path to save the combined audio file.
+    """
+    logger.debug(f"Combining {len(file_list)} audio files into {output_filename}")
+    combined = AudioSegment.empty()
+    for file in file_list:
+        audio = AudioSegment.from_wav(file)
+        combined += audio
+    logger.debug(f"Exporting combined audio to {output_filename}")
+    combined.export(output_filename, format="wav")
+    logger.debug(f"Exported combined audio to {output_filename}")
+
+
+def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Config) -> None:
+    """
+    Synthesize speech from text, handling long texts by splitting and combining audio chunks.
+
+    Args:
+        engine (TTSEngine): The text-to-speech engine to use.
+        text (str): The text to synthesize into speech.
+        filename (str): The path to save the synthesized audio file.
         config (Config): The application configuration object.
     """
     logger.debug('Synthesizing speech for: %s', text)
-    engine.synthesize(text, filename)
-    logger.debug(f"Saved at {filename}")
+    max_size_tts = config.get('max_size_tts', 4096)  # Default to 4096 if not in config
+    chunks = split_text(text, max_length=max_size_tts)
+
+    temp_dir = tempfile.mkdtemp()
+    try:
+        chunk_files = []
+        for i, chunk in enumerate(chunks):
+            chunk_file = os.path.join(temp_dir, f"chunk_{i}.wav")
+            logger.debug(f"Synthesizing chunk {i}: {chunk}")
+            engine.synthesize(chunk, chunk_file)
+            logger.debug(f"Saved chunk {i} to {chunk_file}")
+            chunk_files.append(chunk_file)
+
+        if len(chunk_files) > 1:
+            combine_audio_files(chunk_files, filename)
+        else:
+            shutil.move(chunk_files[0], filename)
+    finally:
+        shutil.rmtree(temp_dir)
+
+    logger.debug(f"Final synthesized speech saved at {filename}")
