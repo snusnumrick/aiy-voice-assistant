@@ -35,7 +35,11 @@ class ConversationManager:
         self.config = config
         self.ai_model = ai_model
         self.message_history = deque()
-        self.message_history.append({"role": "system", "content": config.get('system_message', "Your name is Robi.")})
+        system_prompt = config.get('system_prompt',
+                                   "Тебя зовут Роби. "
+                                   "Ты мой друг и помощник. Отвечай естественно, как в устной речи."
+                                   "Если чего-то не знаешь, так и скажи.")
+        self.message_history.append({"role": "system", "content": system_prompt})
 
     def estimate_tokens(self, text: str) -> int:
         """
