@@ -12,6 +12,7 @@ from aiy.leds import Leds, Color, Pattern
 from aiy.voice.audio import AudioFormat, Recorder
 from google.cloud import speech
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ class SpeechTranscriber:
         """
         from google.oauth2 import service_account
         service_account_file = self.config.get('service_account_file', '~/gcloud.json')
+        service_account_file = os.path.expanduser(service_account_file)
         credentials = service_account.Credentials.from_service_account_file(service_account_file)
         self.speech_client = speech.SpeechClient(credentials=credentials)
         self.setup_streaming_config()
