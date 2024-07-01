@@ -16,7 +16,7 @@ from aiy.leds import Leds, Color
 
 from src.config import Config
 from src.stt_engine import OpenAISTTEngine
-from src.tts_engine import OpenAITTSEngine
+from src.tts_engine import OpenAITTSEngine, YandexTTSEngine
 from src.ai_models import OpenAIModel
 from src.conversation_manager import ConversationManager
 from src.dialog import main_loop
@@ -45,7 +45,7 @@ def main():
 
         # Initialize components
         stt_engine = OpenAISTTEngine()
-        tts_engine = OpenAITTSEngine(config)
+        tts_engine = YandexTTSEngine(config)
         ai_model = OpenAIModel(config)
         conversation_manager = ConversationManager(config, ai_model)
 

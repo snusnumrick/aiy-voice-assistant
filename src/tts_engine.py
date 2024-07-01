@@ -123,3 +123,61 @@ class GoogleTTSEngine(TTSEngine):
             out.write(response.audio_content)
 
         logger.debug(f"Audio content written to file {filename}")
+
+
+class YandexTTSEngine(TTSEngine):
+    """
+    Implementation of TTSEngine using Yandex SpeechKit via the speechkit module.
+    """
+
+    def __init__(self, config):
+        """
+        Initialize the Yandex TTS engine.
+
+        Args:
+            config (Config): The application configuration object.
+        """
+        from speechkit import model_repository, configure_credentials, creds
+
+        # Try to get the API key from environment variable first, then fall back to config
+        self.api_key = os.environ.get('YANDEX_API_KEY') or config.get('yandex_api_key')
+        if not self.api_key:
+            raise ValueError("Yandex API key is not provided in environment variables or configuration")
+
+        # Configure credentials
+        configure_credentials(
+            yandex_credentials=creds.YandexCredentials(
+                api_key=self.api_key
+            )
+        )
+
+        self.voice = config.get('yandex_tts_voice', 'ermil')
+        self.role = config.get('yandex_tts_role', 'good')
+        self.language_code = config.get('yandex_tts_language', 'ru-RU')
+        self.speed = config.get('yandex_tts_speed', 1.0)
+
+        # Initialize the synthesis model
+        self.model = model_repository.synthesis_model()
+        self.model.voice = self.voice
+        self.model.role = self.role
+        self.model.language = self.language_code
+        self.model.speed = self.speed
+
+        logger.info(f"Initialized Yandex TTS Engine with language {self.language_code}, voice {self.voice}, and role {self.role}")
+
+    def synthesize(self, text: str, filename: str) -> None:
+        """
+        Synthesize speech using Yandex SpeechKit and save it to a file.
+
+        Args:
+            text (str): The text to synthesize into speech.
+            filename (str): The path to save the synthesized audio file.
+        """
+        try:
+            logger.debug(f"Synthesizing text: {text[:50]}...")
+            result = self.model.synthesize(text, raw_format=False)
+            result.export(filename, 'wav')
+            logger.info(f"Audio content written to file {filename}")
+        except Exception as e:
+            logger.error(f"Error during speech synthesis: {str(e)}")
+            raise

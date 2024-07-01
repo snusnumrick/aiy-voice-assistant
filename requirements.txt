@@ -6,3 +6,4 @@ openai
 anthropic
 pydub
 python-dotenv
+yandex-speechkit
