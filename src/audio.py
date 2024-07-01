@@ -5,7 +5,7 @@ This module provides functionality for speech transcription and synthesis,
 interfacing with the Google Cloud Speech-to-Text API and various TTS engines.
 """
 
-from typing import Optional
+from typing import Optional, List
 from subprocess import Popen
 from aiy.board import Button
 from aiy.leds import Leds, Color, Pattern
