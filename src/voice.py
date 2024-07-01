@@ -182,7 +182,7 @@ class SpeechTranscriber2:
                 if time.time() - time_breathing_started > max_breathing_duration and breathing_on:
                     self.leds.update(Leds.rgb_off())
                     breathing_on = False
-                logger.info(f"1. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(chunks_deque)}")
+                logger.debug(f"1. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(chunks_deque)}")
                 if status < 2 or status == 2 and record_more > 0:
                     if status == 2:
                         record_more -= 1
@@ -190,7 +190,7 @@ class SpeechTranscriber2:
                     if status == 0 and len(chunks_deque) > 3:
                         chunks_deque.popleft()
 
-                logger.info(f"2. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(chunks_deque)}")
+                logger.debug(f"2. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(chunks_deque)}")
                 if status == 0 and self.button_is_pressed:
                     if player_process:
                         try:
@@ -218,12 +218,12 @@ class SpeechTranscriber2:
                 if status > 0:
                     chunk = chunks_deque.popleft()
                     # chunks.append(chunk)
-                    logger.info(f"chunk: {len(chunk)}")
+                    logger.debug(f"chunk: {len(chunk)}")
                     yield chunk
 
-                # logger.info(f"3. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
+                # logger.debug(f"3. status: {status}; button_is_pressed: {self.button_is_pressed}; queue: {len(q)}")
                 if status == 1 and not self.button_is_pressed:
-                    self.leds.pattern = Pattern.blink(1000)
+                    self.leds.pattern = Pattern.blink(100)
                     self.leds.update(Leds.rgb_pattern(DARK_GREEN))
                     status = 2
                     record_more = 2
@@ -247,15 +247,14 @@ class SpeechTranscriber2:
             )
 
             # Send the requests and process the responses
-            logger.info(f"call to recognize")
+            logger.debug(f"call to recognize")
             responses = self.speech_client.streaming_recognize(self.streaming_config, requests)
 
             for response in responses:
-                logger.info(f"response: {response}")
+                logger.debug(f"response: {response}")
                 for result in response.results:
-                    logger.info(f"trascript: {result.alternatives[0].transcript}")
+                    logger.debug(f"trascript: {result.alternatives[0].transcript}")
                     if result.is_final:
                         text += result.alternatives[0].transcript
 
-        self.leds.update(Leds.rgb_off())
         return text
