@@ -96,7 +96,7 @@ class SpeechTranscriber:
         text = ""
         with Recorder() as recorder:
             audio_generator = self.generate_audio_chunks(recorder)
-            requests = (speech.StreamingRecognizeRequest(audio_content=chunk) for chunk in audio_generator)
+            requests = (speech.types.StreamingRecognizeRequest(audio_content=chunk) for chunk in audio_generator)
             responses = self.speech_client.streaming_recognize(self.streaming_config, requests)
 
             for response in responses:
