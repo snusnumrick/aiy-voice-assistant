@@ -12,7 +12,6 @@ from aiy.leds import Leds, Color, Pattern
 from aiy.voice.audio import AudioFormat, Recorder
 from google.cloud import speech
 import logging
-import os
 from collections import deque
 import time
 import os
@@ -20,6 +19,7 @@ from pydub import AudioSegment
 import tempfile
 import shutil
 import re
+from .tts_engine import TTSEngine
 
 logger = logging.getLogger(__name__)
 
