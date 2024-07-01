@@ -54,6 +54,7 @@ def main_loop(button: Button, leds: Leds, stt_engine, tts_engine: TTSEngine, con
                 # Synthesize and play AI response
                 audio_file_name = config.get('audio_file_name', 'speech.wav')
                 synthesize_speech(tts_engine, ai_response, audio_file_name, config)
+                logger.info(f"Playing audio file: {audio_file_name}")
                 player_process = play_wav_async(audio_file_name)
 
         except Exception as e:
