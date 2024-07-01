@@ -17,7 +17,7 @@ from aiy.leds import Leds, Color
 from src.config import Config
 from src.stt_engine import OpenAISTTEngine
 from src.tts_engine import OpenAITTSEngine, YandexTTSEngine
-from src.ai_models import OpenAIModel
+from src.ai_models import OpenAIModel, ClaudeAIModel
 from src.conversation_manager import ConversationManager
 from src.dialog import main_loop
 
@@ -44,13 +44,12 @@ def main():
         leds.update(Leds.rgb_off())
 
         # Initialize components
-        stt_engine = OpenAISTTEngine()
         tts_engine = YandexTTSEngine(config)
-        ai_model = OpenAIModel(config)
+        ai_model = ClaudeAIModel(config)
         conversation_manager = ConversationManager(config, ai_model)
 
         # Start the main conversation loop
-        main_loop(board.button, leds, stt_engine, tts_engine, conversation_manager, config)
+        main_loop(board.button, leds, tts_engine, conversation_manager, config)
 
 
 if __name__ == '__main__':

@@ -17,7 +17,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def main_loop(button: Button, leds: Leds, stt_engine, tts_engine: TTSEngine, conversation_manager: ConversationManager,
+def main_loop(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_manager: ConversationManager,
               config: Config) -> None:
     """
     The main conversation loop of the AI assistant.

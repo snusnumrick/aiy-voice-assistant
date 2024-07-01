@@ -3,7 +3,7 @@ git+https://github.com/google/aiyprojects-raspbian.git@aiyprojects#egg=aiy-proje
 google-cloud-speech
 google-cloud-texttospeech
 openai
-anthropic
+anthropic==0.26
 pydub
 python-dotenv
 yandex-speechkit
