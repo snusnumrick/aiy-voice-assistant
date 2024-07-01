@@ -14,6 +14,7 @@ from google.cloud import speech
 import logging
 import os
 from collections import deque
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,14 @@ class SpeechTranscriber:
         self.config = config
         self.button_is_pressed = False
         self.setup_speech_client()
+        self.breathing_period_ms = self.config.get('ready_breathing_period_ms', 10000)
+        self.led_breathing_color = self.config.get('ready_breathing_color', (0, 1, 0)) # dark green
+        self.led_breathing_duration = self.config.get('ready_breathing_duration', 60)
+        self.led_processing_color = self.config.get('processing_color', (0, 1, 0)) # dark green
+        self.led_processing_blink_period_ms = self.config.get('processing_blink_period_ms', 300)
+        self.audio_sample_rate = self.config.get('audio_sample_rate', 16000)
+        self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.3)
+
 
     def setup_speech_client(self):
         """
@@ -87,50 +96,82 @@ class SpeechTranscriber:
         Returns:
             str: The transcribed text.
         """
+
+        chunks_deque = deque()
+        status = 0  # 0 - not started, 1 - started, 2 - finished
+
+        def generate_audio_chunks():
+            nonlocal status, chunks_deque
+
+            audio_format = AudioFormat(sample_rate_hz=self.audio_sample_rate,
+                                       num_channels=1,
+                                       bytes_per_sample=2)
+            record_more = 0
+            self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
+            self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
+            time_breathing_started = time.time()
+            breathing_on = True
+            for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
+                # if breathing is on for more than maX_breathing_duration seconds, switch off LED
+                if time.time() - time_breathing_started > self.led_breathing_duration and breathing_on:
+                    self.leds.update(Leds.rgb_off())
+                    breathing_on = False
+                if status < 2 or (status == 2 and record_more > 0):
+                    if status == 2:
+                        record_more -= 1
+                    chunks_deque.append(chunk)
+                    if status == 0 and len(chunks_deque) > 3:
+                        chunks_deque.popleft()
+
+                if status == 0 and self.button_is_pressed:
+                    if player_process:
+                        try:
+                            player_process.terminate()
+                        except Exception as e:
+                            logger.error(f"Error terminating player process: {str(e)}")
+                    self.leds.update(Leds.rgb_on(Color.GREEN))
+                    logger.info('Listening...')
+                    status = 1
+
+                if not chunks_deque:
+                    break
+
+                if status > 0:
+                    chunk = chunks_deque.popleft()
+                    yield chunk
+
+                if status == 1 and not self.button_is_pressed:
+                    self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
+                    self.leds.update(Leds.rgb_pattern(self.led_processing_color))
+                    status = 2
+                    record_more = 2
+
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
-        self.wait_for_button_press()
-
-        if player_process:
-            player_process.terminate()
 
         text = ""
+
         with Recorder() as recorder:
-            chunks = deque(maxlen=int(self.config.get('pre_buffer_seconds', 0.5) / 0.1))
-
-            def generate_audio_chunks():
-                nonlocal chunks
-                audio_format = AudioFormat(sample_rate_hz=16000, num_channels=1, bytes_per_sample=2)
-
-                # Pre-buffering
-                for chunk in recorder.record(audio_format, chunk_duration_sec=0.1):
-                    chunks.append(chunk)
-                    if self.button_is_pressed:
-                        break
-
-                # Main recording
-                self.leds.update(Leds.rgb_on(Color.GREEN))
-                logger.debug('Listening...')
-                while self.button_is_pressed:
-                    chunk = next(recorder.record(audio_format, chunk_duration_sec=0.1))
-                    chunks.append(chunk)
-                    yield chunk
-
-                # Post-buffering
-                post_buffer_chunks = int(self.config.get('post_buffer_seconds', 0.5) / 0.1)
-                for _ in range(post_buffer_chunks):
-                    chunk = next(recorder.record(audio_format, chunk_duration_sec=0.1))
-                    chunks.append(chunk)
-                    yield chunk
-
-                self.leds.update(Leds.rgb_off())
-
+            # Create a streaming recognize request
             audio_generator = generate_audio_chunks()
-            requests = (speech.types.StreamingRecognizeRequest(audio_content=chunk) for chunk in audio_generator)
+
+            for _ in audio_generator:
+                if status:
+                    break
+
+            requests = (
+                speech.types.StreamingRecognizeRequest(audio_content=chunk)
+                for chunk in audio_generator
+            )
+
+            # Send the requests and process the responses
+            logger.debug(f"call to recognize")
             responses = self.speech_client.streaming_recognize(self.streaming_config, requests)
 
             for response in responses:
+                logger.debug(f"response: {response}")
                 for result in response.results:
+                    logger.debug(f"trascript: {result.alternatives[0].transcript}")
                     if result.is_final:
                         text += result.alternatives[0].transcript
 
