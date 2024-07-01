@@ -65,7 +65,7 @@ class SpeechTranscriber:
         speech_language_code = self.config.get("language_code", "ru-RU")
         speech_sample_rate_hertz = self.config.get("sample_rate_hertz", 16000)
         config = speech.types.RecognitionConfig(
-            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+            encoding=speech.types.RecognitionConfig.AudioEncoding.LINEAR16,
             sample_rate_hertz=speech_sample_rate_hertz,
             language_code=self.config.get("language_code", speech_language_code),
             enable_automatic_punctuation=True
