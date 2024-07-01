@@ -7,6 +7,7 @@ for generating responses in conversations, including OpenAI's GPT and Anthropic'
 
 from abc import ABC, abstractmethod
 from typing import List, Dict
+import os
 
 
 class AIModel(ABC):
@@ -42,7 +43,7 @@ class OpenAIModel(AIModel):
         """
         from openai import OpenAI
         self.client = OpenAI()
-        self.model = config.get('openai_model', 'gpt-4')
+        self.model = config.get('openai_model', 'gpt-4o')
         self.max_tokens = config.get('max_tokens', 4096)
 
     def get_response(self, messages: List[Dict[str, str]]) -> str:
@@ -77,7 +78,7 @@ class ClaudeAIModel(AIModel):
         """
         import anthropic
         self.client = anthropic.Anthropic(api_key=config.get('anthropic_api_key'))
-        self.model = config.get('claude_model', 'claude-2.1')
+        self.model = config.get('claude_model', 'claude-3-5-sonnet-20240620')
         self.max_tokens = config.get('max_tokens', 1000)
 
     def get_response(self, messages: List[Dict[str, str]]) -> str:
@@ -119,3 +120,39 @@ class ClaudeAIModel(AIModel):
                 prompt += f"Assistant: {message['content']}\n\n"
         prompt += "Assistant:"
         return prompt
+
+
+class OpenRouterModel(AIModel):
+    """
+    Implementation of AIModel using OpenAI's GPT model.
+    """
+
+    def __init__(self, config):
+        """
+        Initialize the OpenRouter model.
+
+        Args:
+            config (Config): The application configuration object.
+        """
+        from openai import OpenAI
+        self.client = OpenAI(base_url="https://openrouter.ai/api/v1",
+                             api_key=os.getenv("OPENROUTER_API_KEY"))
+        self.model = config.get('openrouter_model', 'anthropic/claude-3.5-sonnet')
+        self.max_tokens = config.get('max_tokens', 4096)
+
+    def get_response(self, messages: List[Dict[str, str]]) -> str:
+        """
+        Generate a response using OpenRouter model.
+
+        Args:
+            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+
+        Returns:
+            str: The generated response.
+        """
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=self.max_tokens
+        )
+        return response.choices[0].message.content.strip()
