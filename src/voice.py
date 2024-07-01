@@ -89,7 +89,7 @@ class SpeechTranscriber:
         return text
 
     def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
-        recording_file_name = self.config.get('recording_file_name', 'recording.wav')
+        recording_file_name = self.types.get('recording_file_name', 'recording.wav')
 
         self.setup_button_callbacks()
         logger.info('Press the button and speak')

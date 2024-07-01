@@ -62,13 +62,15 @@ class SpeechTranscriber:
         """
         Configure the streaming recognition settings.
         """
-        config = speech.RecognitionConfig(
+        speech_language_code = self.config.get("language_code", "ru-RU")
+        speech_sample_rate_hertz = self.config.get("sample_rate_hertz", 16000)
+        config = speech.types.RecognitionConfig(
             encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-            sample_rate_hertz=16000,
-            language_code=self.config.get("language_code", "en-US"),
+            sample_rate_hertz=speech_sample_rate_hertz,
+            language_code=self.config.get("language_code", speech_language_code),
             enable_automatic_punctuation=True
         )
-        self.streaming_config = speech.StreamingRecognitionConfig(
+        self.streaming_config = speech.types.StreamingRecognitionConfig(
             config=config,
             interim_results=True,
             single_utterance=False
