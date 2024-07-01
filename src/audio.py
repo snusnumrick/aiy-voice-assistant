@@ -13,6 +13,7 @@ from aiy.voice.audio import AudioFormat, Recorder
 from google.cloud import speech
 import logging
 import os
+from collections import deque
 
 logger = logging.getLogger(__name__)
 
