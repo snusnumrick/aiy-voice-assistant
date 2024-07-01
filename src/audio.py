@@ -78,7 +78,7 @@ class SpeechTranscriber:
 
     def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
         """
-        Transcribe speech from the microphone input.
+        Transcribe speech from the microphone input, including pre and post buffering.
 
         Args:
             player_process (Optional[Popen]): A subprocess.Popen object representing a running audio player.
@@ -95,7 +95,36 @@ class SpeechTranscriber:
 
         text = ""
         with Recorder() as recorder:
-            audio_generator = self.generate_audio_chunks(recorder)
+            chunks = deque(maxlen=int(self.config.get('pre_buffer_seconds', 0.5) / 0.1))
+
+            def generate_audio_chunks():
+                nonlocal chunks
+                audio_format = AudioFormat(sample_rate_hz=16000, num_channels=1, bytes_per_sample=2)
+
+                # Pre-buffering
+                for chunk in recorder.record(audio_format, chunk_duration_sec=0.1):
+                    chunks.append(chunk)
+                    if self.button_is_pressed:
+                        break
+
+                # Main recording
+                self.leds.update(Leds.rgb_on(Color.GREEN))
+                logger.debug('Listening...')
+                while self.button_is_pressed:
+                    chunk = next(recorder.record(audio_format, chunk_duration_sec=0.1))
+                    chunks.append(chunk)
+                    yield chunk
+
+                # Post-buffering
+                post_buffer_chunks = int(self.config.get('post_buffer_seconds', 0.5) / 0.1)
+                for _ in range(post_buffer_chunks):
+                    chunk = next(recorder.record(audio_format, chunk_duration_sec=0.1))
+                    chunks.append(chunk)
+                    yield chunk
+
+                self.leds.update(Leds.rgb_off())
+
+            audio_generator = generate_audio_chunks()
             requests = (speech.types.StreamingRecognizeRequest(audio_content=chunk) for chunk in audio_generator)
             responses = self.speech_client.streaming_recognize(self.streaming_config, requests)
 
@@ -105,24 +134,6 @@ class SpeechTranscriber:
                         text += result.alternatives[0].transcript
 
         return text
-
-    def generate_audio_chunks(self, recorder):
-        """
-        Generate audio chunks from the recorder.
-
-        Args:
-            recorder: The audio recorder object.
-
-        Yields:
-            bytes: Audio chunk data.
-        """
-        audio_format = AudioFormat(sample_rate_hz=16000, num_channels=1, bytes_per_sample=2)
-        self.leds.update(Leds.rgb_on(Color.GREEN))
-        for chunk in recorder.record(audio_format, chunk_duration_sec=0.1):
-            yield chunk
-            if not self.button_is_pressed:
-                self.leds.update(Leds.rgb_off())
-                break
 
     def setup_button_callbacks(self):
         """
