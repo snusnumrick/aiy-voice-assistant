@@ -38,6 +38,7 @@ class ConversationManager:
         system_prompt = config.get('system_prompt',
                                    "Тебя зовут Роби. "
                                    "Ты мой друг и помощник. Отвечай естественно, как в устной речи."
+                                   "Говори мксимально просто и понятно. Не используй списки и нумерации."
                                    "Если чего-то не знаешь, так и скажи.")
         self.message_history.append({"role": "system", "content": system_prompt})
 
