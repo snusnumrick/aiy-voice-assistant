@@ -217,7 +217,7 @@ class SpeechTranscriber:
         status = 0  # 0 - not started, 1 - started, 2 - finished
 
         def generate_audio_chunks():
-            nonlocal status, chunks_deque
+            nonlocal status, chunks_deque, player_process
 
             audio_format = AudioFormat(sample_rate_hz=self.audio_sample_rate,
                                        num_channels=1,
@@ -259,7 +259,7 @@ class SpeechTranscriber:
 
             def stop_playing():
                 nonlocal player_process
-                if player_process:
+                if player_process and player_process.returncode is not None:
                     try:
                         logger.info("Terminating player process")
                         player_process.terminate()
