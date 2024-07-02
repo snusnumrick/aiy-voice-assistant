@@ -130,8 +130,7 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                     print(f"Partial: {response.partial.alternatives[0].text}")
                 elif event_type == 'final':
                     current_segment = response.final.alternatives[0].text
-                    confidence = response.final.alternatives[0].confidence
-                    print(f"Final (confidence: {confidence}): {current_segment}")
+                    print(f"Final (confidence: {current_segment}")
                 elif event_type == 'final_refinement':
                     refined_text = response.final_refinement.normalized_text.alternatives[0].text
                     print(f"Refined: {refined_text}")
