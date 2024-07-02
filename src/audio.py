@@ -227,7 +227,7 @@ class SpeechTranscriber:
 
             def start_idle():
                 nonlocal status, time_breathing_started, breathing_on
-                logger.info('Ready to listen...')
+                logger.debug('Ready to listen...')
                 status = 0
                 self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
@@ -236,7 +236,7 @@ class SpeechTranscriber:
 
             def start_listening():
                 nonlocal status, breathing_on, recoding_started_at
-                logger.info('Recording audio...')
+                logger.debug('Recording audio...')
                 self.leds.update(Leds.rgb_on(self.led_recording_color))
                 breathing_on = False
                 logger.debug('Listening...')
@@ -245,7 +245,7 @@ class SpeechTranscriber:
 
             def start_processing():
                 nonlocal status, record_more
-                logger.info('Processing audio...')
+                logger.debug('Processing audio...')
                 self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_processing_color))
                 status = 2
@@ -253,7 +253,7 @@ class SpeechTranscriber:
 
             def stop_breathing():
                 nonlocal breathing_on
-                logger.info('Breathing off')
+                logger.debug('Breathing off')
                 self.leds.update(Leds.rgb_off())
                 breathing_on = False
 
@@ -261,11 +261,11 @@ class SpeechTranscriber:
                 nonlocal player_process
                 if player_process and player_process.returncode is None:
                     try:
-                        logger.info("Terminating player process")
+                        logger.debug("Terminating player process")
                         chunks_deque.clear()
                         player_process.kill()
                         player_process.wait()
-                        logger.info("Player process terminated")
+                        logger.debug("Player process terminated")
                         # time.sleep(0.5)
                     except Exception as e:
                         logger.error(f"Error terminating player process: {str(e)}")
