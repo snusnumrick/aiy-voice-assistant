@@ -142,6 +142,8 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                         full_text += current_segment + " "
                         print(f"Added unrefined segment: {current_segment}")
                     current_segment = ""  # Reset current segment
+                elif event_type == 'classifier_update':
+                    print(response.classifier_update)
         except grpc.RpcError as err:
             print(f'Error code {err.code()}, message: {err.details()}')
             raise err
