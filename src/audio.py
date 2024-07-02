@@ -204,7 +204,7 @@ class SpeechTranscriber:
                     self.leds.update(Leds.rgb_off())
                     breathing_on = False
                 if status < 2 or (status == 2 and record_more > 0):
-                    logger.info(f"Recording audio chunk, status={status}, record_more={record_more}")
+                    logger.info(f"Recording audio chunk, status={status}, record_more={record_more}, deque={len(chunks_deque)}")
                     if status == 2:
                         record_more -= 1
                     chunks_deque.append(chunk)
@@ -222,12 +222,12 @@ class SpeechTranscriber:
                     status = 1
 
                 if not chunks_deque:
-                    logger.debug("No audio chunk available")
+                    logger.info("No audio chunk available")
                     break
 
                 if status > 0:
                     chunk = chunks_deque.popleft()
-                    logger.debug("Yielding audio chunk")
+                    logger.info("Yielding audio chunk")
                     yield chunk
 
                 if status == 1 and not self.button_is_pressed:
