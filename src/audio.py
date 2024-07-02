@@ -90,32 +90,31 @@ class YandexSpeechRecognition(SpeechRecognitionService):
         self.confidence_threshold = config.get("confidence_threshold", 0.7)
 
         self.recognize_options = stt_pb2.StreamingOptions(
-                recognition_model=stt_pb2.RecognitionModelOptions(
-                    audio_format=stt_pb2.AudioFormatOptions(
-                        raw_audio=stt_pb2.RawAudio(
-                            audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
-                            sample_rate_hertz=config.get("sample_rate_hertz", 16000),
-                            audio_channel_count=1
-                        )
-                    ),
-                    text_normalization=stt_pb2.TextNormalizationOptions(
-                        text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
-                        profanity_filter=config.get("profanity_filter", False),
-                        literature_text=False
-                    ),
-                    language_restriction=stt_pb2.LanguageRestrictionOptions(
-                        restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
-                        language_code=[config.get("language_code", "ru-RU")]
-                    ),
-                    audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME
-                ),
-                eou_classifier=stt_pb2.EouClassifierOptions(
-                    default_classifier=stt_pb2.DefaultEouClassifier(
-                        type=stt_pb2.DefaultEouClassifier.EOU_SENSITIVITY_NORMAL,
-                        max_pause_between_words_hint_ms=config.get("max_pause_between_words_ms", 1000)
+            recognition_model=stt_pb2.RecognitionModelOptions(
+                audio_format=stt_pb2.AudioFormatOptions(
+                    raw_audio=stt_pb2.RawAudio(
+                        audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
+                        sample_rate_hertz=config.get("sample_rate_hertz", 16000),
+                        audio_channel_count=1
                     )
+                ),
+                text_normalization=stt_pb2.TextNormalizationOptions(
+                    text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
+                    profanity_filter=config.get("profanity_filter", False),
+                    literature_text=False
+                ),
+                language_restriction=stt_pb2.LanguageRestrictionOptions(
+                    restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
+                    language_code=[config.get("language_code", "ru-RU")]
+                ),
+                audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME
+            ),
+            eou_classifier=stt_pb2.EouClassifierOptions(
+                default_classifier=stt_pb2.DefaultEouClassifier(
+                    max_pause_between_words_hint_ms=config.get("max_pause_between_words_ms", 1000)
                 )
             )
+        )
 
     def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
         def request_generator():
