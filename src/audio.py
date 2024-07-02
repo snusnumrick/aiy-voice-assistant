@@ -161,61 +161,65 @@ class YandexSpeechRecognition(SpeechRecognitionService):
 
         try:
             for response in responses:
+                logger.debug(f"Received response: {response}")
                 event_type = response.WhichOneof('Event')
 
                 if event_type == 'partial':
                     if response.partial.alternatives:
-                        print(f"Partial: {response.partial.alternatives[0].text}")
+                        logger.info(f"Partial: {response.partial.alternatives[0].text}")
                     else:
-                        print("Received empty partial result")
+                        logger.info("Received empty partial result")
 
                 elif event_type == 'final':
                     if response.final.alternatives:
                         current_segment = response.final.alternatives[0].text
                         duration_ms = response.final.alternatives[0].end_time_ms - response.final.alternatives[
                             0].start_time_ms
-                        current_confidence = response.final.alternatives[0].confidence
+                        current_confidence = getattr(response.final.alternatives[0], 'confidence', 0.0)
+                        logger.info(f"Final (confidence: {current_confidence}): {current_segment}")
                         if self.is_valid_transcription(current_segment, duration_ms, current_confidence):
-                            print(f"Final (confidence: {current_confidence}): {current_segment}")
+                            full_text += current_segment + " "
                         else:
-                            print(f"Discarded invalid final (confidence: {current_confidence}): {current_segment}")
+                            logger.info(f"Discarded invalid final: {current_segment}")
                             current_segment = ""
                     else:
-                        print("Received empty final result")
+                        logger.info("Received empty final result")
 
                 elif event_type == 'final_refinement':
                     if response.final_refinement.normalized_text.alternatives:
                         refined_text = response.final_refinement.normalized_text.alternatives[0].text
                         duration_ms = response.final_refinement.normalized_text.alternatives[0].end_time_ms - \
                                       response.final_refinement.normalized_text.alternatives[0].start_time_ms
-                        confidence = response.final_refinement.normalized_text.alternatives[0].confidence
+                        confidence = getattr(response.final_refinement.normalized_text.alternatives[0], 'confidence',
+                                             0.0)
+                        logger.info(f"Refined (confidence: {confidence}): {refined_text}")
                         if self.is_valid_transcription(refined_text, duration_ms, confidence):
                             full_text += refined_text + " "
-                            print(f"Added refined (confidence: {confidence}): {refined_text}")
                         else:
-                            print(f"Discarded invalid refinement (confidence: {confidence}): {refined_text}")
+                            logger.info(f"Discarded invalid refinement: {refined_text}")
                     else:
-                        print("Received empty final refinement")
+                        logger.info("Received empty final refinement")
 
                 elif event_type == 'eou_update':
-                    if current_segment:
-                        full_text += current_segment + " "
-                        print(f"Added unrefined segment (confidence: {current_confidence}): {current_segment}")
-                    current_segment = ""
-                    current_confidence = 0.0
+                    logger.info("Received EOU update")
 
                 elif event_type == 'status_code':
-                    print(
+                    logger.info(
                         f"Received status code: {response.status_code.code_type}, message: {response.status_code.message}")
 
-        except grpc.RpcError as e:
-            print(f"gRPC error occurred: {e}")
-        except Exception as e:
-            print(f"An unexpected error occurred: {e}")
+                else:
+                    logger.warning(f"Received unexpected event type: {event_type}")
 
+        except grpc.RpcError as e:
+            logger.error(f"gRPC error occurred: {e}")
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {e}")
+
+        logger.info(f"Final transcription: {full_text.strip()}")
         return full_text.strip()
 
-    def __del__(self):
+
+def __del__(self):
         if hasattr(self, 'channel'):
             self.channel.close()
 
