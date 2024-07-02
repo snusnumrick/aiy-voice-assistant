@@ -77,6 +77,7 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
 class YandexSpeechRecognition(SpeechRecognitionService):
     def setup_client(self, config):
         import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
+        import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 
         self.api_key = os.environ.get('YANDEX_API_KEY') or config.get('yandex_api_key')
         if not self.api_key:
@@ -86,31 +87,33 @@ class YandexSpeechRecognition(SpeechRecognitionService):
         self.channel = grpc.secure_channel('stt.api.cloud.yandex.net:443', cred)
         self.stub = stt_service_pb2_grpc.RecognizerStub(self.channel)
 
+        self.recognize_options = stt_pb2.StreamingOptions(
+            recognition_model=stt_pb2.RecognitionModelOptions(
+                audio_format=stt_pb2.AudioFormatOptions(
+                    raw_audio=stt_pb2.RawAudio(
+                        audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
+                        sample_rate_hertz=config.get("sample_rate_hertz", 16000),
+                        audio_channel_count=1
+                    )
+                ),
+                text_normalization=stt_pb2.TextNormalizationOptions(
+                    text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
+                    profanity_filter=config.get("profanity_filter", False),
+                    literature_text=False
+                ),
+                language_restriction=stt_pb2.LanguageRestrictionOptions(
+                    restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
+                    language_code=[config.get("language_code", "ru-RU")]
+                ),
+                audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME
+            )
+        )
+
     def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
         def request_generator():
-            recognize_options = stt_pb2.StreamingOptions(
-                recognition_model=stt_pb2.RecognitionModelOptions(
-                    audio_format=stt_pb2.AudioFormatOptions(
-                        raw_audio=stt_pb2.RawAudio(
-                            audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
-                            sample_rate_hertz=config.get("sample_rate_hertz", 16000),
-                            audio_channel_count=1
-                        )
-                    ),
-                    text_normalization=stt_pb2.TextNormalizationOptions(
-                        text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
-                        profanity_filter=config.get("profanity_filter", False),
-                        literature_text=False
-                    ),
-                    language_restriction=stt_pb2.LanguageRestrictionOptions(
-                        restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
-                        language_code=[config.get("language_code", "ru-RU")]
-                    ),
-                    audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME
-                )
-            )
+            import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 
-            yield stt_pb2.StreamingRequest(session_options=recognize_options)
+            yield stt_pb2.StreamingRequest(session_options=self.recognize_options)
 
             for chunk in audio_generator:
                 yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=chunk))
