@@ -238,6 +238,7 @@ class SpeechTranscriber:
 
             text = self.speech_service.transcribe_stream(audio_generator, self.config)
 
+        self.leds.update(Leds.rgb_off())  # Ensure LED is turned off after transcription
         return text
 
     def setup_button_callbacks(self):
