@@ -163,7 +163,7 @@ class SpeechTranscriber:
         self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.3)
 
     def setup_speech_service(self):
-        service_name = self.config.get('speech_recognition_service', 'google').lower()
+        service_name = self.config.get('speech_recognition_service', 'yandex').lower()
         if service_name == 'google':
             self.speech_service = GoogleSpeechRecognition()
         elif service_name == 'yandex':
