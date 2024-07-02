@@ -260,7 +260,7 @@ class SpeechTranscriber:
                     try:
                         player_process.terminate()
                         player_process.wait()
-                        time.sleep(0.5)
+                        chunks_deque.clear()
                     except Exception as e:
                         logger.error(f"Error terminating player process: {str(e)}")
 
