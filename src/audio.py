@@ -47,12 +47,7 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
         service_account_file = os.path.expanduser(service_account_file)
         credentials = service_account.Credentials.from_service_account_file(service_account_file)
         self.client = speech.SpeechClient(credentials=credentials)
-
-    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
-        from google.cloud import speech
-
-        logger.debug("Transcribing audio stream (google)")
-        streaming_config = speech.types.StreamingRecognitionConfig(
+        self.streaming_config = speech.types.StreamingRecognitionConfig(
             config=speech.types.RecognitionConfig(
                 encoding=speech.types.RecognitionConfig.AudioEncoding.LINEAR16,
                 sample_rate_hertz=config.get("sample_rate_hertz", 16000),
@@ -61,8 +56,14 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
             ),
             interim_results=True
         )
+
+    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+        from google.cloud import speech
+
+        logger.debug("Transcribing audio stream (google)")
+
         requests = (speech.types.StreamingRecognizeRequest(audio_content=chunk) for chunk in audio_generator)
-        responses = self.client.streaming_recognize(streaming_config, requests)
+        responses = self.client.streaming_recognize(self.streaming_config, requests)
 
         text = ""
         for response in responses:
@@ -77,6 +78,7 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
 class YandexSpeechRecognition(SpeechRecognitionService):
     def setup_client(self, config):
         import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
+        import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 
         self.api_key = os.environ.get('YANDEX_API_KEY') or config.get('yandex_api_key')
         if not self.api_key:
@@ -85,12 +87,9 @@ class YandexSpeechRecognition(SpeechRecognitionService):
         cred = grpc.ssl_channel_credentials()
         self.channel = grpc.secure_channel('stt.api.cloud.yandex.net:443', cred)
         self.stub = stt_service_pb2_grpc.RecognizerStub(self.channel)
+        self.confidence_threshold = config.get("confidence_threshold", 0.7)
 
-    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
-        def request_generator():
-            import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
-
-            recognize_options = stt_pb2.StreamingOptions(
+        self.recognize_options = stt_pb2.StreamingOptions(
                 recognition_model=stt_pb2.RecognitionModelOptions(
                     audio_format=stt_pb2.AudioFormatOptions(
                         raw_audio=stt_pb2.RawAudio(
@@ -109,10 +108,20 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                         language_code=[config.get("language_code", "ru-RU")]
                     ),
                     audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME
+                ),
+                eou_classifier=stt_pb2.EouClassifierOptions(
+                    default_classifier=stt_pb2.DefaultEouClassifier(
+                        type=stt_pb2.DefaultEouClassifier.EOU_SENSITIVITY_NORMAL,
+                        max_pause_between_words_hint_ms=config.get("max_pause_between_words_ms", 1000)
+                    )
                 )
             )
 
-            yield stt_pb2.StreamingRequest(session_options=recognize_options)
+    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+        def request_generator():
+            import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
+
+            yield stt_pb2.StreamingRequest(session_options=self.recognize_options)
 
             for chunk in audio_generator:
                 yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=chunk))
@@ -121,18 +130,31 @@ class YandexSpeechRecognition(SpeechRecognitionService):
         responses = self.stub.RecognizeStreaming(request_generator(), metadata=metadata)
 
         full_text = ""
+        current_segment = ""
         try:
             for response in responses:
                 event_type = response.WhichOneof('Event')
                 if event_type == 'partial' and response.partial.alternatives:
                     print(f"Partial: {response.partial.alternatives[0].text}")
                 elif event_type == 'final':
-                    final_text = response.final.alternatives[0].text
-                    full_text += final_text + " "
-                    print(f"Final: {final_text}")
+                    current_segment = response.final.alternatives[0].text
+                    confidence = response.final.alternatives[0].confidence
+                    print(f"Final (confidence: {confidence}): {current_segment}")
                 elif event_type == 'final_refinement':
                     refined_text = response.final_refinement.normalized_text.alternatives[0].text
-                    print(f"Refined: {refined_text}")
+                    confidence = response.final_refinement.normalized_text.alternatives[0].confidence
+                    if confidence > self.confidence_threshold:
+                        full_text += refined_text + " "
+                        print(f"Refined (confidence: {confidence}): {refined_text}")
+                    else:
+                        print(f"Discarded low confidence refinement: {refined_text}")
+                    current_segment = ""  # Reset current segment
+                elif event_type == 'eou_update':
+                    # If we have a current segment that wasn't refined, add it to full_text
+                    if current_segment and confidence > self.confidence_threshold:
+                        full_text += current_segment + " "
+                        print(f"Added unrefined segment: {current_segment}")
+                    current_segment = ""  # Reset current segment
         except grpc.RpcError as err:
             print(f'Error code {err.code()}, message: {err.details()}')
             raise err
@@ -280,7 +302,7 @@ class SpeechTranscriber:
                     yield chunks_deque.popleft()
 
                 if status == 1 and not self.button_is_pressed:
-                    logger.debug('Stopped listening')
+                    logger.info("listened for %s seconds", time.time() - recoding_started_at)
                     if time.time() - recoding_started_at < self.min_recording_duration_sec:
                         logger.debug('Recording duration is too short, ignoring')
                         start_idle()
