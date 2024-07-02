@@ -126,6 +126,7 @@ class YandexSpeechRecognition(SpeechRecognitionService):
         try:
             for response in responses:
                 event_type = response.WhichOneof('Event')
+                print(f"Event type: {event_type}")
                 if event_type == 'partial' and response.partial.alternatives:
                     logger.debug(f"Partial: {response.partial.alternatives[0].text}")
                 elif event_type == 'final':
