@@ -262,10 +262,10 @@ class SpeechTranscriber:
                 if player_process and player_process.returncode is None:
                     try:
                         logger.info("Terminating player process")
-                        player_process.terminate()
-                        player_process.wait()
-                        logger.info("Player process terminated")
                         chunks_deque.clear()
+                        player_process.terminate()
+                        # player_process.wait()
+                        logger.info("Player process terminated")
                         # time.sleep(0.5)
                     except Exception as e:
                         logger.error(f"Error terminating player process: {str(e)}")
