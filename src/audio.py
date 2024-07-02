@@ -12,6 +12,7 @@ from aiy.leds import Leds, Color, Pattern
 from aiy.voice.audio import AudioFormat, Recorder
 from google.cloud import speech
 import logging
+import numpy as np
 from abc import ABC, abstractmethod
 from collections import deque
 import time
@@ -87,79 +88,117 @@ class YandexSpeechRecognition(SpeechRecognitionService):
         cred = grpc.ssl_channel_credentials()
         self.channel = grpc.secure_channel('stt.api.cloud.yandex.net:443', cred)
         self.stub = stt_service_pb2_grpc.RecognizerStub(self.channel)
+
+        self.sample_rate_hertz=config.get("sample_rate_hertz", 16000)
+        self.noise_words = set(config.get("noise_words", ["а", "эм", "хм", "кхм"]))
+        self.min_speech_duration_ms = config.get("min_speech_duration_ms", 300)
+        self.energy_threshold = config.get("energy_threshold", 0.1)
         self.confidence_threshold = config.get("confidence_threshold", 0.7)
 
-        self.recognize_options = stt_pb2.StreamingOptions(
-            recognition_model=stt_pb2.RecognitionModelOptions(
-                audio_format=stt_pb2.AudioFormatOptions(
-                    raw_audio=stt_pb2.RawAudio(
-                        audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
-                        sample_rate_hertz=config.get("sample_rate_hertz", 16000),
-                        audio_channel_count=1
+        self.streaming_options = stt_pb2.StreamingOptions(
+                recognition_model=stt_pb2.RecognitionModelOptions(
+                    model=config.get("model", "general"),
+                    audio_format=stt_pb2.AudioFormatOptions(
+                        raw_audio=stt_pb2.RawAudio(
+                            audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
+                            sample_rate_hertz=config.get("sample_rate_hertz", 16000),
+                            audio_channel_count=1
+                        )
+                    ),
+                    text_normalization=stt_pb2.TextNormalizationOptions(
+                        text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
+                        profanity_filter=config.get("profanity_filter", False),
+                        literature_text=config.get("literature_text", False)
+                    ),
+                    language_restriction=stt_pb2.LanguageRestrictionOptions(
+                        restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
+                        language_code=[config.get("language_code", "ru-RU")]
+                    ),
+                    audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME
+                ),
+                eou_classifier=stt_pb2.EouClassifierOptions(
+                    default_classifier=stt_pb2.DefaultEouClassifier(
+                        max_pause_between_words_hint_ms=config.get("max_pause_between_words_ms", 1000)
                     )
-                ),
-                text_normalization=stt_pb2.TextNormalizationOptions(
-                    text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
-                    profanity_filter=config.get("profanity_filter", False),
-                    literature_text=False
-                ),
-                language_restriction=stt_pb2.LanguageRestrictionOptions(
-                    restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
-                    language_code=[config.get("language_code", "ru-RU")]
-                ),
-                audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME
-            ),
-            eou_classifier=stt_pb2.EouClassifierOptions(
-                default_classifier=stt_pb2.DefaultEouClassifier(
-                    max_pause_between_words_hint_ms=config.get("max_pause_between_words_ms", 1000)
                 )
             )
-        )
+
+    def is_valid_transcription(self, text, duration_ms):
+        words = text.split()
+        if not words:
+            return False
+        if all(word.lower() in self.noise_words for word in words):
+            return False
+        if duration_ms < self.min_speech_duration_ms:
+            return False
+        return True
+
+    def is_speech(self, audio_chunk, sample_rate):
+        audio_data = np.frombuffer(audio_chunk, dtype=np.int16)
+        energy = np.mean(np.abs(audio_data))
+        return energy > self.energy_threshold * 32768  # 32768 is max value for 16-bit audio
 
     def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
         def request_generator():
             import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 
-            yield stt_pb2.StreamingRequest(session_options=self.recognize_options)
+            yield stt_pb2.StreamingRequest(session_options=self.streaming_options)
 
             for chunk in audio_generator:
-                yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=chunk))
+                if self.is_speech(chunk, self.sample_rate_hertz):
+                    yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=chunk))
 
         metadata = [('authorization', f'Api-Key {self.api_key}')]
         responses = self.stub.RecognizeStreaming(request_generator(), metadata=metadata)
 
         full_text = ""
         current_segment = ""
-        try:
-            for response in responses:
-                event_type = response.WhichOneof('Event')
-                if event_type == 'partial' and response.partial.alternatives:
-                    print(f"Partial: {response.partial.alternatives[0].text}")
-                elif event_type == 'final':
-                    current_segment = response.final.alternatives[0].text
-                    confidence = response.final.alternatives[0].confidence
-                    print(f"Final (confidence: {confidence}): {current_segment}")
-                elif event_type == 'final_refinement':
-                    refined_text = response.final_refinement.normalized_text.alternatives[0].text
-                    confidence = response.final_refinement.normalized_text.alternatives[0].confidence
-                    if confidence > self.confidence_threshold:
-                        full_text += refined_text + " "
-                        print(f"Refined (confidence: {confidence}): {refined_text}")
+        current_confidence = 0.0
+
+        for response in responses:
+            event_type = response.WhichOneof('Event')
+
+            if event_type == 'partial':
+                print(f"Partial: {response.partial.alternatives[0].text}")
+
+            elif event_type == 'final':
+                current_segment = response.final.alternatives[0].text
+                duration_ms = response.final.alternatives[0].end_time_ms - response.final.alternatives[0].start_time_ms
+                print(f"Final: {current_segment}")
+
+            elif event_type == 'final_refinement':
+                refined_text = response.final_refinement.normalized_text.alternatives[0].text
+                duration_ms = response.final_refinement.normalized_text.alternatives[0].end_time_ms - \
+                              response.final_refinement.normalized_text.alternatives[0].start_time_ms
+                if self.is_valid_transcription(refined_text, duration_ms):
+                    current_segment = refined_text
+                    print(f"Refined: {refined_text}")
+                else:
+                    print(f"Discarded invalid refinement: {refined_text}")
+                    current_segment = ""
+
+            elif event_type == 'classifier_update':
+                classifier_result = response.classifier_update.classifier_result
+                if classifier_result.classifier in self.classifiers:
+                    for label in classifier_result.labels:
+                        if label.confidence > current_confidence:
+                            current_confidence = label.confidence
+                    print(f"Classifier confidence: {current_confidence}")
+
+                    if current_confidence >= self.confidence_threshold:
+                        if current_segment:
+                            full_text += current_segment + " "
+                            print(f"Added segment with confidence {current_confidence}: {current_segment}")
                     else:
-                        print(f"Discarded low confidence refinement: {refined_text}")
-                    current_segment = ""  # Reset current segment
-                elif event_type == 'eou_update':
-                    # If we have a current segment that wasn't refined, add it to full_text
-                    if current_segment and confidence > self.confidence_threshold:
-                        full_text += current_segment + " "
-                        print(f"Added unrefined segment: {current_segment}")
-                    current_segment = ""  # Reset current segment
-        except grpc.RpcError as err:
-            print(f'Error code {err.code()}, message: {err.details()}')
-            raise err
+                        print(f"Discarded low confidence segment: {current_segment}")
+
+                    current_segment = ""
+                    current_confidence = 0.0
+
+            elif event_type == 'eou_update':
+                pass  # We're now relying on classifier_update for adding segments
 
         return full_text.strip()
-
     def __del__(self):
         if hasattr(self, 'channel'):
             self.channel.close()
