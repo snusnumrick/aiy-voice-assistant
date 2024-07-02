@@ -41,6 +41,8 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
     def setup_client(self, config):
         from google.oauth2 import service_account
         from google.cloud import speech
+
+        logger.info("Setting up Google Speech client")
         service_account_file = config.get('google_service_account_file', '~/gcloud.json')
         service_account_file = os.path.expanduser(service_account_file)
         credentials = service_account.Credentials.from_service_account_file(service_account_file)
@@ -48,6 +50,8 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
 
     def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
         from google.cloud import speech
+
+        logger.info("Transcribing audio stream (google)")
         streaming_config = speech.StreamingRecognitionConfig(
             config=speech.RecognitionConfig(
                 encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
