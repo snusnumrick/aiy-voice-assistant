@@ -42,7 +42,7 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
         from google.oauth2 import service_account
         from google.cloud import speech
 
-        logger.info("Setting up Google Speech client")
+        logger.debug("Setting up Google Speech client")
         service_account_file = config.get('google_service_account_file', '~/gcloud.json')
         service_account_file = os.path.expanduser(service_account_file)
         credentials = service_account.Credentials.from_service_account_file(service_account_file)
@@ -51,7 +51,7 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
     def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
         from google.cloud import speech
 
-        logger.info("Transcribing audio stream (google)")
+        logger.debug("Transcribing audio stream (google)")
         streaming_config = speech.types.StreamingRecognitionConfig(
             config=speech.types.RecognitionConfig(
                 encoding=speech.types.RecognitionConfig.AudioEncoding.LINEAR16,
@@ -66,9 +66,9 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
 
         text = ""
         for response in responses:
-            logger.info("Received response: %s", response)
+            logger.debug("Received response: %s", response)
             for result in response.results:
-                logger.info("Received result: %s", result)
+                logger.debug("Received result: %s", result)
                 if result.is_final:
                     text += result.alternatives[0].transcript + " "
         return text.strip()
@@ -200,11 +200,11 @@ class SpeechTranscriber:
             for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
                 # if breathing is on for more than maX_breathing_duration seconds, switch off LED
                 if time.time() - time_breathing_started > self.led_breathing_duration and breathing_on:
-                    logger.info('Breathing off')
+                    logger.debug('Breathing off')
                     self.leds.update(Leds.rgb_off())
                     breathing_on = False
                 if status < 2 or (status == 2 and record_more > 0):
-                    logger.info(f"Recording audio chunk, status={status}, record_more={record_more}, deque={len(chunks_deque)}")
+                    logger.debug(f"Recording audio chunk, status={status}, record_more={record_more}, deque={len(chunks_deque)}")
                     if status == 2:
                         record_more -= 1
                     chunks_deque.append(chunk)
@@ -218,21 +218,21 @@ class SpeechTranscriber:
                         except Exception as e:
                             logger.error(f"Error terminating player process: {str(e)}")
                     self.leds.update(Leds.rgb_on(Color.GREEN))
-                    logger.info('Listening...')
+                    logger.debug('Listening...')
                     status = 1
 
                 if not chunks_deque:
-                    logger.info("No audio chunk available")
+                    logger.debug("No audio chunk available")
                     break
 
-                logger.info(f"status={status}, deque={len(chunks_deque)}")
+                logger.debug(f"status={status}, deque={len(chunks_deque)}")
                 if status > 0:
                     chunk = chunks_deque.popleft()
-                    logger.info("Yielding audio chunk")
+                    logger.debug("Yielding audio chunk")
                     yield chunk
 
                 if status == 1 and not self.button_is_pressed:
-                    logger.info('Stopped listening')
+                    logger.debug('Stopped listening')
                     self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                     self.leds.update(Leds.rgb_pattern(self.led_processing_color))
                     status = 2
@@ -248,7 +248,7 @@ class SpeechTranscriber:
                 if status:
                     break
 
-            logger.info('Processing audio...')
+            logger.debug('Processing audio...')
 
             try:
                 text = self.speech_service.transcribe_stream(audio_generator, self.config)
