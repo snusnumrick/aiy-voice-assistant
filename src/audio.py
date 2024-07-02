@@ -134,16 +134,12 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                     print(f"Final (confidence: {confidence}): {current_segment}")
                 elif event_type == 'final_refinement':
                     refined_text = response.final_refinement.normalized_text.alternatives[0].text
-                    confidence = response.final_refinement.normalized_text.alternatives[0].confidence
-                    if confidence > self.confidence_threshold:
-                        full_text += refined_text + " "
-                        print(f"Refined (confidence: {confidence}): {refined_text}")
-                    else:
-                        print(f"Discarded low confidence refinement: {refined_text}")
+                    print(f"Refined: {refined_text}")
+                    full_text += refined_text + " "
                     current_segment = ""  # Reset current segment
                 elif event_type == 'eou_update':
                     # If we have a current segment that wasn't refined, add it to full_text
-                    if current_segment and confidence > self.confidence_threshold:
+                    if current_segment:
                         full_text += current_segment + " "
                         print(f"Added unrefined segment: {current_segment}")
                     current_segment = ""  # Reset current segment
