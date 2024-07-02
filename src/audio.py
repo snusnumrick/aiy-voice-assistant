@@ -259,7 +259,7 @@ class SpeechTranscriber:
 
             def stop_playing():
                 nonlocal player_process
-                if player_process and player_process.returncode is not None:
+                if player_process and player_process.returncode is None:
                     try:
                         logger.info("Terminating player process")
                         player_process.terminate()
