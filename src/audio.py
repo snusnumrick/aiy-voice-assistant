@@ -220,9 +220,11 @@ class SpeechTranscriber:
 
                 if status > 0:
                     chunk = chunks_deque.popleft()
+                    self.logger.debug("Yielding audio chunk")
                     yield chunk
 
                 if status == 1 and not self.button_is_pressed:
+                    self.logger.info('Stopped listening')
                     self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                     self.leds.update(Leds.rgb_pattern(self.led_processing_color))
                     status = 2
