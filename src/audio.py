@@ -175,11 +175,13 @@ class SpeechTranscriber:
         self.setup_speech_service()
         self.breathing_period_ms = self.config.get('ready_breathing_period_ms', 10000)
         self.led_breathing_color = self.config.get('ready_breathing_color', (0, 1, 0))  # dark green
+        self.led_recording_color = self.config.get('recording_color', (0, 255, 0))  # bright green
         self.led_breathing_duration = self.config.get('ready_breathing_duration', 60)
         self.led_processing_color = self.config.get('processing_color', (0, 1, 0))  # dark green
         self.led_processing_blink_period_ms = self.config.get('processing_blink_period_ms', 300)
         self.audio_sample_rate = self.config.get('audio_sample_rate', 16000)
         self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.3)
+        self.min_recording_duration_sec = self.config.get('min_recording_duration_sec', 1)
 
     def setup_speech_service(self):
         service_name = self.config.get('speech_recognition_service', 'yandex').lower()
@@ -212,19 +214,54 @@ class SpeechTranscriber:
                                        num_channels=1,
                                        bytes_per_sample=2)
             record_more = 0
-            self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
-            self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
+
+            def start_idle():
+                nonlocal status, time_breathing_started, breathing_on
+                status = 0
+                self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
+                self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
+                time_breathing_started = time.time()
+                breathing_on = True
+
+            def start_listening():
+                nonlocal status, breathing_on, recoding_started_at
+                self.leds.update(Leds.rgb_on(self.led_recording_color))
+                breathing_on = False
+                logger.debug('Listening...')
+                status = 1
+                recoding_started_at = time.time()
+
+            def start_processing():
+                nonlocal status, record_more
+                self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
+                self.leds.update(Leds.rgb_pattern(self.led_processing_color))
+                status = 2
+                record_more = 2
+
+            def stop_breathing():
+                nonlocal breathing_on
+                logger.debug('Breathing off')
+                self.leds.update(Leds.rgb_off())
+                breathing_on = False
+
+            def stop_playing():
+                nonlocal player_process
+                if player_process:
+                    try:
+                        player_process.terminate()
+                    except Exception as e:
+                        logger.error(f"Error terminating player process: {str(e)}")
+
+            start_idle()
+            recoding_started_at = time.time()
             time_breathing_started = time.time()
-            breathing_on = True
             for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
                 # if breathing is on for more than maX_breathing_duration seconds, switch off LED
                 if time.time() - time_breathing_started > self.led_breathing_duration and breathing_on:
-                    logger.debug('Breathing off')
-                    self.leds.update(Leds.rgb_off())
-                    breathing_on = False
+                    stop_breathing()
+
+                # manage queue
                 if status < 2 or (status == 2 and record_more > 0):
-                    logger.debug(
-                        f"Recording audio chunk, status={status}, record_more={record_more}, deque={len(chunks_deque)}")
                     if status == 2:
                         record_more -= 1
                     chunks_deque.append(chunk)
@@ -232,31 +269,23 @@ class SpeechTranscriber:
                         chunks_deque.popleft()
 
                 if status == 0 and self.button_is_pressed:
-                    if player_process:
-                        try:
-                            player_process.terminate()
-                        except Exception as e:
-                            logger.error(f"Error terminating player process: {str(e)}")
-                    self.leds.update(Leds.rgb_on(Color.GREEN))
-                    logger.debug('Listening...')
-                    status = 1
+                    stop_playing()
+                    start_listening()
 
                 if not chunks_deque:
                     logger.debug("No audio chunk available")
                     break
 
-                logger.debug(f"status={status}, deque={len(chunks_deque)}")
                 if status > 0:
-                    chunk = chunks_deque.popleft()
-                    logger.debug("Yielding audio chunk")
-                    yield chunk
+                    yield chunks_deque.popleft()
 
                 if status == 1 and not self.button_is_pressed:
                     logger.debug('Stopped listening')
-                    self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
-                    self.leds.update(Leds.rgb_pattern(self.led_processing_color))
-                    status = 2
-                    record_more = 2
+                    if time.time() - recoding_started_at < self.min_recording_duration_sec:
+                        logger.debug('Recording duration is too short, ignoring')
+                        start_idle()
+                    else:
+                        start_processing()
 
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
