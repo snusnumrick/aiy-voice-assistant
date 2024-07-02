@@ -97,7 +97,7 @@ class YandexSpeechRecognition(SpeechRecognitionService):
 
         self.streaming_options = stt_pb2.StreamingOptions(
                 recognition_model=stt_pb2.RecognitionModelOptions(
-                    model=config.get("model", "general"),
+                    # model=config.get("model", "general"),
                     audio_format=stt_pb2.AudioFormatOptions(
                         raw_audio=stt_pb2.RawAudio(
                             audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
@@ -116,11 +116,11 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                     ),
                     audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME
                 ),
-                eou_classifier=stt_pb2.EouClassifierOptions(
-                    default_classifier=stt_pb2.DefaultEouClassifier(
-                        max_pause_between_words_hint_ms=config.get("max_pause_between_words_ms", 1000)
-                    )
-                )
+                # eou_classifier=stt_pb2.EouClassifierOptions(
+                #     default_classifier=stt_pb2.DefaultEouClassifier(
+                #         max_pause_between_words_hint_ms=config.get("max_pause_between_words_ms", 1000)
+                #     )
+                # )
             )
 
     def is_valid_transcription(self, text, duration_ms, confidence):
@@ -149,8 +149,8 @@ class YandexSpeechRecognition(SpeechRecognitionService):
             yield stt_pb2.StreamingRequest(session_options=self.streaming_options)
 
             for chunk in audio_generator:
-                if self.is_speech(chunk, self.sample_rate_hertz):
-                    yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=chunk))
+                # if self.is_speech(chunk, self.sample_rate_hertz):
+                yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=chunk))
 
         metadata = [('authorization', f'Api-Key {self.api_key}')]
         responses = self.stub.RecognizeStreaming(request_generator(), metadata=metadata)
