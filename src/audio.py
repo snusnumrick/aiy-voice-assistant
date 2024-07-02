@@ -5,13 +5,14 @@ This module provides functionality for speech transcription and synthesis,
 interfacing with the Google Cloud Speech-to-Text API and various TTS engines.
 """
 
-from typing import Optional, List
+from typing import Optional, List, Iterator
 from subprocess import Popen
 from aiy.board import Button
 from aiy.leds import Leds, Color, Pattern
 from aiy.voice.audio import AudioFormat, Recorder
 from google.cloud import speech
 import logging
+from abc import ABC, abstractmethod
 from collections import deque
 import time
 import os
@@ -19,10 +20,103 @@ from pydub import AudioSegment
 import tempfile
 import shutil
 import re
+import grpc
 from src.tts_engine import TTSEngine
 from src.config import Config
 
 logger = logging.getLogger(__name__)
+
+
+class SpeechRecognitionService(ABC):
+    @abstractmethod
+    def setup_client(self, config):
+        pass
+
+    @abstractmethod
+    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+        pass
+
+
+class GoogleSpeechRecognition(SpeechRecognitionService):
+    def setup_client(self, config):
+        from google.oauth2 import service_account
+        from google.cloud import speech
+        service_account_file = config.get('google_service_account_file', '~/gcloud.json')
+        service_account_file = os.path.expanduser(service_account_file)
+        credentials = service_account.Credentials.from_service_account_file(service_account_file)
+        self.client = speech.SpeechClient(credentials=credentials)
+
+    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+        from google.cloud import speech
+        streaming_config = speech.StreamingRecognitionConfig(
+            config=speech.RecognitionConfig(
+                encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                sample_rate_hertz=config.get("sample_rate_hertz", 16000),
+                language_code=config.get("language_code", "ru-RU"),
+                enable_automatic_punctuation=True
+            ),
+            interim_results=True
+        )
+        requests = (speech.StreamingRecognizeRequest(audio_content=chunk) for chunk in audio_generator)
+        responses = self.client.streaming_recognize(streaming_config, requests)
+
+        text = ""
+        for response in responses:
+            for result in response.results:
+                if result.is_final:
+                    text += result.alternatives[0].transcript + " "
+        return text.strip()
+
+
+class YandexSpeechRecognition(SpeechRecognitionService):
+    def setup_client(self, config):
+        from yandex.cloud.ai.stt.v3 import stt_service_pb2_grpc
+
+        self.api_key = os.environ.get('YANDEX_API_KEY') or config.get('yandex_api_key')
+        if not self.api_key:
+            raise ValueError("Yandex API key is not provided in environment variables or configuration")
+
+        # Create a secure channel
+        creds = grpc.ssl_channel_credentials()
+        channel = grpc.secure_channel('stt.api.cloud.yandex.net:443', creds)
+        self.stub = stt_service_pb2_grpc.RecognizerStub(channel)
+
+    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+        from yandex.cloud.ai.stt.v3 import stt_service_pb2
+
+        # Prepare the recognition config
+        recognition_config = stt_service_pb2.RecognitionConfig(
+            specification=stt_service_pb2.RecognitionSpec(
+                language_code=config.get("language_code", "ru-RU"),
+                profanity_filter=config.get("profanity_filter", False),
+                model=config.get("model", "general"),
+                partial_results=config.get("partial_results", True),
+                audio_encoding=stt_service_pb2.LINEAR16_PCM,
+                sample_rate_hertz=config.get("sample_rate_hertz", 16000),
+            )
+        )
+
+        # Prepare the streaming recognition request
+        def request_stream():
+            yield stt_service_pb2.StreamingRequest(
+                session_options=stt_service_pb2.StreamingOptions(recognition_model=recognition_config))
+            for chunk in audio_generator:
+                yield stt_service_pb2.StreamingRequest(chunk=stt_service_pb2.AudioChunk(data=chunk))
+
+        # Make the gRPC call
+        metadata = [('authorization', f'Api-Key {self.api_key}')]
+        responses = self.stub.RecognizeStreaming(request_stream(), metadata=metadata)
+
+        text = ""
+        for response in responses:
+            if response.HasField('final'):
+                for alternative in response.final.alternatives:
+                    text += alternative.text + " "
+            elif response.HasField('partial'):
+                # Handle partial results if needed
+                pass
+
+        return text.strip()
 
 
 class SpeechTranscriber:
@@ -53,7 +147,7 @@ class SpeechTranscriber:
         self.leds = leds
         self.config = config
         self.button_is_pressed = False
-        self.setup_speech_client()
+        self.setup_speech_service()
         self.breathing_period_ms = self.config.get('ready_breathing_period_ms', 10000)
         self.led_breathing_color = self.config.get('ready_breathing_color', (0, 1, 0))  # dark green
         self.led_breathing_duration = self.config.get('ready_breathing_duration', 60)
@@ -62,34 +156,15 @@ class SpeechTranscriber:
         self.audio_sample_rate = self.config.get('audio_sample_rate', 16000)
         self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.3)
 
-    def setup_speech_client(self):
-        """
-        Set up the Google Cloud Speech client and streaming configuration.
-        """
-        from google.oauth2 import service_account
-        service_account_file = self.config.get('service_account_file', '~/gcloud.json')
-        service_account_file = os.path.expanduser(service_account_file)
-        credentials = service_account.Credentials.from_service_account_file(service_account_file)
-        self.speech_client = speech.SpeechClient(credentials=credentials)
-        self.setup_streaming_config()
-
-    def setup_streaming_config(self):
-        """
-        Configure the streaming recognition settings.
-        """
-        speech_language_code = self.config.get("language_code", "ru-RU")
-        speech_sample_rate_hertz = self.config.get("sample_rate_hertz", 16000)
-        config = speech.types.RecognitionConfig(
-            encoding=speech.types.RecognitionConfig.AudioEncoding.LINEAR16,
-            sample_rate_hertz=speech_sample_rate_hertz,
-            language_code=self.config.get("language_code", speech_language_code),
-            enable_automatic_punctuation=True
-        )
-        self.streaming_config = speech.types.StreamingRecognitionConfig(
-            config=config,
-            interim_results=True,
-            single_utterance=False
-        )
+    def setup_speech_service(self):
+        service_name = self.config.get('speech_recognition_service', 'google').lower()
+        if service_name == 'google':
+            self.speech_service = GoogleSpeechRecognition()
+        elif service_name == 'yandex':
+            self.speech_service = YandexSpeechRecognition()
+        else:
+            raise ValueError(f"Unsupported speech recognition service: {service_name}")
+        self.speech_service.setup_client(self.config)
 
     def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
         """
@@ -154,30 +229,14 @@ class SpeechTranscriber:
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
 
-        text = ""
-
         with Recorder() as recorder:
-            # Create a streaming recognize request
             audio_generator = generate_audio_chunks()
 
             for _ in audio_generator:
                 if status:
                     break
 
-            requests = (
-                speech.types.StreamingRecognizeRequest(audio_content=chunk)
-                for chunk in audio_generator
-            )
-
-            # Send the requests and process the responses
-            responses = self.speech_client.streaming_recognize(self.streaming_config, requests)
-
-            for response in responses:
-                logger.debug(f"response: {response}")
-                for result in response.results:
-                    logger.debug(f"trascript: {result.alternatives[0].transcript}")
-                    if result.is_final:
-                        text += result.alternatives[0].transcript
+            text = self.speech_service.transcribe_stream(audio_generator, self.config)
 
         return text
 
