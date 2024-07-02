@@ -225,6 +225,7 @@ class SpeechTranscriber:
                     logger.info("No audio chunk available")
                     break
 
+                logger.info(f"status={status}, deque={len(chunks_deque)}")
                 if status > 0:
                     chunk = chunks_deque.popleft()
                     logger.info("Yielding audio chunk")
