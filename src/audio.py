@@ -76,53 +76,72 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
 
 class YandexSpeechRecognition(SpeechRecognitionService):
     def setup_client(self, config):
-        from yandex.cloud.ai.stt.v3 import stt_service_pb2_grpc
+        import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
 
         self.api_key = os.environ.get('YANDEX_API_KEY') or config.get('yandex_api_key')
         if not self.api_key:
             raise ValueError("Yandex API key is not provided in environment variables or configuration")
 
-        # Create a secure channel
-        creds = grpc.ssl_channel_credentials()
-        channel = grpc.secure_channel('stt.api.cloud.yandex.net:443', creds)
-        self.stub = stt_service_pb2_grpc.RecognizerStub(channel)
+        cred = grpc.ssl_channel_credentials()
+        self.channel = grpc.secure_channel('stt.api.cloud.yandex.net:443', cred)
+        self.stub = stt_service_pb2_grpc.RecognizerStub(self.channel)
 
     def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
-        from yandex.cloud.ai.stt.v3 import stt_service_pb2
+        def request_generator():
+            import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 
-        # Prepare the recognition config
-        recognition_config = stt_service_pb2.RecognitionConfig(
-            specification=stt_service_pb2.RecognitionSpec(
-                language_code=config.get("language_code", "ru-RU"),
-                profanity_filter=config.get("profanity_filter", False),
-                model=config.get("model", "general"),
-                partial_results=config.get("partial_results", True),
-                audio_encoding=stt_service_pb2.LINEAR16_PCM,
-                sample_rate_hertz=config.get("sample_rate_hertz", 16000),
+            recognize_options = stt_pb2.StreamingOptions(
+                recognition_model=stt_pb2.RecognitionModelOptions(
+                    audio_format=stt_pb2.AudioFormatOptions(
+                        raw_audio=stt_pb2.RawAudio(
+                            audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
+                            sample_rate_hertz=config.get("sample_rate_hertz", 16000),
+                            audio_channel_count=1
+                        )
+                    ),
+                    text_normalization=stt_pb2.TextNormalizationOptions(
+                        text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
+                        profanity_filter=config.get("profanity_filter", False),
+                        literature_text=False
+                    ),
+                    language_restriction=stt_pb2.LanguageRestrictionOptions(
+                        restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
+                        language_code=[config.get("language_code", "ru-RU")]
+                    ),
+                    audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME
+                )
             )
-        )
 
-        # Prepare the streaming recognition request
-        def request_stream():
-            yield stt_service_pb2.StreamingRequest(
-                session_options=stt_service_pb2.StreamingOptions(recognition_model=recognition_config))
+            yield stt_pb2.StreamingRequest(session_options=recognize_options)
+
             for chunk in audio_generator:
-                yield stt_service_pb2.StreamingRequest(chunk=stt_service_pb2.AudioChunk(data=chunk))
+                yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=chunk))
 
-        # Make the gRPC call
         metadata = [('authorization', f'Api-Key {self.api_key}')]
-        responses = self.stub.RecognizeStreaming(request_stream(), metadata=metadata)
+        responses = self.stub.RecognizeStreaming(request_generator(), metadata=metadata)
 
-        text = ""
-        for response in responses:
-            if response.HasField('final'):
-                for alternative in response.final.alternatives:
-                    text += alternative.text + " "
-            elif response.HasField('partial'):
-                # Handle partial results if needed
-                pass
+        full_text = ""
+        try:
+            for response in responses:
+                event_type = response.WhichOneof('Event')
+                if event_type == 'partial' and response.partial.alternatives:
+                    print(f"Partial: {response.partial.alternatives[0].text}")
+                elif event_type == 'final':
+                    final_text = response.final.alternatives[0].text
+                    full_text += final_text + " "
+                    print(f"Final: {final_text}")
+                elif event_type == 'final_refinement':
+                    refined_text = response.final_refinement.normalized_text.alternatives[0].text
+                    print(f"Refined: {refined_text}")
+        except grpc.RpcError as err:
+            print(f'Error code {err.code()}, message: {err.details()}')
+            raise err
 
-        return text.strip()
+        return full_text.strip()
+
+    def __del__(self):
+        if hasattr(self, 'channel'):
+            self.channel.close()
 
 
 class SpeechTranscriber:
@@ -204,7 +223,8 @@ class SpeechTranscriber:
                     self.leds.update(Leds.rgb_off())
                     breathing_on = False
                 if status < 2 or (status == 2 and record_more > 0):
-                    logger.debug(f"Recording audio chunk, status={status}, record_more={record_more}, deque={len(chunks_deque)}")
+                    logger.debug(
+                        f"Recording audio chunk, status={status}, record_more={record_more}, deque={len(chunks_deque)}")
                     if status == 2:
                         record_more -= 1
                     chunks_deque.append(chunk)

@@ -7,3 +7,6 @@ anthropic==0.26
 pydub
 python-dotenv
 yandex-speechkit
+grpcio
+protobuf
+yandexcloud
