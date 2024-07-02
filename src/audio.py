@@ -185,11 +185,13 @@ class SpeechTranscriber:
         self.setup_speech_service()
         self.breathing_period_ms = self.config.get('ready_breathing_period_ms', 10000)
         self.led_breathing_color = self.config.get('ready_breathing_color', (0, 1, 0))  # dark green
+        self.led_recording_color = self.config.get('recording_color', (0, 255, 0))  # bright green
         self.led_breathing_duration = self.config.get('ready_breathing_duration', 60)
         self.led_processing_color = self.config.get('processing_color', (0, 1, 0))  # dark green
         self.led_processing_blink_period_ms = self.config.get('processing_blink_period_ms', 300)
         self.audio_sample_rate = self.config.get('audio_sample_rate', 16000)
         self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.3)
+        self.min_recording_duration_sec = self.config.get('min_recording_duration_sec', 1)
 
     def setup_speech_service(self):
         service_name = self.config.get('speech_recognition_service', 'yandex').lower()
