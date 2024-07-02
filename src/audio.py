@@ -12,7 +12,6 @@ from aiy.leds import Leds, Color, Pattern
 from aiy.voice.audio import AudioFormat, Recorder
 from google.cloud import speech
 import logging
-import numpy as np
 from abc import ABC, abstractmethod
 from collections import deque
 import time
@@ -48,7 +47,12 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
         service_account_file = os.path.expanduser(service_account_file)
         credentials = service_account.Credentials.from_service_account_file(service_account_file)
         self.client = speech.SpeechClient(credentials=credentials)
-        self.streaming_config = speech.types.StreamingRecognitionConfig(
+
+    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+        from google.cloud import speech
+
+        logger.debug("Transcribing audio stream (google)")
+        streaming_config = speech.types.StreamingRecognitionConfig(
             config=speech.types.RecognitionConfig(
                 encoding=speech.types.RecognitionConfig.AudioEncoding.LINEAR16,
                 sample_rate_hertz=config.get("sample_rate_hertz", 16000),
@@ -57,14 +61,8 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
             ),
             interim_results=True
         )
-
-    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
-        from google.cloud import speech
-
-        logger.debug("Transcribing audio stream (google)")
-
         requests = (speech.types.StreamingRecognizeRequest(audio_content=chunk) for chunk in audio_generator)
-        responses = self.client.streaming_recognize(self.streaming_config, requests)
+        responses = self.client.streaming_recognize(streaming_config, requests)
 
         text = ""
         for response in responses:
@@ -79,7 +77,6 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
 class YandexSpeechRecognition(SpeechRecognitionService):
     def setup_client(self, config):
         import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
-        import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 
         self.api_key = os.environ.get('YANDEX_API_KEY') or config.get('yandex_api_key')
         if not self.api_key:
@@ -89,15 +86,10 @@ class YandexSpeechRecognition(SpeechRecognitionService):
         self.channel = grpc.secure_channel('stt.api.cloud.yandex.net:443', cred)
         self.stub = stt_service_pb2_grpc.RecognizerStub(self.channel)
 
-        self.sample_rate_hertz=config.get("sample_rate_hertz", 16000)
-        self.noise_words = set(config.get("noise_words", ["а", "эм", "хм", "кхм"]))
-        self.min_speech_duration_ms = config.get("min_speech_duration_ms", 300)
-        self.energy_threshold = config.get("energy_threshold", 0.1)
-        self.confidence_threshold = config.get("confidence_threshold", 0.5)
-
-        self.streaming_options = stt_pb2.StreamingOptions(
+    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+        def request_generator():
+            recognize_options = stt_pb2.StreamingOptions(
                 recognition_model=stt_pb2.RecognitionModelOptions(
-                    # model=config.get("model", "general"),
                     audio_format=stt_pb2.AudioFormatOptions(
                         raw_audio=stt_pb2.RawAudio(
                             audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
@@ -108,118 +100,44 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                     text_normalization=stt_pb2.TextNormalizationOptions(
                         text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
                         profanity_filter=config.get("profanity_filter", False),
-                        literature_text=config.get("literature_text", False)
+                        literature_text=False
                     ),
                     language_restriction=stt_pb2.LanguageRestrictionOptions(
                         restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
                         language_code=[config.get("language_code", "ru-RU")]
                     ),
                     audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME
-                ),
-                # eou_classifier=stt_pb2.EouClassifierOptions(
-                #     default_classifier=stt_pb2.DefaultEouClassifier(
-                #         max_pause_between_words_hint_ms=config.get("max_pause_between_words_ms", 1000)
-                #     )
-                # )
+                )
             )
 
-    def is_valid_transcription(self, text, duration_ms, confidence):
-        if not text or duration_ms is None:
-            return False
-        words = text.split()
-        if not words:
-            return False
-        if all(word.lower() in self.noise_words for word in words):
-            return False
-        if duration_ms < self.min_speech_duration_ms or duration_ms > self.max_speech_duration_ms:
-            return False
-        if confidence < self.confidence_threshold:
-            return False
-        return True
-
-    def is_speech(self, audio_chunk, sample_rate):
-        audio_data = np.frombuffer(audio_chunk, dtype=np.int16)
-        energy = np.mean(np.abs(audio_data))
-        return energy > self.energy_threshold * 32768  # 32768 is max value for 16-bit audio
-
-    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
-        def request_generator():
-            import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
-
-            yield stt_pb2.StreamingRequest(session_options=self.streaming_options)
+            yield stt_pb2.StreamingRequest(session_options=recognize_options)
 
             for chunk in audio_generator:
-                # if self.is_speech(chunk, self.sample_rate_hertz):
                 yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=chunk))
 
         metadata = [('authorization', f'Api-Key {self.api_key}')]
         responses = self.stub.RecognizeStreaming(request_generator(), metadata=metadata)
 
         full_text = ""
-        current_segment = ""
-        current_confidence = 0.0
-
         try:
             for response in responses:
-                logger.debug(f"Received response: {response}")
                 event_type = response.WhichOneof('Event')
-
-                if event_type == 'partial':
-                    if response.partial.alternatives:
-                        logger.info(f"Partial: {response.partial.alternatives[0].text}")
-                    else:
-                        logger.info("Received empty partial result")
-
+                if event_type == 'partial' and response.partial.alternatives:
+                    print(f"Partial: {response.partial.alternatives[0].text}")
                 elif event_type == 'final':
-                    if response.final.alternatives:
-                        current_segment = response.final.alternatives[0].text
-                        duration_ms = response.final.alternatives[0].end_time_ms - response.final.alternatives[
-                            0].start_time_ms
-                        current_confidence = getattr(response.final.alternatives[0], 'confidence', 0.0)
-                        logger.info(f"Final (confidence: {current_confidence}): {current_segment}")
-                        if self.is_valid_transcription(current_segment, duration_ms, current_confidence):
-                            full_text += current_segment + " "
-                        else:
-                            logger.info(f"Discarded invalid final: {current_segment}")
-                            current_segment = ""
-                    else:
-                        logger.info("Received empty final result")
-
+                    final_text = response.final.alternatives[0].text
+                    full_text += final_text + " "
+                    print(f"Final: {final_text}")
                 elif event_type == 'final_refinement':
-                    if response.final_refinement.normalized_text.alternatives:
-                        refined_text = response.final_refinement.normalized_text.alternatives[0].text
-                        duration_ms = response.final_refinement.normalized_text.alternatives[0].end_time_ms - \
-                                      response.final_refinement.normalized_text.alternatives[0].start_time_ms
-                        confidence = getattr(response.final_refinement.normalized_text.alternatives[0], 'confidence',
-                                             0.0)
-                        logger.info(f"Refined (confidence: {confidence}): {refined_text}")
-                        if self.is_valid_transcription(refined_text, duration_ms, confidence):
-                            full_text += refined_text + " "
-                        else:
-                            logger.info(f"Discarded invalid refinement: {refined_text}")
-                    else:
-                        logger.info("Received empty final refinement")
+                    refined_text = response.final_refinement.normalized_text.alternatives[0].text
+                    print(f"Refined: {refined_text}")
+        except grpc.RpcError as err:
+            print(f'Error code {err.code()}, message: {err.details()}')
+            raise err
 
-                elif event_type == 'eou_update':
-                    logger.info("Received EOU update")
-
-                elif event_type == 'status_code':
-                    logger.info(
-                        f"Received status code: {response.status_code.code_type}, message: {response.status_code.message}")
-
-                else:
-                    logger.warning(f"Received unexpected event type: {event_type}")
-
-        except grpc.RpcError as e:
-            logger.error(f"gRPC error occurred: {e}")
-        except Exception as e:
-            logger.error(f"An unexpected error occurred: {e}")
-
-        logger.info(f"Final transcription: {full_text.strip()}")
         return full_text.strip()
 
-
-def __del__(self):
+    def __del__(self):
         if hasattr(self, 'channel'):
             self.channel.close()
 
@@ -255,13 +173,11 @@ class SpeechTranscriber:
         self.setup_speech_service()
         self.breathing_period_ms = self.config.get('ready_breathing_period_ms', 10000)
         self.led_breathing_color = self.config.get('ready_breathing_color', (0, 1, 0))  # dark green
-        self.led_recording_color = self.config.get('recording_color', (0, 255, 0))  # bright green
         self.led_breathing_duration = self.config.get('ready_breathing_duration', 60)
         self.led_processing_color = self.config.get('processing_color', (0, 1, 0))  # dark green
         self.led_processing_blink_period_ms = self.config.get('processing_blink_period_ms', 300)
         self.audio_sample_rate = self.config.get('audio_sample_rate', 16000)
         self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.3)
-        self.min_recording_duration_sec = self.config.get('min_recording_duration_sec', 1)
 
     def setup_speech_service(self):
         service_name = self.config.get('speech_recognition_service', 'yandex').lower()
@@ -294,55 +210,19 @@ class SpeechTranscriber:
                                        num_channels=1,
                                        bytes_per_sample=2)
             record_more = 0
-            breathing_on = False
-
-            def start_idle():
-                nonlocal status, time_breathing_started, breathing_on
-                status = 0
-                self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
-                self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
-                time_breathing_started = time.time()
-                breathing_on = True
-
-            def start_listening():
-                nonlocal status, breathing_on, recoding_started_at
-                self.leds.update(Leds.rgb_on(self.led_recording_color))
-                breathing_on = False
-                logger.debug('Listening...')
-                status = 1
-                recoding_started_at = time.time()
-
-            def start_processing():
-                nonlocal status, record_more
-                self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
-                self.leds.update(Leds.rgb_pattern(self.led_processing_color))
-                status = 2
-                record_more = 2
-
-            def stop_breathing():
-                nonlocal breathing_on
-                logger.debug('Breathing off')
-                self.leds.update(Leds.rgb_off())
-                breathing_on = False
-
-            def stop_playing():
-                nonlocal player_process
-                if player_process:
-                    try:
-                        player_process.terminate()
-                    except Exception as e:
-                        logger.error(f"Error terminating player process: {str(e)}")
-
-            start_idle()
-            recoding_started_at = time.time()
+            self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
+            self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
             time_breathing_started = time.time()
+            breathing_on = True
             for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
                 # if breathing is on for more than maX_breathing_duration seconds, switch off LED
                 if time.time() - time_breathing_started > self.led_breathing_duration and breathing_on:
-                    stop_breathing()
-
-                # manage queue
+                    logger.debug('Breathing off')
+                    self.leds.update(Leds.rgb_off())
+                    breathing_on = False
                 if status < 2 or (status == 2 and record_more > 0):
+                    logger.debug(
+                        f"Recording audio chunk, status={status}, record_more={record_more}, deque={len(chunks_deque)}")
                     if status == 2:
                         record_more -= 1
                     chunks_deque.append(chunk)
@@ -350,23 +230,31 @@ class SpeechTranscriber:
                         chunks_deque.popleft()
 
                 if status == 0 and self.button_is_pressed:
-                    stop_playing()
-                    start_listening()
+                    if player_process:
+                        try:
+                            player_process.terminate()
+                        except Exception as e:
+                            logger.error(f"Error terminating player process: {str(e)}")
+                    self.leds.update(Leds.rgb_on(Color.GREEN))
+                    logger.debug('Listening...')
+                    status = 1
 
                 if not chunks_deque:
                     logger.debug("No audio chunk available")
                     break
 
+                logger.debug(f"status={status}, deque={len(chunks_deque)}")
                 if status > 0:
-                    yield chunks_deque.popleft()
+                    chunk = chunks_deque.popleft()
+                    logger.debug("Yielding audio chunk")
+                    yield chunk
 
                 if status == 1 and not self.button_is_pressed:
-                    logger.info("listened for %s seconds", time.time() - recoding_started_at)
-                    if time.time() - recoding_started_at < self.min_recording_duration_sec:
-                        logger.debug('Recording duration is too short, ignoring')
-                        start_idle()
-                    else:
-                        start_processing()
+                    logger.debug('Stopped listening')
+                    self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
+                    self.leds.update(Leds.rgb_pattern(self.led_processing_color))
+                    status = 2
+                    record_more = 2
 
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
