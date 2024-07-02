@@ -196,9 +196,11 @@ class SpeechTranscriber:
             for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
                 # if breathing is on for more than maX_breathing_duration seconds, switch off LED
                 if time.time() - time_breathing_started > self.led_breathing_duration and breathing_on:
+                    logger.info('Breathing off')
                     self.leds.update(Leds.rgb_off())
                     breathing_on = False
                 if status < 2 or (status == 2 and record_more > 0):
+                    logger.info(f"Recording audio chunk, status={status}, record_more={record_more}")
                     if status == 2:
                         record_more -= 1
                     chunks_deque.append(chunk)
@@ -216,6 +218,7 @@ class SpeechTranscriber:
                     status = 1
 
                 if not chunks_deque:
+                    logger.debug("No audio chunk available")
                     break
 
                 if status > 0:
@@ -240,6 +243,7 @@ class SpeechTranscriber:
                 if status:
                     break
 
+            logger.info('Processing audio...')
             text = self.speech_service.transcribe_stream(audio_generator, self.config)
 
         self.leds.update(Leds.rgb_off())  # Ensure LED is turned off after transcription
