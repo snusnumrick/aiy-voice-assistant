@@ -52,16 +52,16 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
         from google.cloud import speech
 
         logger.info("Transcribing audio stream (google)")
-        streaming_config = speech.StreamingRecognitionConfig(
-            config=speech.RecognitionConfig(
-                encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        streaming_config = speech.types.StreamingRecognitionConfig(
+            config=speech.types.RecognitionConfig(
+                encoding=speech.types.RecognitionConfig.AudioEncoding.LINEAR16,
                 sample_rate_hertz=config.get("sample_rate_hertz", 16000),
                 language_code=config.get("language_code", "ru-RU"),
                 enable_automatic_punctuation=True
             ),
             interim_results=True
         )
-        requests = (speech.StreamingRecognizeRequest(audio_content=chunk) for chunk in audio_generator)
+        requests = (speech.types.StreamingRecognizeRequest(audio_content=chunk) for chunk in audio_generator)
         responses = self.client.streaming_recognize(streaming_config, requests)
 
         text = ""
@@ -249,9 +249,13 @@ class SpeechTranscriber:
                     break
 
             logger.info('Processing audio...')
-            text = self.speech_service.transcribe_stream(audio_generator, self.config)
 
-        self.leds.update(Leds.rgb_off())  # Ensure LED is turned off after transcription
+            try:
+                text = self.speech_service.transcribe_stream(audio_generator, self.config)
+            except Exception as e:
+                logger.error(f"Error transcribing speech: {str(e)}")
+                text = ""
+
         return text
 
     def setup_button_callbacks(self):
