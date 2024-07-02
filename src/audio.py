@@ -246,7 +246,7 @@ class SpeechTranscriber:
                 self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_processing_color))
                 status = 2
-                record_more = 2
+                record_more = 3
 
             def stop_breathing():
                 nonlocal breathing_on
@@ -259,6 +259,7 @@ class SpeechTranscriber:
                 if player_process:
                     try:
                         player_process.terminate()
+                        player_process.wait()
                     except Exception as e:
                         logger.error(f"Error terminating player process: {str(e)}")
 
