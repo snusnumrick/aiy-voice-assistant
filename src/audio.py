@@ -23,11 +23,13 @@ from src.tts import create_tts_engine, synthesize_speech
 
 logger = logging.getLogger(__name__)
 
+
 class RecognitionStatus(Enum):
     """Enum representing the current status of speech recognition."""
     IDLE = 0
     LISTENING = 1
     PROCESSING = 2
+
 
 @contextlib.contextmanager
 def led_pattern(leds: Leds, pattern: Pattern, color: tuple):
@@ -45,6 +47,7 @@ def led_pattern(leds: Leds, pattern: Pattern, color: tuple):
         yield
     finally:
         leds.update(Leds.rgb_off())
+
 
 class SpeechTranscriber:
     """
@@ -104,7 +107,105 @@ class SpeechTranscriber:
 
         return text
 
-    # ... (other methods remain the same)
+    def generate_audio_chunks(self, recorder: Recorder) -> Iterator[bytes]:
+        """
+        Generate audio chunks for transcription.
+
+        Args:
+            recorder (Recorder): The audio recorder object.
+
+        Yields:
+            bytes: Audio chunk data.
+        """
+        chunks_deque: deque = deque()
+        status = RecognitionStatus.IDLE
+        record_more = 0
+
+        with led_pattern(self.leds, Pattern.breathe(self.breathing_period_ms), self.led_breathing_color):
+            for chunk in recorder.record(self.get_audio_format(),
+                                         chunk_duration_sec=self.audio_recording_chunk_duration_sec):
+                if self.handle_button_press(status, chunks_deque):
+                    status = RecognitionStatus.LISTENING
+
+                if self.handle_button_release(status):
+                    status = RecognitionStatus.PROCESSING
+                    record_more = self.post_button_release_record_chunks
+
+                if self.should_record(status, record_more):
+                    chunks_deque.append(chunk)
+                    if status == RecognitionStatus.IDLE and len(chunks_deque) > 3:
+                        chunks_deque.popleft()
+
+                if status != RecognitionStatus.IDLE:
+                    yield chunks_deque.popleft()
+
+                if status == RecognitionStatus.PROCESSING:
+                    record_more -= 1
+
+    def get_audio_format(self) -> AudioFormat:
+        """
+        Get the audio format for recording.
+
+        Returns:
+            AudioFormat: The audio format configuration.
+        """
+        return AudioFormat(sample_rate_hz=self.audio_sample_rate, num_channels=1, bytes_per_sample=2)
+
+    def handle_button_press(self, status: RecognitionStatus, chunks_deque: deque) -> bool:
+        """
+        Handle button press event.
+
+        Args:
+            status (RecognitionStatus): Current recognition status.
+            chunks_deque (deque): Deque of audio chunks.
+
+        Returns:
+            bool: True if the status should change to LISTENING, False otherwise.
+        """
+        if status == RecognitionStatus.IDLE and self.button_is_pressed:
+            chunks_deque.clear()
+            return True
+        return False
+
+    def handle_button_release(self, status: RecognitionStatus) -> bool:
+        """
+        Handle button release event.
+
+        Args:
+            status (RecognitionStatus): Current recognition status.
+
+        Returns:
+            bool: True if the status should change to PROCESSING, False otherwise.
+        """
+        return status == RecognitionStatus.LISTENING and not self.button_is_pressed
+
+    def should_record(self, status: RecognitionStatus, record_more: int) -> bool:
+        """
+        Determine if audio should be recorded.
+
+        Args:
+            status (RecognitionStatus): Current recognition status.
+            record_more (int): Number of additional chunks to record after button release.
+
+        Returns:
+            bool: True if audio should be recorded, False otherwise.
+        """
+        return status != RecognitionStatus.IDLE or (status == RecognitionStatus.PROCESSING and record_more > 0)
+
+    def setup_button_callbacks(self) -> None:
+        """Set up callbacks for button press and release events."""
+        self.button.when_pressed = self.button_pressed
+        self.button.when_released = self.button_released
+
+    def button_pressed(self) -> None:
+        """Callback function for button press event."""
+        self.button_is_pressed = True
+        logger.debug('Button pressed')
+
+    def button_released(self) -> None:
+        """Callback function for button release event."""
+        self.button_is_pressed = False
+        logger.debug('Button released')
 
     def generate_speech(self, text: str, output_filename: str) -> None:
         """
