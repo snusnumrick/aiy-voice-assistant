@@ -191,7 +191,6 @@ class SpeechTranscriber:
         self.led_processing_blink_period_ms = self.config.get('processing_blink_period_ms', 300)
         self.audio_sample_rate = self.config.get('audio_sample_rate', 16000)
         self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.3)
-        self.min_recording_duration_sec = self.config.get('min_recording_duration_sec', 1)
 
     def setup_speech_service(self):
         service_name = self.config.get('speech_recognition_service', 'yandex').lower()
@@ -291,12 +290,7 @@ class SpeechTranscriber:
                     yield chunks_deque.popleft()
 
                 if status == 1 and not self.button_is_pressed:
-                    logger.info("listened for %s seconds", time.time() - recoding_started_at)
-                    if time.time() - recoding_started_at < self.min_recording_duration_sec:
-                        logger.debug('Recording duration is too short, ignoring')
-                        start_idle()
-                    else:
-                        start_processing()
+                    start_processing()
 
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
