@@ -93,7 +93,7 @@ class YandexSpeechRecognition(SpeechRecognitionService):
         self.noise_words = set(config.get("noise_words", ["а", "эм", "хм", "кхм"]))
         self.min_speech_duration_ms = config.get("min_speech_duration_ms", 300)
         self.energy_threshold = config.get("energy_threshold", 0.1)
-        self.confidence_threshold = config.get("confidence_threshold", 0.7)
+        self.confidence_threshold = config.get("confidence_threshold", 0.5)
 
         self.streaming_options = stt_pb2.StreamingOptions(
                 recognition_model=stt_pb2.RecognitionModelOptions(
@@ -123,13 +123,17 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                 )
             )
 
-    def is_valid_transcription(self, text, duration_ms):
+    def is_valid_transcription(self, text, duration_ms, confidence):
+        if not text or duration_ms is None:
+            return False
         words = text.split()
         if not words:
             return False
         if all(word.lower() in self.noise_words for word in words):
             return False
-        if duration_ms < self.min_speech_duration_ms:
+        if duration_ms < self.min_speech_duration_ms or duration_ms > self.max_speech_duration_ms:
+            return False
+        if confidence < self.confidence_threshold:
             return False
         return True
 
@@ -155,50 +159,62 @@ class YandexSpeechRecognition(SpeechRecognitionService):
         current_segment = ""
         current_confidence = 0.0
 
-        for response in responses:
-            event_type = response.WhichOneof('Event')
+        try:
+            for response in responses:
+                event_type = response.WhichOneof('Event')
 
-            if event_type == 'partial':
-                print(f"Partial: {response.partial.alternatives[0].text}")
-
-            elif event_type == 'final':
-                current_segment = response.final.alternatives[0].text
-                duration_ms = response.final.alternatives[0].end_time_ms - response.final.alternatives[0].start_time_ms
-                print(f"Final: {current_segment}")
-
-            elif event_type == 'final_refinement':
-                refined_text = response.final_refinement.normalized_text.alternatives[0].text
-                duration_ms = response.final_refinement.normalized_text.alternatives[0].end_time_ms - \
-                              response.final_refinement.normalized_text.alternatives[0].start_time_ms
-                if self.is_valid_transcription(refined_text, duration_ms):
-                    current_segment = refined_text
-                    print(f"Refined: {refined_text}")
-                else:
-                    print(f"Discarded invalid refinement: {refined_text}")
-                    current_segment = ""
-
-            elif event_type == 'classifier_update':
-                classifier_result = response.classifier_update.classifier_result
-                if classifier_result.classifier in self.classifiers:
-                    for label in classifier_result.labels:
-                        if label.confidence > current_confidence:
-                            current_confidence = label.confidence
-                    print(f"Classifier confidence: {current_confidence}")
-
-                    if current_confidence >= self.confidence_threshold:
-                        if current_segment:
-                            full_text += current_segment + " "
-                            print(f"Added segment with confidence {current_confidence}: {current_segment}")
+                if event_type == 'partial':
+                    if response.partial.alternatives:
+                        print(f"Partial: {response.partial.alternatives[0].text}")
                     else:
-                        print(f"Discarded low confidence segment: {current_segment}")
+                        print("Received empty partial result")
 
+                elif event_type == 'final':
+                    if response.final.alternatives:
+                        current_segment = response.final.alternatives[0].text
+                        duration_ms = response.final.alternatives[0].end_time_ms - response.final.alternatives[
+                            0].start_time_ms
+                        current_confidence = response.final.alternatives[0].confidence
+                        if self.is_valid_transcription(current_segment, duration_ms, current_confidence):
+                            print(f"Final (confidence: {current_confidence}): {current_segment}")
+                        else:
+                            print(f"Discarded invalid final (confidence: {current_confidence}): {current_segment}")
+                            current_segment = ""
+                    else:
+                        print("Received empty final result")
+
+                elif event_type == 'final_refinement':
+                    if response.final_refinement.normalized_text.alternatives:
+                        refined_text = response.final_refinement.normalized_text.alternatives[0].text
+                        duration_ms = response.final_refinement.normalized_text.alternatives[0].end_time_ms - \
+                                      response.final_refinement.normalized_text.alternatives[0].start_time_ms
+                        confidence = response.final_refinement.normalized_text.alternatives[0].confidence
+                        if self.is_valid_transcription(refined_text, duration_ms, confidence):
+                            full_text += refined_text + " "
+                            print(f"Added refined (confidence: {confidence}): {refined_text}")
+                        else:
+                            print(f"Discarded invalid refinement (confidence: {confidence}): {refined_text}")
+                    else:
+                        print("Received empty final refinement")
+
+                elif event_type == 'eou_update':
+                    if current_segment:
+                        full_text += current_segment + " "
+                        print(f"Added unrefined segment (confidence: {current_confidence}): {current_segment}")
                     current_segment = ""
                     current_confidence = 0.0
 
-            elif event_type == 'eou_update':
-                pass  # We're now relying on classifier_update for adding segments
+                elif event_type == 'status_code':
+                    print(
+                        f"Received status code: {response.status_code.code_type}, message: {response.status_code.message}")
+
+        except grpc.RpcError as e:
+            print(f"gRPC error occurred: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
 
         return full_text.strip()
+
     def __del__(self):
         if hasattr(self, 'channel'):
             self.channel.close()
