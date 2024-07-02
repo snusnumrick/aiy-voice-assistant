@@ -122,18 +122,31 @@ class YandexSpeechRecognition(SpeechRecognitionService):
         responses = self.stub.RecognizeStreaming(request_generator(), metadata=metadata)
 
         full_text = ""
+        current_segment = ""
         try:
             for response in responses:
                 event_type = response.WhichOneof('Event')
                 if event_type == 'partial' and response.partial.alternatives:
                     print(f"Partial: {response.partial.alternatives[0].text}")
                 elif event_type == 'final':
-                    final_text = response.final.alternatives[0].text
-                    full_text += final_text + " "
-                    print(f"Final: {final_text}")
+                    current_segment = response.final.alternatives[0].text
+                    confidence = response.final.alternatives[0].confidence
+                    print(f"Final (confidence: {confidence}): {current_segment}")
                 elif event_type == 'final_refinement':
                     refined_text = response.final_refinement.normalized_text.alternatives[0].text
-                    print(f"Refined: {refined_text}")
+                    confidence = response.final_refinement.normalized_text.alternatives[0].confidence
+                    if confidence > self.confidence_threshold:
+                        full_text += refined_text + " "
+                        print(f"Refined (confidence: {confidence}): {refined_text}")
+                    else:
+                        print(f"Discarded low confidence refinement: {refined_text}")
+                    current_segment = ""  # Reset current segment
+                elif event_type == 'eou_update':
+                    # If we have a current segment that wasn't refined, add it to full_text
+                    if current_segment and confidence > self.confidence_threshold:
+                        full_text += current_segment + " "
+                        print(f"Added unrefined segment: {current_segment}")
+                    current_segment = ""  # Reset current segment
         except grpc.RpcError as err:
             print(f'Error code {err.code()}, message: {err.details()}')
             raise err
