@@ -236,6 +236,7 @@ class SpeechTranscriber:
                                        num_channels=1,
                                        bytes_per_sample=2)
             record_more = 0
+            breathing_on = False
 
             def start_idle():
                 nonlocal status, time_breathing_started, breathing_on
