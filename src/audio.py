@@ -62,7 +62,9 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
 
         text = ""
         for response in responses:
+            self.logger.info("Received response: %s", response)
             for result in response.results:
+                self.logger.info("Received result: %s", result)
                 if result.is_final:
                     text += result.alternatives[0].transcript + " "
         return text.strip()
