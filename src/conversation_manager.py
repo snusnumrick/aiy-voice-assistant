@@ -16,7 +16,7 @@ import pytz
 
 from .ai_models import AIModel
 from .config import Config
-from .web_search import web_search
+from .web_search import Tavily
 
 logger = logging.getLogger(__name__)
 
@@ -63,13 +63,13 @@ def get_system_prompt(config: Config):
     return prompt
 
 
-def process_and_search(input_string: str, searcher: web_search) -> Tuple[str, List[str]]:
+def process_and_search(input_string: str, searcher: Tavily) -> Tuple[str, List[str]]:
     """
     Process the input string, perform web searches for queries, and return modified string and results.
 
     Args:
         input_string (str): The input string that may contain web search queries.
-        searcher (web_search): An instance of the web_search class.
+        searcher (Tavily): An instance of the web_search class.
 
     Returns:
         Tuple[str, List[str]]: A tuple containing the modified string and a list of web search results.
@@ -120,7 +120,7 @@ class ConversationManager:
             ai_model (AIModel): The AI model to use for generating responses.
         """
         self.config = config
-        self.searcher = web_search()
+        self.searcher = Tavily()
         self.ai_model = ai_model
         self.message_history = deque([{"role": "system", "content": get_system_prompt(config)}])
 

@@ -1,9 +1,46 @@
+import json
 import os
 import requests
-import json
 
 
-class web_search:
+def google_web_search(term, lang) -> str:
+    def fetch_data(term, lang):
+        from bs4 import BeautifulSoup
+        import random
+
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.157 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36", ]
+
+        url = f"https://www.google.com/search?q={requests.utils.quote(term)}&hl={lang}"
+        headers = {"User-Agent": random.choice(user_agents)}
+        response = requests.get(url, headers=headers)
+        return BeautifulSoup(response.text, 'html.parser')
+
+    soup = fetch_data(term, lang)
+
+    brief = " ".join([element.text for element in soup.select(".sXLaOe")])
+    extract = " ".join([element.text for element in soup.select(".hgKElc")])
+    denotion = " ".join([element.text for element in soup.select(".wx62f")])
+    place = " ".join([element.text for element in soup.select(".HwtpBd")])
+    wiki = " ".join([element.text for element in soup.select(".yxjZuf span")])
+
+    a1 = (" ".join([element.text for element in soup.select(".UDZeY span")]).replace("Описание", "").
+          replace("ЕЩЁ", "") +
+          soup.select_one(".LGOjhe span").text) if soup.select_one(".LGOjhe span") else ""
+    a2 = " ".join([element.text for element in soup.select(".yXK7lf span")])
+
+    brief_result = "; ".join(filter(None, [brief, extract, denotion, place, wiki]))
+    result = brief_result or a2 or a1
+
+    return result
+
+
+class Tavily:
     def __init__(self):
         self.api_key = os.environ.get('TAVILY_API_KEY')
         if not self.api_key:
@@ -13,12 +50,7 @@ class web_search:
         url = "https://api.tavily.com/search"
 
         # Prepare the request payload
-        payload = {
-            "api_key": self.api_key,
-            "query": query,
-            "include_answer": True,
-            "search_depth": "advanced"
-        }
+        payload = {"api_key": self.api_key, "query": query, "include_answer": True, "search_depth": "advanced"}
 
         try:
             # Make the POST request to the API
