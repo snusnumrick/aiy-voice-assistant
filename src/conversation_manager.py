@@ -163,8 +163,6 @@ class ConversationManager:
             logger.info(f"AI response: {text} -> {response_text}")
             self.message_history.append({"role": "assistant", "content": response_text})
 
-        self.message_history.append({"role": "assistant", "content": response_text})
-
         return response_text
 
     def formatted_message_history(self):
