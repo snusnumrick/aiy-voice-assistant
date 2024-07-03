@@ -200,119 +200,118 @@ class SpeechTranscriber:
             raise ValueError(f"Unsupported speech recognition service: {service_name}")
         self.speech_service.setup_client(self.config)
 
-    class SpeechTranscriber:
-        def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
-            """
-            Transcribe speech from the microphone input, including pre and post buffering.
+    def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
+        """
+        Transcribe speech from the microphone input, including pre and post buffering.
 
-            Args:
-                player_process (Optional[Popen]): A subprocess.Popen object representing a running audio player.
+        Args:
+            player_process (Optional[Popen]): A subprocess.Popen object representing a running audio player.
 
-            Returns:
-                str: The transcribed text.
-            """
+        Returns:
+            str: The transcribed text.
+        """
 
-            chunks_deque = deque()
-            status = RecordingStatus.NOT_STARTED
+        chunks_deque = deque()
+        status = RecordingStatus.NOT_STARTED
 
-            def generate_audio_chunks():
-                nonlocal status, chunks_deque, player_process
+        def generate_audio_chunks():
+            nonlocal status, chunks_deque, player_process
 
-                audio_format = AudioFormat(sample_rate_hz=self.audio_sample_rate, num_channels=1, bytes_per_sample=2)
-                record_more = 0
+            audio_format = AudioFormat(sample_rate_hz=self.audio_sample_rate, num_channels=1, bytes_per_sample=2)
+            record_more = 0
+            breathing_on = False
+
+            def start_idle():
+                nonlocal status, time_breathing_started, breathing_on
+                logger.debug('Ready to listen...')
+                status = RecordingStatus.NOT_STARTED
+                self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
+                self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
+                time_breathing_started = time.time()
+                breathing_on = True
+
+            def start_listening():
+                nonlocal status, breathing_on, recoding_started_at
+                logger.debug('Recording audio...')
+                self.leds.update(Leds.rgb_on(self.led_recording_color))
+                breathing_on = False
+                logger.debug('Listening...')
+                status = RecordingStatus.STARTED
+                recoding_started_at = time.time()
+
+            def start_processing():
+                nonlocal status, record_more
+                logger.debug('Processing audio...')
+                self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
+                self.leds.update(Leds.rgb_pattern(self.led_processing_color))
+                status = RecordingStatus.FINISHED
+                record_more = self.number_of_chuncks_to_record_after_button_depressed
+
+            def stop_breathing():
+                nonlocal breathing_on
+                logger.debug('Breathing off')
+                self.leds.update(Leds.rgb_off())
                 breathing_on = False
 
-                def start_idle():
-                    nonlocal status, time_breathing_started, breathing_on
-                    logger.debug('Ready to listen...')
-                    status = RecordingStatus.NOT_STARTED
-                    self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
-                    self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
-                    time_breathing_started = time.time()
-                    breathing_on = True
+            def stop_playing():
+                nonlocal player_process
+                if player_process and player_process.returncode is None:
+                    try:
+                        logger.debug("Terminating player process")
+                        chunks_deque.clear()
+                        player_process.kill()
+                        player_process.wait()
+                        logger.debug("Player process terminated")
+                    except Exception as e:
+                        logger.error(f"Error terminating player process: {str(e)}")
 
-                def start_listening():
-                    nonlocal status, breathing_on, recoding_started_at
-                    logger.debug('Recording audio...')
-                    self.leds.update(Leds.rgb_on(self.led_recording_color))
-                    breathing_on = False
-                    logger.debug('Listening...')
-                    status = RecordingStatus.STARTED
-                    recoding_started_at = time.time()
+            start_idle()
+            recoding_started_at = time.time()
+            time_breathing_started = time.time()
+            for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
+                if time.time() - time_breathing_started > self.led_breathing_duration and breathing_on:
+                    stop_breathing()
 
-                def start_processing():
-                    nonlocal status, record_more
-                    logger.debug('Processing audio...')
-                    self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
-                    self.leds.update(Leds.rgb_pattern(self.led_processing_color))
-                    status = RecordingStatus.FINISHED
-                    record_more = self.number_of_chuncks_to_record_after_button_depressed
+                if status != RecordingStatus.FINISHED or (status == RecordingStatus.FINISHED and record_more > 0):
+                    if status == RecordingStatus.FINISHED:
+                        record_more -= 1
+                    chunks_deque.append(chunk)
+                    if status == RecordingStatus.NOT_STARTED and len(chunks_deque) > self.max_number_of_chunks:
+                        chunks_deque.popleft()
 
-                def stop_breathing():
-                    nonlocal breathing_on
-                    logger.debug('Breathing off')
-                    self.leds.update(Leds.rgb_off())
-                    breathing_on = False
+                if status == RecordingStatus.NOT_STARTED and self.button_is_pressed:
+                    stop_playing()
+                    start_listening()
 
-                def stop_playing():
-                    nonlocal player_process
-                    if player_process and player_process.returncode is None:
-                        try:
-                            logger.debug("Terminating player process")
-                            chunks_deque.clear()
-                            player_process.kill()
-                            player_process.wait()
-                            logger.debug("Player process terminated")
-                        except Exception as e:
-                            logger.error(f"Error terminating player process: {str(e)}")
+                if not chunks_deque:
+                    logger.debug("No audio chunk available")
+                    break
 
-                start_idle()
-                recoding_started_at = time.time()
-                time_breathing_started = time.time()
-                for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
-                    if time.time() - time_breathing_started > self.led_breathing_duration and breathing_on:
-                        stop_breathing()
+                if status != RecordingStatus.NOT_STARTED:
+                    yield chunks_deque.popleft()
 
-                    if status != RecordingStatus.FINISHED or (status == RecordingStatus.FINISHED and record_more > 0):
-                        if status == RecordingStatus.FINISHED:
-                            record_more -= 1
-                        chunks_deque.append(chunk)
-                        if status == RecordingStatus.NOT_STARTED and len(chunks_deque) > self.max_number_of_chunks:
-                            chunks_deque.popleft()
+                if status == RecordingStatus.STARTED and not self.button_is_pressed:
+                    start_processing()
 
-                    if status == RecordingStatus.NOT_STARTED and self.button_is_pressed:
-                        stop_playing()
-                        start_listening()
+        self.setup_button_callbacks()
+        logger.info('Press the button and speak')
 
-                    if not chunks_deque:
-                        logger.debug("No audio chunk available")
-                        break
+        with Recorder() as recorder:
+            audio_generator = generate_audio_chunks()
 
-                    if status != RecordingStatus.NOT_STARTED:
-                        yield chunks_deque.popleft()
+            for _ in audio_generator:
+                if status != RecordingStatus.NOT_STARTED:
+                    break
 
-                    if status == RecordingStatus.STARTED and not self.button_is_pressed:
-                        start_processing()
+            logger.debug('Processing audio...')
 
-            self.setup_button_callbacks()
-            logger.info('Press the button and speak')
+            try:
+                text = self.speech_service.transcribe_stream(audio_generator, self.config)
+            except Exception as e:
+                logger.error(f"Error transcribing speech: {str(e)}")
+                text = ""
 
-            with Recorder() as recorder:
-                audio_generator = generate_audio_chunks()
-
-                for _ in audio_generator:
-                    if status != RecordingStatus.NOT_STARTED:
-                        break
-
-                logger.debug('Processing audio...')
-
-                try:
-                    text = self.speech_service.transcribe_stream(audio_generator, self.config)
-                except Exception as e:
-                    logger.error(f"Error transcribing speech: {str(e)}")
-                    text = ""
-
-            return text
+        return text
 
     def setup_button_callbacks(self):
         """
