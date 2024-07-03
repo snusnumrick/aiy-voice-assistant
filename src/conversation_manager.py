@@ -189,10 +189,10 @@ class ConversationManager:
         while self.get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
             self.summarize_and_compress_history()
 
-        logger.info(f"Message history: \n{self.formatted_message_history()}")
+        logger.debug(f"Message history: \n{self.formatted_message_history()}")
 
         response_text = self.ai_model.get_response(list(self.message_history))
-        logger.info(f"AI response: {text} -> {response_text}")
+        logger.debug(f"AI response: {text} -> {response_text}")
         self.message_history.append({"role": "assistant", "content": response_text})
 
         _, search_results = process_and_search(response_text, self.searcher)
@@ -202,11 +202,11 @@ class ConversationManager:
             result_message = f"результаты поиска: {search_results[0]}"
             self.message_history.append({"role": "system", "content": result_message})
             self.message_history.append({"role": "user", "content": "?"})
-            logger.info(self.formatted_message_history())
+            logger.debug(self.formatted_message_history())
             response_text = self.ai_model.get_response(list(self.message_history))
             self.message_history.pop()
             self.message_history.append({"role": "assistant", "content": response_text})
-        logger.info(f"AI response: {text} -> {response_text}")
+        logger.debug(f"AI response: {text} -> {response_text}")
 
         return response_text
 
