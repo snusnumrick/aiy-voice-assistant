@@ -92,7 +92,8 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                     sample_rate_hertz=config.get("sample_rate_hertz", 16000), audio_channel_count=1)),
             text_normalization=stt_pb2.TextNormalizationOptions(
                 text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
-                profanity_filter=config.get("profanity_filter", False), literature_text=False),
+                profanity_filter=config.get("profanity_filter", False),
+                literature_text=config.get("literature_text", True),
             language_restriction=stt_pb2.LanguageRestrictionOptions(
                 restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
                 language_code=[config.get("language_code", "ru-RU")]),
