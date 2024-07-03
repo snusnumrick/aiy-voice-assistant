@@ -157,9 +157,12 @@ class ConversationManager:
         logger.info(f"Response Text: {_}; Search results: {search_results}")
 
         if search_results:
-            self.message_history.append({"role": "assistant", "content": search_results[0]})
+            result_message = f"результаты поиска: {search_results[0]}"
+            self.message_history.append({"role": "system", "content": result_message})
+            self.message_history.append({"role": "user", "content": ""})
             logger.info(self.formatted_message_history())
             response_text = self.ai_model.get_response(list(self.message_history))
+            self.message_history.pop()
             self.message_history.append({"role": "assistant", "content": response_text})
         logger.info(f"AI response: {text} -> {response_text}")
 
