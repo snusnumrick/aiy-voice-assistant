@@ -7,11 +7,49 @@ including message history, token counting, and interaction with AI models.
 
 from collections import deque
 import re
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from .ai_models import AIModel
 import logging
+from .web_search import web_search
 
 logger = logging.getLogger(__name__)
+
+
+def process_and_search(input_string: str, searcher: web_search) -> Tuple[str, List[str]]:
+    """
+    Process the input string, perform web searches for queries, and return modified string and results.
+
+    Args:
+        input_string (str): The input string that may contain web search queries.
+        searcher (web_search): An instance of the web_search class.
+
+    Returns:
+        Tuple[str, List[str]]: A tuple containing the modified string and a list of web search results.
+    """
+    # Regular expression to match {internet query: xxx} pattern
+    pattern = r'\{internet query: (.*?)\}'
+
+    # Find all matches
+    matches = re.findall(pattern, input_string)
+
+    # List to store search results
+    search_results = []
+
+    # Process each match
+    for match in matches:
+        try:
+            result = searcher.search(match)
+            search_results.append(result)
+        except Exception as e:
+            search_results.append(f"Error performing search: {str(e)}")
+
+    # Remove all {internet query: xxx} substrings from the input string
+    modified_string = re.sub(pattern, '', input_string)
+
+    # Remove any extra whitespace that might have been left
+    modified_string = ' '.join(modified_string.split())
+
+    return (modified_string, search_results)
 
 
 class ConversationManager:
@@ -33,6 +71,7 @@ class ConversationManager:
             ai_model (AIModel): The AI model to use for generating responses.
         """
         self.config = config
+        self.searcher = web_search()
         self.ai_model = ai_model
         self.message_history = deque()
         system_prompt = config.get('system_prompt',
@@ -110,6 +149,10 @@ class ConversationManager:
         logger.info(f"Message history: \n{self.formatted_message_history()}")
 
         response_text = self.ai_model.get_response(list(self.message_history))
+
+        response_text_, search_results = process_and_search(response_text, self.searcher)
+        logger.info(f"Response Text: {response_text_}; Search results: {search_results}")
+
         self.message_history.append({"role": "assistant", "content": response_text})
 
         logger.debug(f"AI response: {text} -> {response_text}")
