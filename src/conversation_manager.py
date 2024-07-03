@@ -120,7 +120,7 @@ class ConversationManager:
             ai_model (AIModel): The AI model to use for generating responses.
         """
         self.config = config
-        self.searcher = Tavily()
+        self.searcher = WebSearcher(config)
         self.ai_model = ai_model
         self.message_history = deque([{"role": "system", "content": get_system_prompt(config)}])
 
