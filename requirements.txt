@@ -12,3 +12,6 @@ protobuf
 tavily-python
 pytz
 geocoder
+requests
+BeautifulSoup4
+

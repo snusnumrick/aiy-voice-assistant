@@ -1,6 +1,12 @@
 import json
+import logging
 import os
+
 import requests
+
+from src.ai_models import OpenRouterModel
+
+logger = logging.getLogger(__name__)
 
 
 def google_web_search(term, lang) -> str:
@@ -29,9 +35,9 @@ def google_web_search(term, lang) -> str:
     place = " ".join([element.text for element in soup.select(".HwtpBd")])
     wiki = " ".join([element.text for element in soup.select(".yxjZuf span")])
 
-    a1 = (" ".join([element.text for element in soup.select(".UDZeY span")]).replace("Описание", "").
-          replace("ЕЩЁ", "") +
-          soup.select_one(".LGOjhe span").text) if soup.select_one(".LGOjhe span") else ""
+    a1 = (" ".join([element.text for element in soup.select(".UDZeY span")]).replace("Описание", "").replace("ЕЩЁ",
+                                                                                                             "") + soup.select_one(
+        ".LGOjhe span").text) if soup.select_one(".LGOjhe span") else ""
     a2 = " ".join([element.text for element in soup.select(".yXK7lf span")])
 
     brief_result = "; ".join(filter(None, [brief, extract, denotion, place, wiki]))
@@ -66,4 +72,23 @@ class Tavily:
 
         except json.JSONDecodeError as e:
             print(f"Error decoding JSON response: {e}")
+            raise
+
+
+class WebSearcher:
+    def __init__(self, config):
+        self.tavily = Tavily()
+        self.google = google_web_search
+        self.ai_model = OpenRouterModel(config)
+
+    def search(self, query: str) -> str:
+        try:
+            combined_result = self.tavily.search(query) + "\n\n" + self.google(query, "en")
+            prompt = f"based on text below, what is the answer to the question: {query}\n\n{combined_result}"
+            result = self.ai_model.get_response([{"role": "user", "content": prompt}])
+            logger.debug(f"Web search result for query '{query}' is: {result}")
+            return result
+
+        except Exception as e:
+            print(f"Error performing web search: {e}")
             raise

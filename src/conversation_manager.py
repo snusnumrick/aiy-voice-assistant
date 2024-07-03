@@ -16,7 +16,7 @@ import pytz
 
 from .ai_models import AIModel
 from .config import Config
-from .web_search import Tavily
+from .web_search import WebSearcher
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def get_system_prompt(config: Config):
     return prompt
 
 
-def process_and_search(input_string: str, searcher: Tavily) -> Tuple[str, List[str]]:
+def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, List[str]]:
     """
     Process the input string, perform web searches for queries, and return modified string and results.
 
