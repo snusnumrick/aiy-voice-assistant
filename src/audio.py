@@ -83,6 +83,33 @@ class SpeechTranscriber:
         self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.3)
         self.post_button_release_record_chunks = self.config.get('post_button_release_record_chunks', 3)
 
+    def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
+        """
+        Transcribe speech from the microphone input.
+
+        Args:
+            player_process (Optional[Popen]): A subprocess.Popen object representing a running audio player.
+
+        Returns:
+            str: The transcribed text.
+        """
+        self.setup_button_callbacks()
+        logger.info('Press the button and speak')
+
+        if player_process:
+            player_process.terminate()
+
+        with Recorder() as recorder:
+            audio_generator = self.generate_audio_chunks(recorder)
+
+            try:
+                text = self.stt_service.transcribe_stream(audio_generator)
+            except Exception as e:
+                logger.error(f"Error transcribing speech: {str(e)}")
+                text = ""
+
+        return text
+
     def generate_audio_chunks(self, recorder: Recorder) -> Iterator[bytes]:
         """
         Generate audio chunks for transcription.
