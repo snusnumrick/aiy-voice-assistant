@@ -83,7 +83,7 @@ class ConversationManager:
                                    "Я буду разговаривать с тобой через голосовой интерфейс."
                                    "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, "
                                    "не отвечпй сразу, а пошли ине сообщение в таком формате:"
-                                   "{internet query:<что ты хочешь поискать.")
+                                   "{internet query:<что ты хочешь поискать на английском языке>}")
         self.message_history.append({"role": "system", "content": system_prompt})
 
     def estimate_tokens(self, text: str) -> int:
