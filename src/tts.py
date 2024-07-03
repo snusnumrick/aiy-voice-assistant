@@ -12,6 +12,7 @@ import re
 from pydub import AudioSegment
 from src.config import Config
 
+
 def split_text(text: str, max_length: int) -> List[str]:
     """
     Split text into chunks of maximum length.
@@ -39,6 +40,7 @@ def split_text(text: str, max_length: int) -> List[str]:
 
     return chunks
 
+
 def combine_audio_files(file_list: List[str], output_filename: str) -> None:
     """
     Combine multiple audio files into a single file.
@@ -52,6 +54,7 @@ def combine_audio_files(file_list: List[str], output_filename: str) -> None:
         audio = AudioSegment.from_wav(file)
         combined += audio
     combined.export(output_filename, format="wav")
+
 
 def synthesize_speech(engine: Any, text: str, filename: str, config: Config) -> None:
     """
@@ -80,6 +83,7 @@ def synthesize_speech(engine: Any, text: str, filename: str, config: Config) -> 
             shutil.move(chunk_files[0], filename)
     finally:
         shutil.rmtree(temp_dir)
+
 
 # Additional TTS engine classes can be added here if needed
 
@@ -116,6 +120,7 @@ class YandexTTSEngine:
         """
         result = self.model.synthesize(text, raw_format=False)
         result.export(filename, 'wav')
+
 
 def create_tts_engine(config: Config) -> Any:
     """

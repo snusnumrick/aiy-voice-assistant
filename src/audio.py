@@ -83,29 +83,50 @@ class SpeechTranscriber:
         self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.3)
         self.post_button_release_record_chunks = self.config.get('post_button_release_record_chunks', 3)
 
-    def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
+    def generate_audio_chunks(self, recorder: Recorder) -> Iterator[bytes]:
         """
-        Transcribe speech from the microphone input.
+        Generate audio chunks for transcription.
 
         Args:
-            player_process (Optional[Popen]): A subprocess.Popen object representing a running audio player.
+            recorder (Recorder): The audio recorder object.
 
-        Returns:
-            str: The transcribed text.
+        Yields:
+            bytes: Audio chunk data.
         """
-        self.setup_button_callbacks()
-        logger.info('Press the button and speak')
+        chunks_deque: deque = deque()
+        status = RecognitionStatus.IDLE
+        record_more = 0
 
-        with Recorder() as recorder:
-            audio_generator = self.generate_audio_chunks(recorder)
+        try:
+            with led_pattern(self.leds, Pattern.breathe(self.breathing_period_ms), self.led_breathing_color):
+                for chunk in recorder.record(self.get_audio_format(),
+                                             chunk_duration_sec=self.audio_recording_chunk_duration_sec):
+                    if status == RecognitionStatus.IDLE and self.button_is_pressed:
+                        status = RecognitionStatus.LISTENING
+                        self.leds.update(Leds.rgb_on(self.led_recording_color))
+                        logger.info('Listening...')
 
-            try:
-                text = self.stt_service.transcribe_stream(audio_generator)
-            except Exception as e:
-                logger.error(f"Error transcribing speech: {str(e)}")
-                text = ""
+                    elif status == RecognitionStatus.LISTENING and not self.button_is_pressed:
+                        status = RecognitionStatus.PROCESSING
+                        record_more = self.post_button_release_record_chunks
+                        self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
+                        self.leds.update(Leds.rgb_pattern(self.led_processing_color))
+                        logger.info('Processing...')
 
-        return text
+                    if status != RecognitionStatus.IDLE or (status == RecognitionStatus.PROCESSING and record_more > 0):
+                        chunks_deque.append(chunk)
+                        if status == RecognitionStatus.IDLE and len(chunks_deque) > 3:
+                            chunks_deque.popleft()
+
+                    if status != RecognitionStatus.IDLE:
+                        yield chunks_deque.popleft()
+
+                    if status == RecognitionStatus.PROCESSING:
+                        record_more -= 1
+                        if record_more == 0:
+                            break
+        finally:
+            self.leds.update(Leds.rgb_off())
 
     def generate_audio_chunks(self, recorder: Recorder) -> Iterator[bytes]:
         """
@@ -121,26 +142,36 @@ class SpeechTranscriber:
         status = RecognitionStatus.IDLE
         record_more = 0
 
-        with led_pattern(self.leds, Pattern.breathe(self.breathing_period_ms), self.led_breathing_color):
-            for chunk in recorder.record(self.get_audio_format(),
-                                         chunk_duration_sec=self.audio_recording_chunk_duration_sec):
-                if self.handle_button_press(status, chunks_deque):
-                    status = RecognitionStatus.LISTENING
+        try:
+            with led_pattern(self.leds, Pattern.breathe(self.breathing_period_ms), self.led_breathing_color):
+                for chunk in recorder.record(self.get_audio_format(),
+                                             chunk_duration_sec=self.audio_recording_chunk_duration_sec):
+                    if status == RecognitionStatus.IDLE and self.button_is_pressed:
+                        status = RecognitionStatus.LISTENING
+                        self.leds.update(Leds.rgb_on(self.led_recording_color))
+                        logger.info('Listening...')
 
-                if self.handle_button_release(status):
-                    status = RecognitionStatus.PROCESSING
-                    record_more = self.post_button_release_record_chunks
+                    elif status == RecognitionStatus.LISTENING and not self.button_is_pressed:
+                        status = RecognitionStatus.PROCESSING
+                        record_more = self.post_button_release_record_chunks
+                        self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
+                        self.leds.update(Leds.rgb_pattern(self.led_processing_color))
+                        logger.info('Processing...')
 
-                if self.should_record(status, record_more):
-                    chunks_deque.append(chunk)
-                    if status == RecognitionStatus.IDLE and len(chunks_deque) > 3:
-                        chunks_deque.popleft()
+                    if status != RecognitionStatus.IDLE or (status == RecognitionStatus.PROCESSING and record_more > 0):
+                        chunks_deque.append(chunk)
+                        if status == RecognitionStatus.IDLE and len(chunks_deque) > 3:
+                            chunks_deque.popleft()
 
-                if status != RecognitionStatus.IDLE:
-                    yield chunks_deque.popleft()
+                    if status != RecognitionStatus.IDLE:
+                        yield chunks_deque.popleft()
 
-                if status == RecognitionStatus.PROCESSING:
-                    record_more -= 1
+                    if status == RecognitionStatus.PROCESSING:
+                        record_more -= 1
+                        if record_more == 0:
+                            break
+        finally:
+            self.leds.update(Leds.rgb_off())
 
     def get_audio_format(self) -> AudioFormat:
         """
