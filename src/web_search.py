@@ -26,7 +26,6 @@ class web_search:
             response.raise_for_status()  # Raise an exception for bad status codes
 
             # Parse and return the JSON response
-            print(response.json())
             return response.json()["answer"]
 
         except requests.exceptions.RequestException as e:

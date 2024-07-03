@@ -37,7 +37,7 @@ def process_and_search(input_string: str, searcher: web_search) -> Tuple[str, Li
 
     # Process each match
     for match in matches:
-        logger.info(f"Performing web search for: {match}")
+        logger.debug(f"Performing web search for: {match}")
         try:
             result = searcher.search(match)
             search_results.append(result)
@@ -150,6 +150,7 @@ class ConversationManager:
         logger.info(f"Message history: \n{self.formatted_message_history()}")
 
         response_text = self.ai_model.get_response(list(self.message_history))
+        logger.info(f"AI response: {text} -> {response_text}")
         self.message_history.append({"role": "assistant", "content": response_text})
 
         _, search_results = process_and_search(response_text, self.searcher)
@@ -157,12 +158,13 @@ class ConversationManager:
 
         if search_results:
             self.message_history.append({"role": "system", "content": f"Search result: {search_results[0]}"})
+            logger.info(self.formatted_message_history()
             response_text = self.ai_model.get_response(list(self.message_history))
+            logger.info(f"AI response: {text} -> {response_text}")
             self.message_history.append({"role": "assistant", "content": response_text})
 
         self.message_history.append({"role": "assistant", "content": response_text})
 
-        logger.debug(f"AI response: {text} -> {response_text}")
         return response_text
 
     def formatted_message_history(self):
