@@ -5,14 +5,47 @@ This module provides the ConversationManager class for managing the flow of conv
 including message history, token counting, and interaction with AI models.
 """
 
-from collections import deque
-import re
-from typing import List, Dict, Tuple
-from .ai_models import AIModel
+import datetime
 import logging
+import re
+from collections import deque
+from typing import List, Dict, Tuple
+
+import geocoder
+import pytz
+
+from .ai_models import AIModel
 from .web_search import web_search
 
 logger = logging.getLogger(__name__)
+
+
+def get_current_date_time_location():
+    # Get current date and time in UTC
+    now_utc = datetime.datetime.now(pytz.utc)
+
+    # Define the timezone you want to convert to (for example, PST)
+    timezone = pytz.timezone('America/Los_Angeles')
+    now_local = now_utc.astimezone(timezone)
+
+    # Format the date with the month as a word
+    months = {1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля', 5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
+        9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'}
+    date_str = now_local.strftime(f"%d {months[now_local.month]} %Y")
+
+    # Format the time in 12-hour format with AM/PM and timezone
+    time_str = now_local.strftime("%I:%M:%S %p, %Z")
+
+    # Get current location
+    g = geocoder.ip('me')
+    location = g.city + ', ' + g.country if g.city and g.country else "неизвестно"
+
+    # Prepare the message in Russian
+    message = f"Дата: {date_str}, Время: {time_str}, Местоположение: {location}"
+
+    return message
+
+print(get_current_date_time_location()
 
 
 def process_and_search(input_string: str, searcher: web_search) -> Tuple[str, List[str]]:
@@ -75,15 +108,14 @@ class ConversationManager:
         self.searcher = web_search()
         self.ai_model = ai_model
         self.message_history = deque()
-        system_prompt = config.get('system_prompt',
-                                   "Тебя зовут Роби. "
-                                   "Ты мой друг и помощник. Отвечай естественно, как в устной речи."
-                                   "Говори мксимально просто и понятно. Не используй списки и нумерации."
-                                   "Если чего-то не знаешь, так и скажи."
-                                   "Я буду разговаривать с тобой через голосовой интерфейс."
-                                   "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, "
-                                   "не отвечпй сразу, а пошли ине сообщение в таком формате:"
-                                   "{internet query:<что ты хочешь поискать на английском языке>}")
+        system_prompt = config.get('system_prompt', "Тебя зовут Роби. "
+                                                    "Ты мой друг и помощник. Отвечай естественно, как в устной речи."
+                                                    "Говори мксимально просто и понятно. Не используй списки и нумерации."
+                                                    "Если чего-то не знаешь, так и скажи."
+                                                    "Я буду разговаривать с тобой через голосовой интерфейс."
+                                                    "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, "
+                                                    "не отвечпй сразу, а пошли ине сообщение в таком формате:"
+                                                    "{internet query:<что ты хочешь поискать на английском языке>}")
         self.message_history.append({"role": "system", "content": system_prompt})
 
     def estimate_tokens(self, text: str) -> int:
@@ -116,9 +148,8 @@ class ConversationManager:
         """
         Summarize and compress the conversation history to reduce token count.
         """
-        summary_prompt = self.config.get('summary_prompt',
-                                         "Summarize the key points of this conversation, "
-                                         "focusing on the most important facts and context. Be concise:")
+        summary_prompt = self.config.get('summary_prompt', "Summarize the key points of this conversation, "
+                                                           "focusing on the most important facts and context. Be concise:")
         for msg in self.message_history:
             if msg["role"] != "system":
                 summary_prompt += f"\n{msg['role']}: {msg['content']}"
