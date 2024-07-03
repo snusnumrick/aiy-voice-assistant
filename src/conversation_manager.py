@@ -15,6 +15,7 @@ import geocoder
 import pytz
 
 from .ai_models import AIModel
+from .config import Config
 from .web_search import web_search
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ def get_current_date_time_location():
 
     # Format the date with the month as a word
     months = {1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля', 5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
-        9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'}
+              9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'}
     date_str = now_local.strftime(f"%d {months[now_local.month]} %Y")
 
     # Format the time in 12-hour format with AM/PM and timezone
@@ -38,14 +39,29 @@ def get_current_date_time_location():
 
     # Get current location
     g = geocoder.ip('me')
-    location = g.city + ', ' + g.country if g.city and g.country else "неизвестно"
+    location_parts = [g.city, g.state, g.country]
+    location = ', '.join([part for part in location_parts if part]) if any(location_parts) else ''
 
     # Prepare the message in Russian
-    message = f"Дата: {date_str}, Время: {time_str}, Местоположение: {location}"
+    message = f"Сегодня {date_str}. Сейчас {time_str}."
+    if location:
+        message += f" Я нахожусь в {location}"
 
     return message
 
-print(get_current_date_time_location())
+
+def system_prompt(config: Config):
+    prompt = f"Тебя зовут Роби. " \
+             "{get_current_date_time_location()}" \
+             "Ты мой друг и помощник. Отвечай естественно, как в устной речи. " \
+             "Говори максимально просто и понятно. Не используй списки и нумерации. " \
+             "Если чего-то не знаешь, так и скажи. " \
+             "Я буду разговаривать с тобой через голосовой интерфейс. " \
+             "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, " \
+             "не отвечай сразу, а пошли мне сообщение в таком формате: " \
+             "{internet query:<что ты хочешь поискать на английском языке>}"
+    logger.info(f"System prompt: {prompt}")
+    return prompt
 
 
 def process_and_search(input_string: str, searcher: web_search) -> Tuple[str, List[str]]:
