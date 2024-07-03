@@ -5,24 +5,27 @@ This module provides functionality for speech transcription and synthesis,
 interfacing with the Google Cloud Speech-to-Text API and various TTS engines.
 """
 
-from typing import Optional, List, Iterator
-from subprocess import Popen
-from aiy.board import Button
-from aiy.leds import Leds, Color, Pattern
-from aiy.voice.audio import AudioFormat, Recorder
-from google.cloud import speech
 import logging
+import os
+import re
+import shutil
+import tempfile
+import time
 from abc import ABC, abstractmethod
 from collections import deque
-import time
-import os
-from pydub import AudioSegment
-import tempfile
-import shutil
-import re
+from enum import Enum
+from subprocess import Popen
+from typing import Optional, List, Iterator
+
 import grpc
-from src.tts_engine import TTSEngine
+from aiy.board import Button
+from aiy.leds import Leds, Pattern
+from aiy.voice.audio import AudioFormat, Recorder
+from google.cloud import speech
+from pydub import AudioSegment
+
 from src.config import Config
+from src.tts_engine import TTSEngine
 
 logger = logging.getLogger(__name__)
 
@@ -53,14 +56,10 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
 
         logger.debug("Transcribing audio stream (google)")
         streaming_config = speech.types.StreamingRecognitionConfig(
-            config=speech.types.RecognitionConfig(
-                encoding=speech.types.RecognitionConfig.AudioEncoding.LINEAR16,
+            config=speech.types.RecognitionConfig(encoding=speech.types.RecognitionConfig.AudioEncoding.LINEAR16,
                 sample_rate_hertz=config.get("sample_rate_hertz", 16000),
-                language_code=config.get("language_code", "ru-RU"),
-                enable_automatic_punctuation=True
-            ),
-            interim_results=True
-        )
+                language_code=config.get("language_code", "ru-RU"), enable_automatic_punctuation=True),
+            interim_results=True)
         requests = (speech.types.StreamingRecognizeRequest(audio_content=chunk) for chunk in audio_generator)
         responses = self.client.streaming_recognize(streaming_config, requests)
 
@@ -87,27 +86,17 @@ class YandexSpeechRecognition(SpeechRecognitionService):
         self.channel = grpc.secure_channel('stt.api.cloud.yandex.net:443', cred)
         self.stub = stt_service_pb2_grpc.RecognizerStub(self.channel)
 
-        self.recognize_options = stt_pb2.StreamingOptions(
-            recognition_model=stt_pb2.RecognitionModelOptions(
-                audio_format=stt_pb2.AudioFormatOptions(
-                    raw_audio=stt_pb2.RawAudio(
-                        audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
-                        sample_rate_hertz=config.get("sample_rate_hertz", 16000),
-                        audio_channel_count=1
-                    )
-                ),
-                text_normalization=stt_pb2.TextNormalizationOptions(
-                    text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
-                    profanity_filter=config.get("profanity_filter", False),
-                    literature_text=False
-                ),
-                language_restriction=stt_pb2.LanguageRestrictionOptions(
-                    restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
-                    language_code=[config.get("language_code", "ru-RU")]
-                ),
-                audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME
-            )
-        )
+        self.recognize_options = stt_pb2.StreamingOptions(recognition_model=stt_pb2.RecognitionModelOptions(
+            audio_format=stt_pb2.AudioFormatOptions(
+                raw_audio=stt_pb2.RawAudio(audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
+                    sample_rate_hertz=config.get("sample_rate_hertz", 16000), audio_channel_count=1)),
+            text_normalization=stt_pb2.TextNormalizationOptions(
+                text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
+                profanity_filter=config.get("profanity_filter", False), literature_text=False),
+            language_restriction=stt_pb2.LanguageRestrictionOptions(
+                restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
+                language_code=[config.get("language_code", "ru-RU")]),
+            audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME))
 
     def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
         def request_generator():
@@ -154,6 +143,12 @@ class YandexSpeechRecognition(SpeechRecognitionService):
             self.channel.close()
 
 
+class RecordingStatus(Enum):
+    NOT_STARTED = 0
+    STARTED = 1
+    FINISHED = 2
+
+
 class SpeechTranscriber:
     """
     A class to handle speech transcription using Google Cloud Speech-to-Text API.
@@ -191,6 +186,9 @@ class SpeechTranscriber:
         self.led_processing_blink_period_ms = self.config.get('processing_blink_period_ms', 300)
         self.audio_sample_rate = self.config.get('audio_sample_rate', 16000)
         self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.3)
+        self.max_number_of_chunks = self.config.get('max_number_of_chunks', 5)
+        self.number_of_chuncks_to_record_after_button_depressed = self.config.get(
+            'number_of_chuncks_to_record_after_button_depressed', 3)
 
     def setup_speech_service(self):
         service_name = self.config.get('speech_recognition_service', 'yandex').lower()
@@ -202,123 +200,119 @@ class SpeechTranscriber:
             raise ValueError(f"Unsupported speech recognition service: {service_name}")
         self.speech_service.setup_client(self.config)
 
-    def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
-        """
-        Transcribe speech from the microphone input, including pre and post buffering.
+    class SpeechTranscriber:
+        def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
+            """
+            Transcribe speech from the microphone input, including pre and post buffering.
 
-        Args:
-            player_process (Optional[Popen]): A subprocess.Popen object representing a running audio player.
+            Args:
+                player_process (Optional[Popen]): A subprocess.Popen object representing a running audio player.
 
-        Returns:
-            str: The transcribed text.
-        """
+            Returns:
+                str: The transcribed text.
+            """
 
-        chunks_deque = deque()
-        status = 0  # 0 - not started, 1 - started, 2 - finished
+            chunks_deque = deque()
+            status = RecordingStatus.NOT_STARTED
 
-        def generate_audio_chunks():
-            nonlocal status, chunks_deque, player_process
+            def generate_audio_chunks():
+                nonlocal status, chunks_deque, player_process
 
-            audio_format = AudioFormat(sample_rate_hz=self.audio_sample_rate,
-                                       num_channels=1,
-                                       bytes_per_sample=2)
-            record_more = 0
-            breathing_on = False
-
-            def start_idle():
-                nonlocal status, time_breathing_started, breathing_on
-                logger.debug('Ready to listen...')
-                status = 0
-                self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
-                self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
-                time_breathing_started = time.time()
-                breathing_on = True
-
-            def start_listening():
-                nonlocal status, breathing_on, recoding_started_at
-                logger.debug('Recording audio...')
-                self.leds.update(Leds.rgb_on(self.led_recording_color))
+                audio_format = AudioFormat(sample_rate_hz=self.audio_sample_rate, num_channels=1, bytes_per_sample=2)
+                record_more = 0
                 breathing_on = False
-                logger.debug('Listening...')
-                status = 1
+
+                def start_idle():
+                    nonlocal status, time_breathing_started, breathing_on
+                    logger.debug('Ready to listen...')
+                    status = RecordingStatus.NOT_STARTED
+                    self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
+                    self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
+                    time_breathing_started = time.time()
+                    breathing_on = True
+
+                def start_listening():
+                    nonlocal status, breathing_on, recoding_started_at
+                    logger.debug('Recording audio...')
+                    self.leds.update(Leds.rgb_on(self.led_recording_color))
+                    breathing_on = False
+                    logger.debug('Listening...')
+                    status = RecordingStatus.STARTED
+                    recoding_started_at = time.time()
+
+                def start_processing():
+                    nonlocal status, record_more
+                    logger.debug('Processing audio...')
+                    self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
+                    self.leds.update(Leds.rgb_pattern(self.led_processing_color))
+                    status = RecordingStatus.FINISHED
+                    record_more = self.number_of_chuncks_to_record_after_button_depressed
+
+                def stop_breathing():
+                    nonlocal breathing_on
+                    logger.debug('Breathing off')
+                    self.leds.update(Leds.rgb_off())
+                    breathing_on = False
+
+                def stop_playing():
+                    nonlocal player_process
+                    if player_process and player_process.returncode is None:
+                        try:
+                            logger.debug("Terminating player process")
+                            chunks_deque.clear()
+                            player_process.kill()
+                            player_process.wait()
+                            logger.debug("Player process terminated")
+                        except Exception as e:
+                            logger.error(f"Error terminating player process: {str(e)}")
+
+                start_idle()
                 recoding_started_at = time.time()
+                time_breathing_started = time.time()
+                for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
+                    if time.time() - time_breathing_started > self.led_breathing_duration and breathing_on:
+                        stop_breathing()
 
-            def start_processing():
-                nonlocal status, record_more
+                    if status != RecordingStatus.FINISHED or (status == RecordingStatus.FINISHED and record_more > 0):
+                        if status == RecordingStatus.FINISHED:
+                            record_more -= 1
+                        chunks_deque.append(chunk)
+                        if status == RecordingStatus.NOT_STARTED and len(chunks_deque) > self.max_number_of_chunks:
+                            chunks_deque.popleft()
+
+                    if status == RecordingStatus.NOT_STARTED and self.button_is_pressed:
+                        stop_playing()
+                        start_listening()
+
+                    if not chunks_deque:
+                        logger.debug("No audio chunk available")
+                        break
+
+                    if status != RecordingStatus.NOT_STARTED:
+                        yield chunks_deque.popleft()
+
+                    if status == RecordingStatus.STARTED and not self.button_is_pressed:
+                        start_processing()
+
+            self.setup_button_callbacks()
+            logger.info('Press the button and speak')
+
+            with Recorder() as recorder:
+                audio_generator = generate_audio_chunks()
+
+                for _ in audio_generator:
+                    if status != RecordingStatus.NOT_STARTED:
+                        break
+
                 logger.debug('Processing audio...')
-                self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
-                self.leds.update(Leds.rgb_pattern(self.led_processing_color))
-                status = 2
-                record_more = 3
 
-            def stop_breathing():
-                nonlocal breathing_on
-                logger.debug('Breathing off')
-                self.leds.update(Leds.rgb_off())
-                breathing_on = False
+                try:
+                    text = self.speech_service.transcribe_stream(audio_generator, self.config)
+                except Exception as e:
+                    logger.error(f"Error transcribing speech: {str(e)}")
+                    text = ""
 
-            def stop_playing():
-                nonlocal player_process
-                if player_process and player_process.returncode is None:
-                    try:
-                        logger.debug("Terminating player process")
-                        chunks_deque.clear()
-                        player_process.kill()
-                        player_process.wait()
-                        logger.debug("Player process terminated")
-                        # time.sleep(0.5)
-                    except Exception as e:
-                        logger.error(f"Error terminating player process: {str(e)}")
-
-            start_idle()
-            recoding_started_at = time.time()
-            time_breathing_started = time.time()
-            for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
-                # if breathing is on for more than maX_breathing_duration seconds, switch off LED
-                if time.time() - time_breathing_started > self.led_breathing_duration and breathing_on:
-                    stop_breathing()
-
-                # manage queue
-                if status < 2 or (status == 2 and record_more > 0):
-                    if status == 2:
-                        record_more -= 1
-                    chunks_deque.append(chunk)
-                    if status == 0 and len(chunks_deque) > 3:
-                        chunks_deque.popleft()
-
-                if status == 0 and self.button_is_pressed:
-                    stop_playing()
-                    start_listening()
-
-                if not chunks_deque:
-                    logger.debug("No audio chunk available")
-                    break
-
-                if status > 0:
-                    yield chunks_deque.popleft()
-
-                if status == 1 and not self.button_is_pressed:
-                    start_processing()
-
-        self.setup_button_callbacks()
-        logger.info('Press the button and speak')
-
-        with Recorder() as recorder:
-            audio_generator = generate_audio_chunks()
-
-            for _ in audio_generator:
-                if status:
-                    break
-
-            logger.debug('Processing audio...')
-
-            try:
-                text = self.speech_service.transcribe_stream(audio_generator, self.config)
-            except Exception as e:
-                logger.error(f"Error transcribing speech: {str(e)}")
-                text = ""
-
-        return text
+            return text
 
     def setup_button_callbacks(self):
         """
