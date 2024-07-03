@@ -27,7 +27,7 @@ def process_and_search(input_string: str, searcher: web_search) -> Tuple[str, Li
         Tuple[str, List[str]]: A tuple containing the modified string and a list of web search results.
     """
     # Regular expression to match {internet query: xxx} pattern
-    pattern = r'\{internet query: (.*?)\}'
+    pattern = r'\{internet query:(.*?)\}'
 
     # Find all matches
     matches = re.findall(pattern, input_string)
@@ -37,6 +37,7 @@ def process_and_search(input_string: str, searcher: web_search) -> Tuple[str, Li
 
     # Process each match
     for match in matches:
+        logger.info(f"Performing web search for: {match}")
         try:
             result = searcher.search(match)
             search_results.append(result)
