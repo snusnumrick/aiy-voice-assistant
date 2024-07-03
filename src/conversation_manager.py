@@ -45,7 +45,7 @@ def get_current_date_time_location():
 
     return message
 
-print(get_current_date_time_location()
+print(get_current_date_time_location())
 
 
 def process_and_search(input_string: str, searcher: web_search) -> Tuple[str, List[str]]:
