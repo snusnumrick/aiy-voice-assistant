@@ -16,7 +16,6 @@ from abc import ABC, abstractmethod
 from collections import deque
 import time
 import os
-from enum import Enum
 from pydub import AudioSegment
 import tempfile
 import shutil
@@ -214,75 +213,51 @@ class SpeechTranscriber:
             str: The transcribed text.
         """
 
-        class RecognitionStatus(Enum):
-            IDLE = 0
-            LISTENING = 1
-            PROCESSING = 2
-
         chunks_deque = deque()
-        status = RecognitionStatus.IDLE
+        status = 0  # 0 - not started, 1 - started, 2 - finished
 
         def generate_audio_chunks():
             nonlocal status, chunks_deque, player_process
 
-            audio_format = AudioFormat(sample_rate_hz=self.audio_sample_rate, num_channels=1, bytes_per_sample=2)
+            audio_format = AudioFormat(sample_rate_hz=self.audio_sample_rate,
+                                       num_channels=1,
+                                       bytes_per_sample=2)
             record_more = 0
             breathing_on = False
-            time_breathing_started = time.time()
-            recording_started_at = time.time()
-
-            def update_led_state():
-                nonlocal breathing_on, time_breathing_started
-                if time.time() - time_breathing_started > self.led_breathing_duration and breathing_on:
-                    self.leds.update(Leds.rgb_off())
-                    breathing_on = False
-
-            def handle_idle_state():
-                nonlocal status, breathing_on, time_breathing_started
-                if status == RecognitionStatus.IDLE and self.button_is_pressed:
-                    stop_player()
-                    start_listening()
-
-            def handle_listening_state():
-                nonlocal status, record_more
-                if status == RecognitionStatus.LISTENING and not self.button_is_pressed:
-                    start_processing()
-
-            def manage_audio_chunks():
-                nonlocal record_more
-                if status != RecognitionStatus.IDLE or (status == RecognitionStatus.PROCESSING and record_more > 0):
-                    if status == RecognitionStatus.PROCESSING:
-                        record_more -= 1
-                    chunks_deque.append(chunk)
-                    if status == RecognitionStatus.IDLE and len(chunks_deque) > 3:
-                        chunks_deque.popleft()
 
             def start_idle():
-                nonlocal status, breathing_on
+                nonlocal status, time_breathing_started, breathing_on
                 logger.debug('Ready to listen...')
-                status = RecognitionStatus.IDLE
+                status = 0
                 self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
+                time_breathing_started = time.time()
                 breathing_on = True
 
             def start_listening():
-                nonlocal status, breathing_on, recording_started_at
+                nonlocal status, breathing_on, recoding_started_at
                 logger.debug('Recording audio...')
                 self.leds.update(Leds.rgb_on(self.led_recording_color))
                 breathing_on = False
                 logger.debug('Listening...')
-                status = RecognitionStatus.LISTENING
-                recording_started_at = time.time()
+                status = 1
+                recoding_started_at = time.time()
 
             def start_processing():
                 nonlocal status, record_more
                 logger.debug('Processing audio...')
                 self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_processing_color))
-                status = RecognitionStatus.PROCESSING
+                status = 2
                 record_more = 3
 
-            def stop_player():
+            def stop_breathing():
+                nonlocal breathing_on
+                logger.debug('Breathing off')
+                self.leds.update(Leds.rgb_off())
+                breathing_on = False
+
+            def stop_playing():
                 nonlocal player_process
                 if player_process and player_process.returncode is None:
                     try:
@@ -291,23 +266,39 @@ class SpeechTranscriber:
                         player_process.kill()
                         player_process.wait()
                         logger.debug("Player process terminated")
+                        # time.sleep(0.5)
                     except Exception as e:
                         logger.error(f"Error terminating player process: {str(e)}")
 
             start_idle()
-
+            recoding_started_at = time.time()
+            time_breathing_started = time.time()
             for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
-                update_led_state()
-                manage_audio_chunks()
-                handle_idle_state()
-                handle_listening_state()
+                # if breathing is on for more than maX_breathing_duration seconds, switch off LED
+                if time.time() - time_breathing_started > self.led_breathing_duration and breathing_on:
+                    stop_breathing()
+
+                # manage queue
+                if status < 2 or (status == 2 and record_more > 0):
+                    if status == 2:
+                        record_more -= 1
+                    chunks_deque.append(chunk)
+                    if status == 0 and len(chunks_deque) > 3:
+                        chunks_deque.popleft()
+
+                if status == 0 and self.button_is_pressed:
+                    stop_playing()
+                    start_listening()
 
                 if not chunks_deque:
                     logger.debug("No audio chunk available")
                     break
 
-                if status != RecognitionStatus.IDLE:
+                if status > 0:
                     yield chunks_deque.popleft()
+
+                if status == 1 and not self.button_is_pressed:
+                    start_processing()
 
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
@@ -315,9 +306,8 @@ class SpeechTranscriber:
         with Recorder() as recorder:
             audio_generator = generate_audio_chunks()
 
-            # Wait for the first chunk to be generated
             for _ in audio_generator:
-                if status != RecognitionStatus.IDLE:
+                if status:
                     break
 
             logger.debug('Processing audio...')
