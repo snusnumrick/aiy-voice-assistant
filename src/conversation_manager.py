@@ -50,7 +50,7 @@ def get_current_date_time_location():
     return message
 
 
-def system_prompt(config: Config):
+def get_system_prompt(config: Config):
     prompt = f"Тебя зовут Роби. " \
              "{get_current_date_time_location()}" \
              "Ты мой друг и помощник. Отвечай естественно, как в устной речи. " \
@@ -123,16 +123,7 @@ class ConversationManager:
         self.config = config
         self.searcher = web_search()
         self.ai_model = ai_model
-        self.message_history = deque()
-        system_prompt = config.get('system_prompt', "Тебя зовут Роби. "
-                                                    "Ты мой друг и помощник. Отвечай естественно, как в устной речи."
-                                                    "Говори мксимально просто и понятно. Не используй списки и нумерации."
-                                                    "Если чего-то не знаешь, так и скажи."
-                                                    "Я буду разговаривать с тобой через голосовой интерфейс."
-                                                    "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, "
-                                                    "не отвечпй сразу, а пошли ине сообщение в таком формате:"
-                                                    "{internet query:<что ты хочешь поискать на английском языке>}")
-        self.message_history.append({"role": "system", "content": system_prompt})
+        self.message_history = deque([{"role": "system", "content": get_system_prompt(config)}])
 
     def estimate_tokens(self, text: str) -> int:
         """
@@ -166,16 +157,17 @@ class ConversationManager:
         """
         summary_prompt = self.config.get('summary_prompt', "Summarize the key points of this conversation, "
                                                            "focusing on the most important facts and context. Be concise:")
+        first_message = True
         for msg in self.message_history:
-            if msg["role"] != "system":
+            if not first_message:
                 summary_prompt += f"\n{msg['role']}: {msg['content']}"
+            else:
+                first_message = False
 
         summary = self.ai_model.get_response([{"role": "user", "content": summary_prompt}])
 
-        system_message = self.message_history[0]
-        self.message_history.clear()
-        self.message_history.append(system_message)
-        self.message_history.append({"role": "system", "content": f"Conversation summary: {summary}"})
+        self.message_history = deque([{"role": "system", "content": get_system_prompt(self.config)},
+                                      {"role": "system", "content": f"Conversation summary: {summary}"}])
 
         logger.info(f"Summarized conversation: {summary}")
 
@@ -189,6 +181,10 @@ class ConversationManager:
         Returns:
             str: The AI-generated response.
         """
+
+        # update system message
+        self.message_history[0] = {"role": "system", "content": get_system_prompt(self.config)}
+
         self.message_history.append({"role": "user", "content": text})
 
         while self.get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
