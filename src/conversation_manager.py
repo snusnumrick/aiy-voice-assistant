@@ -245,6 +245,7 @@ class ConversationManager:
                                          "content": f"результаты поиска в интернете по запросу {query}: {result}"})
             self.message_history.append(last_user_message)
             # [,,,,S,U]
+            print("\n" + self.formatted_message_history() + "\n")
             response_text = self.ai_model.get_response(list(self.message_history))
             _, search_results = process_and_search(response_text, self.searcher)
 
