@@ -224,7 +224,7 @@ class SpeechTranscriber:
 
             def start_idle():
                 nonlocal status, time_breathing_started, breathing_on
-                logger.debug('Ready to listen...')
+                logger.info('Ready to listen...')
                 status = RecordingStatus.NOT_STARTED
                 self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
@@ -233,16 +233,15 @@ class SpeechTranscriber:
 
             def start_listening():
                 nonlocal status, breathing_on, recoding_started_at
-                logger.debug('Recording audio...')
+                logger.info('Recording audio...')
                 self.leds.update(Leds.rgb_on(self.led_recording_color))
                 breathing_on = False
-                logger.debug('Listening...')
                 status = RecordingStatus.STARTED
                 recoding_started_at = time.time()
 
             def start_processing():
                 nonlocal status, record_more
-                logger.debug('Processing audio...')
+                logger.info('Processing audio...')
                 self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_processing_color))
                 status = RecordingStatus.FINISHED
@@ -250,7 +249,7 @@ class SpeechTranscriber:
 
             def stop_breathing():
                 nonlocal breathing_on
-                logger.debug('Breathing off')
+                logger.info('Breathing off')
                 self.leds.update(Leds.rgb_off())
                 breathing_on = False
 
