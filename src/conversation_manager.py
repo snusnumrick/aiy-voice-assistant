@@ -142,8 +142,8 @@ class ConversationManager:
         self.config = config
         self.searcher = WebSearcher(config)
         self.ai_model = ai_model
-        self.message_history = deque([{"role": "system", "content": self.get_system_prompt()}])
         self.facts = []
+        self.message_history = deque([{"role": "system", "content": self.get_system_prompt()}])
 
     def get_system_prompt(self):
         prompt = f"{get_current_date_time_location()} "
