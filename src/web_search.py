@@ -88,7 +88,7 @@ class WebSearcher:
             # prompt = f"based on result from internet search below, what is the answer to the question: {query}\n\n{combined_result}"
             # result = self.ai_model.get_response([{"role": "user", "content": prompt}])
 
-            result = self.google(query, "en") or self.tavily.search(query)
+            result = self.tavily.search(query)
 
             logger.info(f"Web search result for query '{query}' is: {result}")
             return result

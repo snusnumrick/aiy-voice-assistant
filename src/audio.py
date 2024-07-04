@@ -284,8 +284,9 @@ class SpeechTranscriber:
                     start_listening()
                     logger.info(f"{len(chunks_deque)} audio chunks buffered")
                     status = RecordingStatus.STARTED
+                    continue
 
-                elif not chunks_deque:
+                if not chunks_deque:
                     logger.info("No audio chunk available")
 
                     import wave
