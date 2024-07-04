@@ -249,8 +249,6 @@ class ConversationManager:
             # [...,U]
             _, search_results = process_and_search(response_text, self.searcher)
 
-        self.message_history.append({"role": "system", "content": f"результаты поиска в интернете: {search_results[0]}"})
-
         self.message_history.append({"role": "assistant", "content": response_text})
 
         response_text, facts = extract_facts(response_text)
