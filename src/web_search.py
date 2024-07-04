@@ -83,12 +83,10 @@ class WebSearcher:
 
     def search(self, query: str) -> str:
         try:
-            # combined_result = self.tavily.search(query) + "\n\n" + self.google(query, "en")
-            # logger.info(f"Web search result for query '{query}' is: {combined_result}")
-            # prompt = f"based on result from internet search below, what is the answer to the question: {query}\n\n{combined_result}"
-            # result = self.ai_model.get_response([{"role": "user", "content": prompt}])
-
-            result = self.tavily.search(query)
+            combined_result = self.tavily.search(query) + "\n\n" + self.google(query, "en")
+            logger.info(f"Web search result for query '{query}' is: {combined_result}")
+            prompt = f"based on result from internet search below, what is the answer to the question: {query}\n\n{combined_result}"
+            result = self.ai_model.get_response([{"role": "user", "content": prompt}])
 
             logger.info(f"Web search result for query '{query}' is: {result}")
             return result
