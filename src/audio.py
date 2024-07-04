@@ -225,7 +225,6 @@ class SpeechTranscriber:
             def start_idle():
                 nonlocal status, time_breathing_started, breathing_on
                 logger.info('Ready to listen...')
-                status = RecordingStatus.NOT_STARTED
                 self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
                 time_breathing_started = time.time()
@@ -236,7 +235,6 @@ class SpeechTranscriber:
                 logger.info('Recording audio...')
                 self.leds.update(Leds.rgb_on(self.led_recording_color))
                 breathing_on = False
-                status = RecordingStatus.STARTED
                 recoding_started_at = time.time()
 
             def start_processing():
@@ -244,7 +242,6 @@ class SpeechTranscriber:
                 logger.info('Processing audio...')
                 self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_processing_color))
-                status = RecordingStatus.FINISHED
                 record_more = self.number_of_chuncks_to_record_after_button_depressed
 
             def stop_breathing():
@@ -267,6 +264,8 @@ class SpeechTranscriber:
 
             chunks = []
             start_idle()
+            status = RecordingStatus.NOT_STARTED
+
             recoding_started_at = time.time()
             time_breathing_started = time.time()
             for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
@@ -277,15 +276,16 @@ class SpeechTranscriber:
                     if status == RecordingStatus.FINISHED:
                         record_more -= 1
                     chunks_deque.append(chunk)
-                    if status == RecordingStatus.NOT_STARTED and len(chunks_deque) > self.max_number_of_chunks:
+                    if (status == RecordingStatus.NOT_STARTED) and (len(chunks_deque) > self.max_number_of_chunks):
                         chunks_deque.popleft()
 
                 if status == RecordingStatus.NOT_STARTED and self.button_is_pressed:
                     stop_playing()
                     start_listening()
+                    status = RecordingStatus.STARTED
 
                 if not chunks_deque:
-                    logger.debug("No audio chunk available")
+                    logger.info("No audio chunk available")
 
                     import wave
 
@@ -304,6 +304,8 @@ class SpeechTranscriber:
 
                 if status == RecordingStatus.STARTED and not self.button_is_pressed:
                     start_processing()
+                    status = RecordingStatus.FINISHED
+
 
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
