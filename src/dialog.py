@@ -6,13 +6,14 @@ including speech recognition, AI response generation, and speech synthesis.
 """
 
 from aiy.board import Button
-from aiy.leds import Leds
+from aiy.leds import Leds, Color
 from .audio import SpeechTranscriber, synthesize_speech
 from .config import Config
 from .tts_engine import TTSEngine
 from .conversation_manager import ConversationManager
 from aiy.voice.audio import play_wav_async
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,20 @@ def main_loop(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_ma
 
                 # Synthesize and play AI response
                 audio_file_name = config.get('audio_file_name', 'speech.wav')
-                synthesize_speech(tts_engine, ai_response, audio_file_name, config)
+
+                while True:
+                    if synthesize_speech(tts_engine, ai_response, audio_file_name, config):
+                        break
+                    # error happened, retry
+
+                    # blink
+                    leds.update(Leds.rgb_on(Color.RED))
+                    time.sleep(0.3)
+                    leds.update(Leds.rgb_off())
+
+                    # retry
+                    continue
+
                 logger.info(f"Playing audio file: {audio_file_name}")
                 player_process = play_wav_async(audio_file_name)
 

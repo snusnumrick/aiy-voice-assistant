@@ -402,7 +402,7 @@ def combine_audio_files(file_list: List[str], output_filename: str) -> None:
     logger.debug(f"Exported combined audio to {output_filename}")
 
 
-def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Config) -> None:
+def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Config) -> bool:
     """
     Synthesize speech from text, handling long texts by splitting and combining audio chunks.
 
@@ -411,12 +411,16 @@ def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Confi
         text (str): The text to synthesize into speech.
         filename (str): The path to save the synthesized audio file.
         config (Config): The application configuration object.
+
+    Returns:
+        bool: True if the speech was successfully synthesized, False otherwise.
     """
     logger.debug('Synthesizing speech for: %s', text)
     max_size_tts = config.get('max_size_tts', 4096)  # Default to 4096 if not in config
     chunks = split_text(text, max_length=max_size_tts)
 
     temp_dir = tempfile.mkdtemp()
+    result = True
     try:
         chunk_files = []
         for i, chunk in enumerate(chunks):
@@ -430,7 +434,11 @@ def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Confi
             combine_audio_files(chunk_files, filename)
         else:
             shutil.move(chunk_files[0], filename)
+    except Exception as e:
+        logger.error(f"Error synthesizing speech: {str(e)}")
+        result = False
     finally:
         shutil.rmtree(temp_dir)
 
     logger.debug(f"Final synthesized speech saved at {filename}")
+    return result
