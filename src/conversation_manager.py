@@ -150,14 +150,15 @@ class ConversationManager:
         prompt += self.config.get('system_prompt',
                              "Тебя зовут Роби. Ты мой друг и помощник. Отвечай естественно, как в устной речи. "
                              "Говори максимально просто и понятно. Не используй списки и нумерации. "
-                             "Например, не говори 1. что-тоб 2. что-тож говори во-первых, во-вторых или просто перечисляй. "
+                             "Например, не говори 1. что-то; 2. что-то. говори во-первых, во-вторых или просто перечисляй. "
                              "Если чего-то не знаешь, так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. "
                              "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
                              "а пошли мне сообщение в таком формате: "
                              "{internet query:<что ты хочешь поискать на английском языке>}. "
                              "Если тебе надо что-то запомнить, "
                              "пошли мне сообщение в таком формате: {remember: <текст, который тебе нужно запомнить>}.")
-        prompt += " ".join(self.facts)
+        if self.facts:
+            prompt += " Ты уже знаешь следующее:" ".join(self.facts)
         print("\n" + prompt + "\n")
         return prompt
 
@@ -232,7 +233,7 @@ class ConversationManager:
         self.message_history.append({"role": "assistant", "content": response_text})
 
         _, search_results = process_and_search(response_text, self.searcher)
-        logger.info(f"Response Text: {_}; Search results: {search_results}")
+        logger.debug(f"Response Text: {_}; Search results: {search_results}")
 
         if search_results:
             result_message = f"результаты поиска: {search_results[0]}"
