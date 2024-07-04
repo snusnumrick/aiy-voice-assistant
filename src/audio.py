@@ -266,6 +266,7 @@ class SpeechTranscriber:
                     except Exception as e:
                         logger.error(f"Error terminating player process: {str(e)}")
 
+            chunks = []
             start_idle()
             recoding_started_at = time.time()
             time_breathing_started = time.time()
@@ -286,9 +287,20 @@ class SpeechTranscriber:
 
                 if not chunks_deque:
                     logger.debug("No audio chunk available")
+
+                    import wave
+
+                    with wave.open("recording.wav", 'wb') as wav_file:
+                        wav_file.setnchannels(audio_format.num_channels)
+                        wav_file.setsampwidth(audio_format.bytes_per_sample)
+                        wav_file.setframerate(audio_format.sample_rate_hz)
+                        for chunk in chunks:
+                            wav_file.writeframes(chunk)
+
                     break
 
                 if status != RecordingStatus.NOT_STARTED:
+                    chunks.append(chunk)
                     yield chunks_deque.popleft()
 
                 if status == RecordingStatus.STARTED and not self.button_is_pressed:
