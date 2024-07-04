@@ -156,19 +156,18 @@ class ConversationManager:
         """
         summary_prompt = self.config.get('summary_prompt', "Summarize the key points of this conversation, "
                                                            "focusing on the most important facts and context. Be concise:")
-        first_message = True
-        for msg in self.message_history:
-            if not first_message:
-                summary_prompt += f"\n{msg['role']}: {msg['content']}"
-            else:
-                first_message = False
-
+        min_number_of_messages = self.config.get('min_number_of_messages', 10)
+        new_history = [{"role": "system", "content": get_system_prompt(self.config)}]
+        self.message_history.popleft()
+        while len(self.message_history) > min_number_of_messages:
+            msg = self.message_history.popleft()
+            summary_prompt += f"\n{msg['role']}: {msg['content']}"
         summary = self.ai_model.get_response([{"role": "user", "content": summary_prompt}])
-
-        self.message_history = deque([{"role": "system", "content": get_system_prompt(self.config)},
-                                      {"role": "system", "content": f"Conversation summary: {summary}"}])
-
         logger.info(f"Summarized conversation: {summary}")
+        new_history.append({"role": "system", "content": f"Earlier conversation summary: {summary}"})
+        while self.message_history:
+            new_history.append(self.message_history.popleft())
+        self.message_history = deque(new_history)
 
     def get_response(self, text: str) -> str:
         """
