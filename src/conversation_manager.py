@@ -50,21 +50,6 @@ def get_current_date_time_location():
     return message
 
 
-def get_system_prompt(config: Config):
-    prompt = f"{get_current_date_time_location()} "
-    prompt += config.get('system_prompt',
-                         "Тебя зовут Роби. Ты мой друг и помощник. Отвечай естественно, как в устной речи. "
-                         "Говори максимально просто и понятно. Не используй списки и нумерации. "
-                         "Например, не говори 1. что-тоб 2. что-тож говори во-первых, во-вторых или просто перечисляй. "
-                         "Если чего-то не знаешь, так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. "
-                         "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
-                         "а пошли мне сообщение в таком формате: "
-                         "{internet query:<что ты хочешь поискать на английском языке>}. "
-                         "Если тебе надо что-то запомнить, "
-                         "пошли мне сообщение в таком формате: {remember: <текст, который тебе нужно запомнить>}. ")
-    return prompt
-
-
 def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, List[str]]:
     """
     Process the input string, perform web searches for queries, and return modified string and results.
@@ -103,6 +88,39 @@ def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, L
     return (modified_string, search_results)
 
 
+def extract_facts(text: str) -> Tuple[str, List[str]]:
+    """
+    Extract facts from the input text and return the modified text and a list of extracted facts.
+
+    Args:
+        text (str): The input text to extract facts from.
+
+    Returns:
+        Tuple[str, List[str]]: A tuple containing the modified text and a list of extracted facts.
+    """
+    # Regular expression to match {remember: xxx} pattern
+    pattern = r'\{remember:(.*?)\}'
+
+    # Find all matches
+    matches = re.findall(pattern, text)
+
+    # List to store extracted facts
+    extracted_facts = []
+
+    # Process each match
+    for match in matches:
+        logger.debug(f"Extracted fact: {match}")
+        extracted_facts.append(match)
+
+    # Remove all {remember: xxx} substrings from the input string
+    modified_text = re.sub(pattern, '', text)
+
+    # Remove any extra whitespace that might have been left
+    modified_text = ' '.join(modified_text.split())
+
+    return modified_text, extracted_facts
+
+
 class ConversationManager:
     """
     Manages the conversation flow, including message history and interaction with AI models.
@@ -124,7 +142,24 @@ class ConversationManager:
         self.config = config
         self.searcher = WebSearcher(config)
         self.ai_model = ai_model
-        self.message_history = deque([{"role": "system", "content": get_system_prompt(config)}])
+        self.message_history = deque([{"role": "system", "content": self.get_system_prompt(config)}])
+        self.facts = []
+
+    def get_system_prompt(self):
+        prompt = f"{get_current_date_time_location()} "
+        prompt += self.config.get('system_prompt',
+                             "Тебя зовут Роби. Ты мой друг и помощник. Отвечай естественно, как в устной речи. "
+                             "Говори максимально просто и понятно. Не используй списки и нумерации. "
+                             "Например, не говори 1. что-тоб 2. что-тож говори во-первых, во-вторых или просто перечисляй. "
+                             "Если чего-то не знаешь, так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. "
+                             "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
+                             "а пошли мне сообщение в таком формате: "
+                             "{internet query:<что ты хочешь поискать на английском языке>}. "
+                             "Если тебе надо что-то запомнить, "
+                             "пошли мне сообщение в таком формате: {remember: <текст, который тебе нужно запомнить>}.")
+        prompt += " ".join(self.facts)
+        print("\n" + prompt + "\n")
+        return prompt
 
     def estimate_tokens(self, text: str) -> int:
         """
@@ -183,7 +218,7 @@ class ConversationManager:
         """
 
         # update system message
-        self.message_history[0] = {"role": "system", "content": get_system_prompt(self.config)}
+        self.message_history[0] = {"role": "system", "content": self.get_system_prompt()}
 
         self.message_history.append({"role": "user", "content": text})
 
@@ -207,6 +242,13 @@ class ConversationManager:
             response_text = self.ai_model.get_response(list(self.message_history))
             self.message_history.pop()
             self.message_history.append({"role": "assistant", "content": response_text})
+
+        response_text, facts = extract_facts(response_text)
+        self.facts += facts
+
+        if facts:
+            logger.info(f"Extracted facts: {facts}")
+
         logger.debug(f"AI response: {text} -> {response_text}")
 
         return response_text
