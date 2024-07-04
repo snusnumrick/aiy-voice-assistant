@@ -50,7 +50,7 @@ def get_current_date_time_location():
     return message
 
 
-def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, List[Tuple[str,str]]]:
+def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, List[str]]:
     """
     Process the input string, perform web searches for queries, and return modified string and results.
 
@@ -75,9 +75,9 @@ def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, L
         logger.debug(f"Performing web search for: {match}")
         try:
             result = searcher.search(match)
-            search_results.append((match, result))
+            search_results.append(result)
         except Exception as e:
-            search_results.append((match, f"Error performing search: {str(e)}"))
+            search_results.append(f"Error performing search: {str(e)}")
 
     # Remove all {internet query: xxx} substrings from the input string
     modified_string = re.sub(pattern, '', input_string)
@@ -223,35 +223,28 @@ class ConversationManager:
         # update system message
         self.message_history[0] = {"role": "system", "content": self.get_system_prompt()}
 
+        self.message_history.append({"role": "user", "content": text})
+
         while self.get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
             self.summarize_and_compress_history()
-
-        self.message_history.append({"role": "user", "content": text})
 
         logger.debug(f"Message history: \n{self.formatted_message_history()}")
 
         response_text = self.ai_model.get_response(list(self.message_history))
         logger.debug(f"AI response: {text} -> {response_text}")
+        self.message_history.append({"role": "assistant", "content": response_text})
 
         _, search_results = process_and_search(response_text, self.searcher)
+        logger.debug(f"Response Text: {_}; Search results: {search_results}")
 
-        saved_message_history = list(self.message_history)  # [...,U]
-
-        while search_results:
-            # [...,U]
-            last_user_message = self.message_history.pop()
-            # [...]
-            query, result = search_results[0]
-            self.message_history.append({"role": "system",
-                                         "content": f"результаты поиска в интернете по запросу {query}: {result}"})
-            self.message_history.append(last_user_message)
-            # [,,,,S,U]
-            print("\n" + self.formatted_message_history() + "\n")
+        if search_results:
+            result_message = f"результаты поиска: {search_results[0]}"
+            self.message_history.append({"role": "system", "content": result_message})
+            self.message_history.append({"role": "user", "content": "?"})
+            logger.debug(self.formatted_message_history())
             response_text = self.ai_model.get_response(list(self.message_history))
-            _, search_results = process_and_search(response_text, self.searcher)
-
-        self.message_history = deque(saved_message_history)
-        self.message_history.append({"role": "assistant", "content": response_text})
+            self.message_history.pop()
+            self.message_history.append({"role": "assistant", "content": response_text})
 
         response_text, facts = extract_facts(response_text)
         self.facts += facts
