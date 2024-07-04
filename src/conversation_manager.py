@@ -50,7 +50,7 @@ def get_current_date_time_location():
     return message
 
 
-def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, List[str]]:
+def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, List[Tuple[str,str]]]:
     """
     Process the input string, perform web searches for queries, and return modified string and results.
 
@@ -75,9 +75,9 @@ def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, L
         logger.debug(f"Performing web search for: {match}")
         try:
             result = searcher.search(match)
-            search_results.append(result)
+            search_results.append((match, result))
         except Exception as e:
-            search_results.append(f"Error performing search: {str(e)}")
+            search_results.append((match, f"Error performing search: {str(e)}"))
 
     # Remove all {internet query: xxx} substrings from the input string
     modified_string = re.sub(pattern, '', input_string)
@@ -235,20 +235,20 @@ class ConversationManager:
 
         _, search_results = process_and_search(response_text, self.searcher)
 
+        saved_message_history = list(self.message_history)  # [...,U]
         while search_results:
             # [...,U]
             last_user_message = self.message_history.pop()
             # [...]
-            self.message_history.append({"role": "system", "content": f"результаты поиска в интернете: {search_results[0]}"})
+            query, result = search_results[0]
+            self.message_history.append({"role": "system",
+                                         "content": f"результаты поиска в интернете по запросу {query}: {result}"})
             self.message_history.append(last_user_message)
             # [,,,,S,U]
             response_text = self.ai_model.get_response(list(self.message_history))
-            self.message_history.pop()
-            self.message_history.pop()
-            self.message_history.append(last_user_message)
-            # [...,U]
             _, search_results = process_and_search(response_text, self.searcher)
 
+        self.message_history = deque(saved_message_history)
         self.message_history.append({"role": "assistant", "content": response_text})
 
         response_text, facts = extract_facts(response_text)

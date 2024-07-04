@@ -186,7 +186,7 @@ class SpeechTranscriber:
         self.led_processing_color = self.config.get('processing_color', (0, 1, 0))  # dark green
         self.led_processing_blink_period_ms = self.config.get('processing_blink_period_ms', 300)
         self.audio_sample_rate = self.config.get('audio_sample_rate', 16000)
-        self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.3)
+        self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.1)
         self.max_number_of_chunks = self.config.get('max_number_of_chunks', 5)
         self.number_of_chuncks_to_record_after_button_depressed = self.config.get(
             'number_of_chuncks_to_record_after_button_depressed', 3)
