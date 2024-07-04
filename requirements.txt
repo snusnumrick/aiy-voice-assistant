@@ -9,7 +9,6 @@ python-dotenv
 yandex-speechkit
 grpcio
 protobuf
-tavily-python
 pytz
 geocoder
 requests

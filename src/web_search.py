@@ -48,17 +48,31 @@ def google_web_search(term, lang) -> str:
 
 class Tavily:
     def __init__(self):
-        from tavily import TavilyClient
-
-        api_key = os.environ.get('TAVILY_API_KEY')
-        if not api_key:
+        self.api_key = os.environ.get('TAVILY_API_KEY')
+        if not self.api_key:
             raise ValueError("Tavily API key is not provided in environment variables")
-        self.tavily = TavilyClient(api_key="YOUR_API_KEY")
 
     def search(self, query: str):
-        general = self.tavily.qna_search(query=query, topic = "general")
-        news = self.tavily.qna_search(query=query, topic = "news")
-        return f"general: {general}; news: {news}"
+        url = "https://api.tavily.com/search"
+
+        # Prepare the request payload
+        payload = {"api_key": self.api_key, "query": query, "include_answer": True, "search_depth": "advanced", "topic": "news"}
+
+        try:
+            # Make the POST request to the API
+            response = requests.post(url, json=payload)
+            response.raise_for_status()  # Raise an exception for bad status codes
+
+            # Parse and return the JSON response
+            return response.json()["answer"]
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error making request to Tavily API: {e}")
+            raise
+
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON response: {e}")
+            raise
 
 
 class WebSearcher:
@@ -69,12 +83,10 @@ class WebSearcher:
 
     def search(self, query: str) -> str:
         try:
-            # combined_result = self.tavily.search(query) + "\n\n" + self.google(query, "en")
-            # logger.info(f"Web search result for query '{query}' is: {combined_result}")
-            # prompt = f"based on result from internet search below, what is the answer to the question: {query}\n\n{combined_result}"
-            # result = self.ai_model.get_response([{"role": "user", "content": prompt}])
-
-            result = self.tavily.search(query)
+            combined_result = self.tavily.search(query) + "\n\n" + self.google(query, "en")
+            logger.info(f"Web search result for query '{query}' is: {combined_result}")
+            prompt = f"Answer short. Based on result from internet search below, what is the answer to the question: {query}\n\n{combined_result}"
+            result = self.ai_model.get_response([{"role": "user", "content": prompt}])
 
             logger.info(f"Web search result for query '{query}' is: {result}")
             return result
