@@ -282,6 +282,7 @@ class SpeechTranscriber:
                 if status == RecordingStatus.NOT_STARTED and self.button_is_pressed:
                     stop_playing()
                     start_listening()
+                    logger.info(f"{len(chunks_deque)} audio chunks buffered")
                     status = RecordingStatus.STARTED
 
                 if not chunks_deque:

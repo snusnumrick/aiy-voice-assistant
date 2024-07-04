@@ -235,14 +235,21 @@ class ConversationManager:
 
         _, search_results = process_and_search(response_text, self.searcher)
 
-        if search_results:
+        while search_results:
+            # [...,U]
             last_user_message = self.message_history.pop()
+            # [...]
             self.message_history.append({"role": "system", "content": f"результаты поиска в интернете: {search_results[0]}"})
             self.message_history.append(last_user_message)
+            # [,,,,S,U]
             response_text = self.ai_model.get_response(list(self.message_history))
             self.message_history.pop()
             self.message_history.pop()
-            self.message_history.append({"role": "system", "content": f"результаты поиска в интернете: {search_results[0]}"})
+            self.message_history.append(last_user_message)
+            # [...,U]
+            _, search_results = process_and_search(response_text, self.searcher)
+
+        self.message_history.append({"role": "system", "content": f"результаты поиска в интернете: {search_results[0]}"})
 
         self.message_history.append({"role": "assistant", "content": response_text})
 
