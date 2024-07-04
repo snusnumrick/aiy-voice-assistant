@@ -158,8 +158,7 @@ class ConversationManager:
                              "Если тебе надо что-то запомнить, "
                              "пошли мне сообщение в таком формате: {remember: <текст, который тебе нужно запомнить>}.")
         if self.facts:
-            prompt += " Ты уже знаешь следующее:" ".join(self.facts)
-        print("\n" + prompt + "\n")
+            prompt += " Ты уже знаешь следующее:" + " ".join(self.facts)
         return prompt
 
     def estimate_tokens(self, text: str) -> int:
@@ -195,7 +194,7 @@ class ConversationManager:
         summary_prompt = self.config.get('summary_prompt', "Summarize the key points of this conversation, "
                                                            "focusing on the most important facts and context. Be concise:")
         min_number_of_messages = self.config.get('min_number_of_messages', 10)
-        new_history = [{"role": "system", "content": get_system_prompt(self.config)}]
+        new_history = [{"role": "system", "content": self.get_system_prompt(self.config)}]
         self.message_history.popleft()
         while len(self.message_history) > min_number_of_messages:
             msg = self.message_history.popleft()
@@ -252,6 +251,8 @@ class ConversationManager:
 
         logger.debug(f"AI response: {text} -> {response_text}")
 
+        print("\n" + self.formatted_message_history() + "\n")
+
         return response_text
 
     def formatted_message_history(self):
@@ -261,4 +262,4 @@ class ConversationManager:
         Returns:
             str: A formatted string representation of the message history.
         """
-        return "\n".join([f'{msg["role"]}:{msg["content"].strip()}' for msg in self.message_history])
+        return "\n\n".join([f'{msg["role"]}:{msg["content"].strip()}' for msg in self.message_history])
