@@ -99,10 +99,10 @@ class WebSearcher:
         self.perplexity = Perplexity(config)
 
     def search(self, query: str) -> str:
-        return self.perplexity.search(query)
+        # return self.perplexity.search(query)
 
         try:
-            combined_result = self.tavily.search(query) + "\n\n" + self.google(query, "en")
+            combined_result = self.perplexity.search(query) +"\n\n" + self.tavily.search(query) + "\n\n" + self.google(query, "en")
             logger.info(f"Web search result for query '{query}' is: {combined_result}")
             prompt = f"Answer short. Based on result from internet search below, what is the answer to the question: {query}\n\n{combined_result}"
             result = self.ai_model.get_response([{"role": "user", "content": prompt}])
