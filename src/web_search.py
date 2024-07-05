@@ -48,7 +48,7 @@ def google_web_search(term, lang) -> str:
 
 class Perplexity:
     def __init__(self):
-        from ai_models import PerplexityModel
+        from src.ai_models import PerplexityModel
         self.model = PerplexityModel()
 
     def search(self, query: str) -> str:
