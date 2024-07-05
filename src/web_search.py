@@ -46,6 +46,21 @@ def google_web_search(term, lang) -> str:
     return result
 
 
+class Perplexity:
+    def __init__(self):
+        from ai_models import PerplexityModel
+        self.model = PerplexityModel()
+
+    def search(self, query: str) -> str:
+        messages = [
+            {
+                "role": "user",
+                "content": (query),
+            },
+        ]
+        return self.model.get_response(messages)
+
+
 class Tavily:
     def __init__(self):
         self.api_key = os.environ.get('TAVILY_API_KEY')
@@ -80,8 +95,11 @@ class WebSearcher:
         self.tavily = Tavily()
         self.google = google_web_search
         self.ai_model = OpenRouterModel(config)
+        self.perplexity = Perplexity()
 
     def search(self, query: str) -> str:
+        return self.perplexity.search(query)
+
         try:
             combined_result = self.tavily.search(query) + "\n\n" + self.google(query, "en")
             logger.info(f"Web search result for query '{query}' is: {combined_result}")

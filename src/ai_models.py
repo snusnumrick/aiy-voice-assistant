@@ -156,3 +156,39 @@ class OpenRouterModel(AIModel):
             max_tokens=self.max_tokens
         )
         return response.choices[0].message.content.strip()
+
+
+class PerplexityModel(AIModel):
+    """
+    Implementation of AIModel using Perplexity.
+    """
+
+    def __init__(self, config):
+        """
+        Initialize the Perplexity model.
+
+        Args:
+            config (Config): The application configuration object.
+        """
+        from openai import OpenAI
+        self.client = OpenAI(base_url="https://api.perplexity.ai",
+                             api_key=os.getenv("PERPLEXITY_API_KEY"))
+        self.model = config.get('perplexity_model', 'llama-3-sonar-large-32k-online')
+        self.max_tokens = config.get('max_tokens', 4096)
+
+    def get_response(self, messages: List[Dict[str, str]]) -> str:
+        """
+        Generate a response using Perplexity model.
+
+        Args:
+            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+
+        Returns:
+            str: The generated response.
+        """
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=self.max_tokens
+        )
+        return response.choices[0].message.content.strip()
