@@ -8,6 +8,7 @@ including message history, token counting, and interaction with AI models.
 import datetime
 import logging
 import re
+import json
 from collections import deque
 from typing import List, Dict, Tuple
 
@@ -142,7 +143,7 @@ class ConversationManager:
         self.config = config
         self.searcher = WebSearcher(config)
         self.ai_model = ai_model
-        self.facts = []
+        self.facts = self.load_facts()
         self.message_history = deque([{"role": "system", "content": self.get_system_prompt()}])
 
     def get_system_prompt(self):
@@ -248,6 +249,7 @@ class ConversationManager:
 
         response_text, facts = extract_facts(response_text)
         self.facts += facts
+        self.save_facts(self.facts)
 
         if facts:
             logger.info(f"Extracted facts: {facts}")
@@ -266,3 +268,14 @@ class ConversationManager:
             str: A formatted string representation of the message history.
         """
         return "\n\n".join([f'{msg["role"]}:{msg["content"].strip()}' for msg in self.message_history])
+
+    def load_facts(self):
+        try:
+            with open('facts.json', 'r') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return []
+
+    def save_facts(self, facts):
+        with open('facts.json', 'w') as f:
+            json.dump(facts, f)
