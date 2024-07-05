@@ -1,8 +1,9 @@
 import json
 import logging
 import os
-
 import requests
+
+from src.config import Config
 
 from src.ai_models import OpenRouterModel
 
@@ -47,9 +48,9 @@ def google_web_search(term, lang) -> str:
 
 
 class Perplexity:
-    def __init__(self):
+    def __init__(self, config: Config):
         from src.ai_models import PerplexityModel
-        self.model = PerplexityModel()
+        self.model = PerplexityModel(config)
 
     def search(self, query: str) -> str:
         messages = [
@@ -95,7 +96,7 @@ class WebSearcher:
         self.tavily = Tavily()
         self.google = google_web_search
         self.ai_model = OpenRouterModel(config)
-        self.perplexity = Perplexity()
+        self.perplexity = Perplexity(config)
 
     def search(self, query: str) -> str:
         return self.perplexity.search(query)
