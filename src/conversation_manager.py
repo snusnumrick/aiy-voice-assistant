@@ -197,7 +197,7 @@ class ConversationManager:
         summary_prompt = self.config.get('summary_prompt', "Summarize the key points of this conversation, "
                                                            "focusing on the most important facts and context. Be concise:")
         min_number_of_messages = self.config.get('min_number_of_messages', 10)
-        new_history = [{"role": "system", "content": self.get_system_prompt(self.config)}]
+        new_history = [{"role": "system", "content": self.get_system_prompt()}]
         self.message_history.popleft()
         while len(self.message_history) > min_number_of_messages:
             msg = self.message_history.popleft()

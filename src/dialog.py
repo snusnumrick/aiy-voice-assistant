@@ -5,17 +5,26 @@ This module contains the main loop for handling the conversation flow,
 including speech recognition, AI response generation, and speech synthesis.
 """
 
-from aiy.board import Button
-from aiy.leds import Leds, Color
-from .audio import SpeechTranscriber, synthesize_speech
-from .config import Config
-from .tts_engine import TTSEngine
-from .conversation_manager import ConversationManager
-from aiy.voice.audio import play_wav_async
 import logging
 import time
 
+from aiy.board import Button
+from aiy.leds import Leds, Color
+from aiy.voice.audio import play_wav_async
+
+from .audio import SpeechTranscriber, synthesize_speech
+from .config import Config
+from .conversation_manager import ConversationManager
+from .tts_engine import TTSEngine
+
 logger = logging.getLogger(__name__)
+
+
+def error_visual(leds: Leds):
+    # blink
+    leds.update(Leds.rgb_on(Color.RED))
+    time.sleep(0.3)
+    leds.update(Leds.rgb_off())
 
 
 def main_loop(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_manager: ConversationManager,
@@ -60,10 +69,7 @@ def main_loop(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_ma
                         break
                     # error happened, retry
 
-                    # blink
-                    leds.update(Leds.rgb_on(Color.RED))
-                    time.sleep(0.3)
-                    leds.update(Leds.rgb_off())
+                    error_visual(leds)
 
                     # retry
                     continue
@@ -72,5 +78,6 @@ def main_loop(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_ma
                 player_process = play_wav_async(audio_file_name)
 
         except Exception as e:
-            logger.error(f"An error occurred in the main loop: {str(e)}", exc_info=True)
-            # Implement appropriate error handling and recovery here
+            logger.error(f"An error occurred in the main loop: {str(e)}",
+                         exc_info=True)  # Implement appropriate error handling and recovery here
+            error_visual(leds)
