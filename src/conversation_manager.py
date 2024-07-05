@@ -277,5 +277,5 @@ class ConversationManager:
             return []
 
     def save_facts(self, facts):
-        with open('facts.json', 'w') as f:
-            json.dump(facts, f)
+        with open('facts.json', 'w', encoding='utf8') as f:
+            json.dump(facts, f, ensure_ascii=False, indent=4)
