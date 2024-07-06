@@ -94,11 +94,17 @@ class Tavily:
 
 class DuckDuckGoSearch:
     def __init__(self, config):
-        from duckduckgo_search import DDGS
-        self.ddgs = DDGS()
-        self.duckduckgo_max_attempts = config.get("duckduckgo_max_attempts", 5)
+        try:
+            from duckduckgo_search import DDGS
+            self.ddgs = DDGS()
+            self.duckduckgo_max_attempts = config.get("duckduckgo_max_attempts", 5)
+        except Exception as e:
+            logger.error(f"DDGS search could not be initialized: {e}")
+            self.ddgs = None
 
     def search(self, query: str):
+        if not self.ddgs:
+            return ""
         try:
             search_results = []
             attempts = 0
@@ -143,7 +149,7 @@ class DuckDuckGoSearch:
 
             return results
         except Exception as e:
-            logger.error(e)
+            logger.error(f"DDGS dsearch failed: {e}")
             return ""
 
 
@@ -151,23 +157,33 @@ class WebSearcher:
     def __init__(self, config):
         self.tavily = Tavily()
         self.google = google_web_search
-        self.ai_model = OpenRouterModel(config)
+        self.ai_model = OpenRouterModel(config, use_simple_model=True)
         self.perplexity = Perplexity(config)
         self.ddgs = DuckDuckGoSearch(config)
+        self.config = config
 
     def search(self, query: str) -> str:
         # return self.perplexity.search(query)
 
         try:
-            perplexity_result = self.perplexity.search(query)
-            logger.info(f"Perplexity result: {perplexity_result}")
-            tavily_result = self.tavily.search(query)
-            logger.info(f"Tavily result: {tavily_result}")
-            google_result = self.google(query, "en")
-            logger.info(f"Google result: {google_result}")
-            ddgs_result = self.ddgs.search(query)
-            logger.info(f"DDGS result: {ddgs_result}")
-            combined_result = perplexity_result +"\n\n" + tavily_result + "\n\n" + google_result + "\n\n" + ddgs_result
+            combined_result = ""
+
+            if self.config.get("use_perplexity", False):
+                perplexity_result = self.perplexity.search(query)
+                logger.info(f"Perplexity result: {perplexity_result}")
+                combined_result += "Result from Perplexity: \n" + perplexity_result + "\n"
+            if self.config.get("use_tavily", False):
+                tavily_result = self.tavily.search(query)
+                logger.info(f"Tavily result: {tavily_result}")
+                combined_result += "Result from Tavily: \n" + tavily_result + "\n"
+            if self.config.get("use_google", True):
+                google_result = self.google(query, "en")
+                logger.info(f"Google result: {google_result}")
+                combined_result += "Result from Google: \n" + google_result + "\n"
+            if self.config.get("use_ddgs", True):
+                ddgs_result = self.ddgs.search(query)
+                logger.info(f"DDGS result: {ddgs_result}")
+                combined_result += "Result from DDGS: \n" + ddgs_result + "\n"
 
             prompt = f"Answer short. Based on result from internet search below, what is the answer to the question: {query}\n\n{combined_result}"
             result = self.ai_model.get_response([{"role": "user", "content": prompt}])
@@ -184,7 +200,7 @@ def main():
     if __name__ == "__main__":
         config = Config()
         web_searcher = WebSearcher(config)
-        query = "Euro 2024 semi-final teams"
+        query = "weather forecast for Santa Clara, California"
         result = web_searcher.search(query)
         logger.info(f"Web search result for query '{query}' is: {result}")
 
