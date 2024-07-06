@@ -111,7 +111,8 @@ def extract_facts(text: str) -> Tuple[str, List[str]]:
     # Process each match
     for match in matches:
         logger.debug(f"Extracted fact: {match}")
-        extracted_facts.append(match)
+        fact = get_current_date_time_location() + ": " + match
+        extracted_facts.append(fact)
 
     # Remove all {remember: xxx} substrings from the input string
     modified_text = re.sub(pattern, '', text)
@@ -120,6 +121,40 @@ def extract_facts(text: str) -> Tuple[str, List[str]]:
     modified_text = ' '.join(modified_text.split())
 
     return modified_text, extracted_facts
+
+
+def extract_rules(text: str) -> Tuple[str, List[str]]:
+    """
+    Extract rules from the input text and return the modified text and a list of extracted facts.
+
+    Args:
+        text (str): The input text to extract facts from.
+
+    Returns:
+        Tuple[str, List[str]]: A tuple containing the modified text and a list of extracted facts.
+    """
+    # Regular expression to match {remember: xxx} pattern
+    pattern = r'\{rule:(.*?)\}'
+
+    # Find all matches
+    matches = re.findall(pattern, text)
+
+    # List to store extracted facts
+    extracted_rules = []
+
+    # Process each match
+    for match in matches:
+        logger.debug(f"Extracted rule: {match}")
+        rule = get_current_date_time_location() + ": " + match
+        extracted_rules.append(rule)
+
+    # Remove all {remember: xxx} substrings from the input string
+    modified_text = re.sub(pattern, '', text)
+
+    # Remove any extra whitespace that might have been left
+    modified_text = ' '.join(modified_text.split())
+
+    return modified_text, extracted_rules
 
 
 class ConversationManager:
@@ -144,6 +179,7 @@ class ConversationManager:
         self.searcher = WebSearcher(config)
         self.ai_model = ai_model
         self.facts = self.load_facts()
+        self.rules = self.load_rules()
         self.message_history = deque([{"role": "system", "content": self.get_system_prompt()}])
 
     def get_system_prompt(self):
@@ -155,16 +191,26 @@ class ConversationManager:
                              "Например, не говори 1. что-то; 2. что-то. говори во-первых, во-вторых или просто перечисляй. "
                              "При ответе на вопрос где важно время, помни какое сегодня число. "
                              "Если чего-то не знаешь, так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. "
+                             "Будь краток, избегай банальностей и непрошенных советов. "
                              "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
                              "а пошли мне сообщение в таком формате: "
                              "{internet query:<что ты хочешь поискать на английском языке>}. "
+                             "Таких запросов в твоем сообщении может быть несколько. "
                              "Если в ответе на твой запрос указано время без указания часового пояса, "
                              "считай что это Восточное стандартное время."
                              # "Если по этому запросу не нашел нужной информации, попробуй переформулировать запрос. "
                              "Если тебе надо что-то запомнить, "
-                             "пошли мне сообщение в таком формате: {remember: <текст, который тебе нужно запомнить>}.")
+                             "пошли мне сообщение в таком формате: {remember: <текст, который тебе нужно запомнить>}. "
+                             "Таких запросов в твоем сообщении тоже может быть несколько. "
+                             "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
+                             "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
+                             "{rule: <текст нового правила>}. "
+                             "Таких запросов в твоем сообщении тоже может быть несколько. "
+                                  )
         if self.facts:
-            prompt += " Ты уже знаешь следующее:" + " ".join(self.facts)
+            prompt += " Ты уже знаешь факты:" + " ".join(self.facts)        
+        if self.rules:
+            prompt += " Ты уже помнишь правила:" + " ".join(self.rules)
         return prompt
 
     def estimate_tokens(self, text: str) -> int:
@@ -255,6 +301,13 @@ class ConversationManager:
 
         if facts:
             logger.info(f"Extracted facts: {facts}")
+            
+        response_text, rules = extract_rules(response_text)
+        self.rules += rules
+        self.save_rules(self.rules)
+
+        if rules:
+            logger.info(f"Extracted rules: {rules}")
 
         logger.debug(f"AI response: {text} -> {response_text}")
 
@@ -281,3 +334,14 @@ class ConversationManager:
     def save_facts(self, facts):
         with open('facts.json', 'w', encoding='utf8') as f:
             json.dump(facts, f, ensure_ascii=False, indent=4)
+            
+    def load_rules(self):
+        try:
+            with open('rules.json', 'r') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return []
+
+    def save_rules(self, rules):
+        with open('rules.json', 'w', encoding='utf8') as f:
+            json.dump(rules, f, ensure_ascii=False, indent=4)
