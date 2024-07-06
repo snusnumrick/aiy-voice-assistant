@@ -115,6 +115,11 @@ class DuckDuckGoSearch:
                 time.sleep(1)
                 attempts += 1
 
+            if attempts > 0:
+                logger.warning(f"DuckDuckGoSearch failed {attempts} times")
+            if not search_results:
+                logger.error(f"DDGS No results found for query {query}")
+
             search_results = [
                 {
                     "title": r["title"],
@@ -163,7 +168,6 @@ class WebSearcher:
             ddgs_result = self.ddgs.search(query)
             logger.info(f"DDGS result: {ddgs_result}")
             combined_result = perplexity_result +"\n\n" + tavily_result + "\n\n" + google_result + "\n\n" + ddgs_result
-            logger.info(f"combined search result for query '{query}' is: {combined_result}")
 
             prompt = f"Answer short. Based on result from internet search below, what is the answer to the question: {query}\n\n{combined_result}"
             result = self.ai_model.get_response([{"role": "user", "content": prompt}])
@@ -180,7 +184,7 @@ def main():
     if __name__ == "__main__":
         config = Config()
         web_searcher = WebSearcher(config)
-        query = "top attractions in Rybinsk Russia"
+        query = "Euro 2024 semi-final teams"
         result = web_searcher.search(query)
         logger.info(f"Web search result for query '{query}' is: {result}")
 
