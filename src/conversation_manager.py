@@ -49,6 +49,26 @@ def get_current_date_time_location():
         message += f" Я нахожусь в {location}"
 
     return message
+def get_current_date_time_for_facts():
+    # Get current date and time in UTC
+    now_utc = datetime.datetime.now(pytz.utc)
+
+    # Define the timezone you want to convert to (for example, PST)
+    timezone = pytz.timezone('America/Los_Angeles')
+    now_local = now_utc.astimezone(timezone)
+
+    # Format the date with the month as a word
+    months = {1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля', 5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
+              9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'}
+    date_str = now_local.strftime(f"%d {months[now_local.month]} %Y")
+
+    # Format the time in 12-hour format with AM/PM and timezone
+    time_str = now_local.strftime("%I:%M:%S %p, %Z")
+
+    # Prepare the message in Russian
+    message = f"({date_str}, {time_str})"
+
+    return message
 
 
 def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, List[str]]:
@@ -111,7 +131,7 @@ def extract_facts(text: str) -> Tuple[str, List[str]]:
     # Process each match
     for match in matches:
         logger.debug(f"Extracted fact: {match}")
-        fact = get_current_date_time_location() + ": " + match
+        fact = get_current_date_time_for_facts() + " : " + match
         extracted_facts.append(fact)
 
     # Remove all {remember: xxx} substrings from the input string
@@ -145,7 +165,7 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
     # Process each match
     for match in matches:
         logger.debug(f"Extracted rule: {match}")
-        rule = get_current_date_time_location() + ": " + match
+        rule = get_current_date_time_for_facts() + " : " + match
         extracted_rules.append(rule)
 
     # Remove all {remember: xxx} substrings from the input string
