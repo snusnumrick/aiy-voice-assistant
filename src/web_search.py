@@ -97,46 +97,49 @@ class DuckDuckGoSearch:
         from duckduckgo_search import DDGS
         self.ddgs = DDGS()
         self.duckduckgo_max_attempts = config.get("duckduckgo_max_attempts", 5)
-        self.duckduckgo_num_results = config.get("duckduckgo_num_results", 8)
 
     def search(self, query: str):
-        search_results = []
-        attempts = 0
+        try:
+            search_results = []
+            attempts = 0
 
-        while attempts < self.duckduckgo_max_attempts:
-            if not query:
-                return json.dumps(search_results)
+            while attempts < self.duckduckgo_max_attempts:
+                if not query:
+                    return json.dumps(search_results)
 
-            search_results = self.ddgs.text(query, max_results=self.duckduckgo_num_results)
+                search_results = self.ddgs.text(query)
 
-            if search_results:
-                break
+                if search_results:
+                    break
 
-            time.sleep(1)
-            attempts += 1
+                time.sleep(1)
+                attempts += 1
 
-        search_results = [
-            {
-                "title": r["title"],
-                "url": r["href"],
-                **({"exerpt": r["body"]} if r.get("body") else {}),
-            }
-            for r in search_results
-        ]
+            search_results = [
+                {
+                    "title": r["title"],
+                    "url": r["href"],
+                    **({"exerpt": r["body"]} if r.get("body") else {}),
+                }
+                for r in search_results
+            ]
 
-        results = "## Search results\n" + "\n\n".join(
-            "### \"{}\"\n**URL:** {}  \n**Excerpt:** {}".format(
-                r['title'],
-                r['url'],
-                "\"{}\"".format(r.get("exerpt")) if r.get("exerpt") else "N/A"
+            results = "## Search results\n" + "\n\n".join(
+                "### \"{}\"\n**URL:** {}  \n**Excerpt:** {}".format(
+                    r['title'],
+                    r['url'],
+                    "\"{}\"".format(r.get("exerpt")) if r.get("exerpt") else "N/A"
+                )
+                for r in search_results
             )
-            for r in search_results
-        )
 
-        # make it safe
-        results = results.encode("utf-8", "ignore").decode("utf-8")
+            # make it safe
+            results = results.encode("utf-8", "ignore").decode("utf-8")
 
-        return results
+            return results
+        except Exception as e:
+            logger.error(e)
+            return ""
 
 
 class WebSearcher:
