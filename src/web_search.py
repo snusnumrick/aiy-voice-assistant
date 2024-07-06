@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import requests
+import time
 
 from src.config import Config
 
@@ -91,25 +92,101 @@ class Tavily:
             raise
 
 
+class DuckDuckGoSearch:
+    def __init__(self, config):
+        from duckduckgo_search import DDGS
+        self.ddgs = DDGS()
+        self.duckduckgo_max_attempts = config.get("duckduckgo_max_attempts", 5)
+        self.duckduckgo_num_results = config.get("duckduckgo_num_results", 8)
+
+    def search(self, query: str):
+        search_results = []
+        attempts = 0
+
+        while attempts < self.duckduckgo_max_attempts:
+            if not query:
+                return json.dumps(search_results)
+
+            search_results = self.ddgs.text(query, max_results=self.duckduckgo_num_results)
+
+            if search_results:
+                break
+
+            time.sleep(1)
+            attempts += 1
+
+        search_results = [
+            {
+                "title": r["title"],
+                "url": r["href"],
+                **({"exerpt": r["body"]} if r.get("body") else {}),
+            }
+            for r in search_results
+        ]
+
+        results = "## Search results\n" + "\n\n".join(
+            "### \"{}\"\n**URL:** {}  \n**Excerpt:** {}".format(
+                r['title'],
+                r['url'],
+                "\"{}\"".format(r.get("exerpt")) if r.get("exerpt") else "N/A"
+            )
+            for r in search_results
+        )
+
+        # make it safe
+        results = results.encode("utf-8", "ignore").decode("utf-8")
+
+        return results
+
+
 class WebSearcher:
     def __init__(self, config):
         self.tavily = Tavily()
         self.google = google_web_search
         self.ai_model = OpenRouterModel(config)
         self.perplexity = Perplexity(config)
+        self.ddgs = DuckDuckGoSearch(config)
 
     def search(self, query: str) -> str:
         # return self.perplexity.search(query)
 
         try:
-            combined_result = self.perplexity.search(query) +"\n\n" + self.tavily.search(query) + "\n\n" + self.google(query, "en")
-            logger.info(f"Web search result for query '{query}' is: {combined_result}")
+            perplexity_result = self.perplexity.search(query)
+            logger.info(f"Perplexity result: {perplexity_result}")
+            tavily_result = self.tavily.search(query)
+            logger.info(f"Tavily result: {tavily_result}")
+            google_result = self.google(query, "en")
+            logger.info(f"Google result: {google_result}")
+            ddgs_result = self.ddgs.search(query)
+            logger.info(f"DDGS result: {ddgs_result}")
+            combined_result = perplexity_result +"\n\n" + tavily_result + "\n\n" + google_result + "\n\n" + ddgs_result
+            logger.info(f"combined search result for query '{query}' is: {combined_result}")
+
             prompt = f"Answer short. Based on result from internet search below, what is the answer to the question: {query}\n\n{combined_result}"
             result = self.ai_model.get_response([{"role": "user", "content": prompt}])
 
-            logger.info(f"Web search result for query '{query}' is: {result}")
+            logger.info(f"Final search result for query '{query}' is: {result}")
             return result
 
         except Exception as e:
             print(f"Error performing web search: {e}")
             raise
+
+
+def main():
+    if __name__ == "__main__":
+        config = Config()
+        web_searcher = WebSearcher(config)
+        query = "top attractions in Rybinsk Russia"
+        result = web_searcher.search(query)
+        logger.info(f"Web search result for query '{query}' is: {result}")
+
+
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    load_dotenv()
+    main()
