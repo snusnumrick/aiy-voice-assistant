@@ -188,26 +188,25 @@ class WebSearcher:
         self.config = config
 
     async def search_async(self, query: str):
+        providers = ["perplexity", "tavily", "google", "ddgs"]
+        provider_defaults = [False, False, True, True]
+        enabled_providers = [prov for (prov, default) in zip(providers, provider_defaults) if
+                             self.config.get(f"use_{prov}", default)]
+
+        def search_provider(provider, query):
+            return getattr(self, provider).search(query)
+
         with ThreadPoolExecutor() as executor:
             loop = asyncio.get_running_loop()
-
-            def search_provider(provider, query):
-                return getattr(self, provider).search(query)
-
-            providers = ["perplexity", "tavily", "google", "ddgs"]
-            provider_defaults = [False, False, True, True]
-
-            tasks = [loop.run_in_executor(executor, search_provider, prov, query)
-                     for prov, default in zip(providers, provider_defaults) if self.config.get(f"use_{prov}", default)]
-
+            tasks = [loop.run_in_executor(executor, search_provider, prov, query) for prov in enabled_providers]
             results = await asyncio.gather(*tasks)
 
         combined_result = ""
-        joined_results = zip(providers,
-                             ["Result from {}: \n{}\n".format(prov, res) for prov, res in zip(providers, results)])
+        joined_results = zip(enabled_providers,
+                             ["Result from {}: \n{}\n".format(prov, res) for prov, res in zip(enabled_providers, results)])
 
         for provider, result in joined_results:
-            logger.info(f"{provider} result: {result}")
+            logger.info(f"\n---------\n{provider} result: {result}")
             combined_result += result
 
         return combined_result
@@ -238,7 +237,7 @@ def main():
     if __name__ == "__main__":
         config = Config()
         web_searcher = WebSearcher(config)
-        query = "weather forecast San Jose California July 7 2024"
+        query = "Euro 2024 semifinal dates"
         result = web_searcher.search(query)
         logger.info(f"Web search result for query '{query}' is: {result}")
 
