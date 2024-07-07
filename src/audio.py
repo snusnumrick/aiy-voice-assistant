@@ -120,6 +120,9 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                     logger.info(f"partial: {response.partial.alternatives[0]}")
                     logger.debug(f"Partial: {response.partial.alternatives[0].text_sync}")
                 elif event_type == 'final':
+                    logger.info(f"final: {response}")
+                    logger.info(f"final: {response.final}")
+                    logger.info(f"final: {response.final.alternatives}")
                     logger.info(f"final: {response.final.alternatives[0]}")
                     current_segment = response.final.alternatives[0].text_sync
                     logger.debug(f"Final: {current_segment}")
