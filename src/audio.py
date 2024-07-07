@@ -118,17 +118,17 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                 event_type = response.WhichOneof('Event')
                 if event_type == 'partial' and response.partial.alternatives:
                     logger.info(f"partial: {response.partial.alternatives[0]}")
-                    logger.debug(f"Partial: {response.partial.alternatives[0].text_sync}")
+                    logger.debug(f"Partial: {response.partial.alternatives[0].text}")
                 elif event_type == 'final':
                     logger.info(f"final: {response}")
                     logger.info(f"final: {response.final}")
                     logger.info(f"final: {response.final.alternatives}")
                     logger.info(f"final: {response.final.alternatives[0]}")
-                    current_segment = response.final.alternatives[0].text_sync
+                    current_segment = response.final.alternatives[0].text
                     logger.debug(f"Final: {current_segment}")
                 elif event_type == 'final_refinement':
                     logger.info(f"refinmnet: {response.final_refinement.normalized_text.alternatives[0]}")
-                    refined_text = response.final_refinement.normalized_text.alternatives[0].text_sync
+                    refined_text = response.final_refinement.normalized_text.alternatives[0].text
                     logger.debug(f"Refined: {refined_text}")
                     full_text += refined_text + " "
                     current_segment = ""  # Reset current segment
