@@ -124,16 +124,14 @@ class Tavily(SearchProvider):
 class DuckDuckGoSearch(SearchProvider):
     def __init__(self, config):
         try:
-            from duckduckgo_search import AsyncDDGS
-            self.ddgs = AsyncDDGS()
             self.duckduckgo_max_attempts = config.get("duckduckgo_max_attempts", 5)
         except Exception as e:
             logger.error(f"DDGS search could not be initialized: {e}")
-            self.ddgs = None
 
     def search(self, query: str):
-        if not self.ddgs:
-            return ""
+        from duckduckgo_search import DDGS
+        ddgs = DDGS()
+
         try:
             search_results = []
             attempts = 0
@@ -142,7 +140,7 @@ class DuckDuckGoSearch(SearchProvider):
                 if not query:
                     return json.dumps(search_results)
 
-                search_results = self.ddgs.text(query)
+                search_results = ddgs.text(query)
 
                 if search_results:
                     break
