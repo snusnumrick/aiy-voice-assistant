@@ -1,8 +1,14 @@
 import json
 import logging
 import os
+import sys
 import requests
 import time
+
+if __name__ == "__main__":
+    # add current directory to python path
+    sys.path.append(os.getcwd())
+
 
 from src.config import Config
 
