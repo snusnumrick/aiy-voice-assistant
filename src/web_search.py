@@ -124,12 +124,41 @@ class Tavily(SearchProvider):
             raise
 
 
+from duckduckgo_search import DDGS
+from typing import Optional
+import httpx
+
+class PersistentDDGS(DDGS):
+    def _get_url(
+        self, method: str, url: str, **kwargs
+    ) -> Optional[httpx._models.Response]:
+        resp = self._client.request(
+            method, url, follow_redirects=True, **kwargs
+        )
+        if resp.status_code == 202:
+            # try again in a few seconds if there is no answer yet
+            if 'Location' in resp.headers:
+                status_update_url = resp.headers['Location']
+            # If the URL is in the response body, you'll need to parse the body to find it
+            # This is just a generic example, adjust it according to your API documentation
+            elif hasattr(resp, 'status_url'):
+                status_update_url = resp.status_url
+            else:
+                status_update_url = resp.url
+            if status_update_url:
+                time.sleep(3)
+                resp = self._client.request('GET', status_update_url, follow_redirects=True)
+        if self._is_500_in_url(str(resp.url)) or resp.status_code == 202:
+            raise httpx._exceptions.HTTPError("")
+
+        if resp.status_code == 200:
+            return resp
+        return None
+
 class DuckDuckGoSearch(SearchProvider):
     def __init__(self, config):
         try:
-            from duckduckgo_search import DDGS
-            self.ddgs = DDGS()
-            self.duckduckgo_max_attempts = config.get("duckduckgo_max_attempts", 5)
+            self.ddgs = PersistentDDGS()
         except Exception as e:
             logger.error(f"DDGS search could not be initialized: {e}")
             self.ddgs = None
@@ -138,51 +167,32 @@ class DuckDuckGoSearch(SearchProvider):
         if not self.ddgs:
             return ""
         try:
-            search_results = []
-            attempts = 0
-
-            while attempts < self.duckduckgo_max_attempts:
-                if not query:
-                    return json.dumps(search_results)
-
-                search_results = self.ddgs.text(query)
-
-                if search_results:
-                    break
-
-                time.sleep(1)
-                attempts += 1
-
-            if attempts > 0:
-                logger.warning(f"DuckDuckGoSearch failed {attempts} times")
-            if not search_results:
-                logger.error(f"DDGS No results found for query {query}")
-
             search_results = [
                 {
                     "title": r["title"],
                     "url": r["href"],
                     **({"exerpt": r["body"]} if r.get("body") else {}),
                 }
-                for r in search_results
+                for r in self.ddgs.text(query)
             ]
-
-            results = "## Search results\n" + "\n\n".join(
-                "### \"{}\"\n**URL:** {}  \n**Excerpt:** {}".format(
-                    r['title'],
-                    r['url'],
-                    "\"{}\"".format(r.get("exerpt")) if r.get("exerpt") else "N/A"
-                )
-                for r in search_results
-            )
-
-            # make it safe
-            results = results.encode("utf-8", "ignore").decode("utf-8")
-
-            return results
         except Exception as e:
             logger.error(f"DDGS dsearch failed: {e}")
             return ""
+
+        results = "## Search results\n" + "\n\n".join(
+            "### \"{}\"\n**URL:** {}  \n**Excerpt:** {}".format(
+                r['title'],
+                r['url'],
+                "\"{}\"".format(r.get("exerpt")) if r.get("exerpt") else "N/A"
+            )
+            for r in search_results
+        )
+
+        # make it safe
+        results = results.encode("utf-8", "ignore").decode("utf-8")
+
+        return results
+
 
 
 class WebSearcher:
@@ -194,7 +204,7 @@ class WebSearcher:
         self.ddgs = DuckDuckGoSearch(config)
         self.config = config
 
-    async def search_async(self, query: str):
+    async def search_async(self, query: str, providers):
         providers = ["perplexity", "tavily", "google", "ddgs"]
         provider_defaults = [False, False, True, True]
         enabled_providers = [prov for (prov, default) in zip(providers, provider_defaults) if
@@ -213,26 +223,40 @@ class WebSearcher:
                              ["Result from {}: \n{}\n".format(prov, res) for prov, res in zip(enabled_providers, results)])
 
         for provider, result in joined_results:
-            logger.info(f"\n---------\n{provider} result: {result}")
+            logger.debug(f"\n---------\n{provider} result: {result}")
             combined_result += result
 
         return combined_result
 
     def search(self, query: str) -> str:
-        # return self.perplexity.search(query)
+        first_line_providers = ["google", "ddgs"]
+        backup_providers = ["perplexity", "tavily"]
 
         try:
             loop = asyncio.get_event_loop()
 
             # use the loop to run your function
-            combined_result = loop.run_until_complete(self.search_async(query))
-            logger.info(f"combined result: {combined_result}")
+            result_1 = loop.run_until_complete(self.search_async(query, first_line_providers))
+            logger.debug(f"result 1: {result_1}")
+
+            prompt = (f"Answer Yes or No, nothing else. Besides resultd from internet search below, "
+                      f"do you need more information to answer the question: "
+                      f"{query}\n\n{result_1}")
+            result = self.ai_model.get_response([{"role": "user", "content": prompt}])
+
+            combined_result = result_1
+            if 'Yes' in result:
+                result_2 = loop.run_until_complete(self.search_async(query, backup_providers))
+                logger.debug(f"result 2: {result_2}")
+                combined_result += "\n\n" + result_2
+
+            logger.debug(f"\n---------\n{query} result: {combined_result}")
 
             prompt = (f"Answer short. Based on result from internet search below, what is the answer to the question: "
                       f"{query}\n\n{combined_result}")
             result = self.ai_model.get_response([{"role": "user", "content": prompt}])
 
-            logger.info(f"Final search result for query '{query}' is: {result}")
+            logger.debug(f"Final search result for query '{query}' is: {result}")
             return result
 
         except Exception as e:
@@ -244,9 +268,9 @@ def main():
     if __name__ == "__main__":
         config = Config()
         web_searcher = WebSearcher(config)
-        query = "weather forecast for Santa Clara, California"
-        result = web_searcher.search(query)
-        logger.info(f"Web search result for query '{query}' is: {result}")
+        while True:
+            query = input(">")
+            print (web_searcher.search(query))
 
 
 if __name__ == "__main__":

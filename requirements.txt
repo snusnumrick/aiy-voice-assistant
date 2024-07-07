@@ -13,5 +13,5 @@ pytz
 geocoder
 requests
 BeautifulSoup4
-duckduckgo_search
+duckduckgo_search==3.5.8
 
