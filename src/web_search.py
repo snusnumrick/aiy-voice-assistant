@@ -7,8 +7,12 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from abc import ABC, abstractmethod
 
-from src.config import Config
-from src.ai_models import OpenRouterModel
+if __name__ == "__main__":
+    from config import Config
+    from ai_models import OpenRouterModel
+else:
+    from src.config import Config
+    from src.ai_models import OpenRouterModel
 
 logger = logging.getLogger(__name__)
 
@@ -120,8 +124,8 @@ class Tavily(SearchProvider):
 class DuckDuckGoSearch(SearchProvider):
     def __init__(self, config):
         try:
-            from duckduckgo_search import DDGS
-            self.ddgs = DDGS()
+            from duckduckgo_search import AsyncDDGS
+            self.ddgs = AsyncDDGS()
             self.duckduckgo_max_attempts = config.get("duckduckgo_max_attempts", 5)
         except Exception as e:
             logger.error(f"DDGS search could not be initialized: {e}")
