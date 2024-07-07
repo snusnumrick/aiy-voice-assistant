@@ -79,7 +79,10 @@ class Google(SearchProvider):
 
 class Perplexity(SearchProvider):
     def __init__(self, config: Config):
-        from src.ai_models import PerplexityModel
+        if __name__ == "__main__":
+            from ai_models import PerplexityModel
+        else:
+            from src.ai_models import PerplexityModel
         self.model = PerplexityModel(config)
 
     def search(self, query: str) -> str:
