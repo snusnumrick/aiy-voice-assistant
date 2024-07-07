@@ -133,6 +133,7 @@ class DuckDuckGoSearch(SearchProvider):
 
     def search(self, query: str):
         from duckduckgo_search import DDGS
+        from duckduckgo_search.exceptions import DuckDuckGoSearchException, RatelimitException, TimeoutException
         ddgs = DDGS()
 
         try:
@@ -178,8 +179,18 @@ class DuckDuckGoSearch(SearchProvider):
             results = results.encode("utf-8", "ignore").decode("utf-8")
 
             return results
+
+        except RatelimitException as e:
+            logger.error(f"rate limit exceeded during DDGS search: {e}")
+            return ""
+        except TimeoutException as e:
+            logger.error(f"timeout during DDGS search: {e}")
+            return ""
+        except DuckDuckGoSearchException as e:
+            logger.error(f"DDGS search failed {e}")
+            return ""
         except Exception as e:
-            logger.error(f"DDGS dsearch failed: {e}")
+            logger.error(f"exception during DDGS search: {e}")
             return ""
 
 
@@ -194,7 +205,7 @@ class WebSearcher:
 
     async def search_async(self, query: str):
         providers = ["perplexity", "tavily", "google", "ddgs"]
-        provider_defaults = [False, False, True, True]
+        provider_defaults = [False, False, False, True]
         enabled_providers = [prov for (prov, default) in zip(providers, provider_defaults) if
                              self.config.get(f"use_{prov}", default)]
 
