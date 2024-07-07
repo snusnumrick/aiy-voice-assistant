@@ -4,6 +4,9 @@ import os
 import sys
 import requests
 import time
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from abc import ABC, abstractmethod
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -17,44 +20,67 @@ from src.ai_models import OpenRouterModel
 logger = logging.getLogger(__name__)
 
 
-def google_web_search(term, lang) -> str:
-    def fetch_data(term, lang):
-        from bs4 import BeautifulSoup
-        import random
+class SearchProvider(ABC):
+    """
+    Abstract base class for internet search.
+    """
 
-        user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.157 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36", ]
+    @abstractmethod
+    def search(self, query: str) -> str:
+        """
+        Search for the given query.
 
-        url = f"https://www.google.com/search?q={requests.utils.quote(term)}&hl={lang}"
-        headers = {"User-Agent": random.choice(user_agents)}
-        response = requests.get(url, headers=headers)
-        return BeautifulSoup(response.text, 'html.parser')
+        Args:
+            query (str): what to search for.
 
-    soup = fetch_data(term, lang)
-
-    brief = " ".join([element.text for element in soup.select(".sXLaOe")])
-    extract = " ".join([element.text for element in soup.select(".hgKElc")])
-    denotion = " ".join([element.text for element in soup.select(".wx62f")])
-    place = " ".join([element.text for element in soup.select(".HwtpBd")])
-    wiki = " ".join([element.text for element in soup.select(".yxjZuf span")])
-
-    a1 = (" ".join([element.text for element in soup.select(".UDZeY span")]).replace("Описание", "").replace("ЕЩЁ",
-                                                                                                             "") + soup.select_one(
-        ".LGOjhe span").text) if soup.select_one(".LGOjhe span") else ""
-    a2 = " ".join([element.text for element in soup.select(".yXK7lf span")])
-
-    brief_result = "; ".join(filter(None, [brief, extract, denotion, place, wiki]))
-    result = brief_result or a2 or a1
-
-    return result
+        Returns:
+            str: The search result.
+        """
+        pass
 
 
-class Perplexity:
+class Google(SearchProvider):
+    def __init__(self, config: Config):
+        pass
+
+    def search(self, term: str) -> str:
+        def fetch_data(term, lang):
+            from bs4 import BeautifulSoup
+            import random
+
+            user_agents = [
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.157 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36", ]
+
+            url = f"https://www.google.com/search?q={requests.utils.quote(term)}&hl={lang}"
+            headers = {"User-Agent": random.choice(user_agents)}
+            response = requests.get(url, headers=headers)
+            return BeautifulSoup(response.text, 'html.parser')
+
+        soup = fetch_data(term, "en")
+
+        brief = " ".join([element.text for element in soup.select(".sXLaOe")])
+        extract = " ".join([element.text for element in soup.select(".hgKElc")])
+        denotion = " ".join([element.text for element in soup.select(".wx62f")])
+        place = " ".join([element.text for element in soup.select(".HwtpBd")])
+        wiki = " ".join([element.text for element in soup.select(".yxjZuf span")])
+
+        a1 = (" ".join([element.text for element in soup.select(".UDZeY span")]).replace("Описание", "").replace("ЕЩЁ",
+                                                                                                                 "") + soup.select_one(
+            ".LGOjhe span").text) if soup.select_one(".LGOjhe span") else ""
+        a2 = " ".join([element.text for element in soup.select(".yXK7lf span")])
+
+        brief_result = "; ".join(filter(None, [brief, extract, denotion, place, wiki]))
+        result = brief_result or a2 or a1
+
+        return result
+
+
+class Perplexity(SearchProvider):
     def __init__(self, config: Config):
         from src.ai_models import PerplexityModel
         self.model = PerplexityModel(config)
@@ -69,8 +95,8 @@ class Perplexity:
         return self.model.get_response(messages)
 
 
-class Tavily:
-    def __init__(self):
+class Tavily(SearchProvider):
+    def __init__(self, config: Config):
         self.api_key = os.environ.get('TAVILY_API_KEY')
         if not self.api_key:
             raise ValueError("Tavily API key is not provided in environment variables")
@@ -98,7 +124,7 @@ class Tavily:
             raise
 
 
-class DuckDuckGoSearch:
+class DuckDuckGoSearch(SearchProvider):
     def __init__(self, config):
         try:
             from duckduckgo_search import DDGS
@@ -161,9 +187,9 @@ class DuckDuckGoSearch:
 
 class WebSearcher:
     def __init__(self, config):
-        self.tavily = Tavily()
-        self.google = google_web_search
-        self.ai_model = OpenRouterModel(config)
+        self.tavily = Tavily(config)
+        self.google = Google(config)
+        self.ai_model = OpenRouterModel(config, use_simple_model=True)
         self.perplexity = Perplexity(config)
         self.ddgs = DuckDuckGoSearch(config)
         self.config = config
@@ -172,26 +198,14 @@ class WebSearcher:
         # return self.perplexity.search(query)
 
         try:
-            combined_result = ""
+            loop = asyncio.get_event_loop()
 
-            if self.config.get("use_perplexity", False):
-                perplexity_result = self.perplexity.search(query)
-                logger.info(f"Perplexity result: {perplexity_result}")
-                combined_result += "Result from Perplexity: \n" + perplexity_result + "\n"
-            if self.config.get("use_tavily", False):
-                tavily_result = self.tavily.search(query)
-                logger.info(f"Tavily result: {tavily_result}")
-                combined_result += "Result from Tavily: \n" + tavily_result + "\n"
-            if self.config.get("use_google", False):
-                google_result = self.google(query, "en")
-                logger.info(f"Google result: {google_result}")
-                combined_result += "Result from Google: \n" + google_result + "\n"
-            if self.config.get("use_ddgs", True):
-                ddgs_result = self.ddgs.search(query)
-                logger.info(f"DDGS result: {ddgs_result}")
-                combined_result += "Result from DDGS: \n" + ddgs_result + "\n"
+            # use the loop to run your function
+            combined_result = loop.run_until_complete(self.search_async(query))
+            logger.info(f"combined result: {combined_result}")
 
-            prompt = f"Answer short. Based on result from internet search below, what is the answer to the question: {query}\n\n{combined_result}"
+            prompt = (f"Answer short. Based on result from internet search below, what is the answer to the question: "
+                      f"{query}\n\n{combined_result}")
             result = self.ai_model.get_response([{"role": "user", "content": prompt}])
 
             logger.info(f"Final search result for query '{query}' is: {result}")
