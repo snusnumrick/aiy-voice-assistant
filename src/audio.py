@@ -136,9 +136,9 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                         logger.info(f"Added unrefined segment: {current_segment}")
                     current_segment = ""  # Reset current segment
 
-        except grpc.RpcError as err:
-            print(f'Error code {err.code()}, message: {err.details()}')
-            raise err
+        except Exception as err:
+            logger.error(err)
+            return ""
 
         return full_text.strip()
 
