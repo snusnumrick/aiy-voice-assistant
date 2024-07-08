@@ -61,21 +61,22 @@ def main_loop(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_ma
                 ai_response = conversation_manager.get_response(text)
                 logger.info('AI says: %s', ai_response)
 
-                # Synthesize and play AI response
-                audio_file_name = config.get('audio_file_name', 'speech.wav')
+                if ai_response:
+                    # Synthesize and play AI response
+                    audio_file_name = config.get('audio_file_name', 'speech.wav')
 
-                while True:
-                    if synthesize_speech(tts_engine, ai_response, audio_file_name, config):
-                        break
-                    # error happened, retry
+                    while True:
+                        if synthesize_speech(tts_engine, ai_response, audio_file_name, config):
+                            break
+                        # error happened, retry
 
-                    error_visual(leds)
+                        error_visual(leds)
 
-                    # retry
-                    continue
+                        # retry
+                        continue
 
-                logger.info(f"Playing audio file: {audio_file_name}")
-                player_process = play_wav_async(audio_file_name)
+                    logger.info(f"Playing audio file: {audio_file_name}")
+                    player_process = play_wav_async(audio_file_name)
 
         except Exception as e:
             logger.error(f"An error occurred in the main loop: {str(e)}",

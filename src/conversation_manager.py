@@ -14,10 +14,17 @@ from typing import List, Dict, Tuple
 
 import geocoder
 import pytz
+import sys
+import os
+import ast
 
-from .ai_models import AIModel
-from .config import Config
-from .web_search import WebSearcher
+if __name__ == "__main__":
+    # add current directory to python path
+    sys.path.append(os.getcwd())
+
+from src.ai_models import AIModel
+from src.config import Config
+from src.web_search import WebSearcher
 
 logger = logging.getLogger(__name__)
 
@@ -179,39 +186,43 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
 
 def extract_emotions(text: str) -> List[Tuple[dict, str]]:
     """
-    This function parses given text and extracts 'emotion' dictionary (if any) and the associated text following it.
-    The structured data is returned as a list of tuples - each tuple containing the dictionary and corresponding text.
+        This function parses the given text and extracts 'emotion' dictionaries (if any) and the associated text following them.
+        The structured data is returned as a list of tuples, each containing the dictionary and the corresponding text.
 
-    :param text: str, Input text which includes 'emotion' dictionaries and text.
-    :return: List of Tuples. Each tuple: (dict, str) : Parsed 'emotion' dictionary and associated text.
+        An emotion dictionary is expected to be enclosed inside '$emotion:' and '$' markers in the input text.
+        Any text not preceded by an emotion marker is associated with an empty dictionary.
 
-    An emotion dictionary is expected to be enclosed inside '$emotion:' and '$' markers in the input text.
-    """
+        :param text: str, Input text which includes 'emotion' dictionaries and text.
+        :return: List[Tuple[Dict, str]]. Each tuple contains:
+            - dict: The parsed 'emotion' dictionary or an empty dictionary if no dictionary was found.
+            - str: The associated text following the dictionary or preceding the next dictionary.
+        """
 
-    result = []
+    pattern = re.compile(r'(.*?)\$emotion:\s*(\{.*?\})?\$(.*?)(?=\$emotion:|$)', re.DOTALL)
 
-    # Split text into chunks, each potentially starting with $emotion:.
-    chunks = re.split(r'(\$emotion:)', text)
+    results = []
+    pos = 0
+    while pos < len(text):
+        match = pattern.search(text, pos)
+        if not match:
+            remaining_text = text[pos:].strip()
+            if remaining_text:
+                results.append(({}, remaining_text))
+            break
+        preceding_text = match.group(1).strip()
+        if preceding_text:
+            results.append(({}, preceding_text))
 
-    # If first chunk doesn't start with $emotion: prepend an empty emotion
-    if not chunks[0].startswith('$emotion:'):
-        intro_text = chunks.pop(0).strip()
-        result.append(({}, intro_text))
+        emotion_dict_str = match.group(2) if match.group(2) else '{}'
+        associated_text = match.group(3).strip()
+        try:
+            emotion_dict = json.loads(emotion_dict_str)
+            results.append((emotion_dict, associated_text))
+        except json.JSONDecodeError:
+            results.append(({}, associated_text))
+        pos = match.end()
 
-    emotion_dict = None  # Initialize an empty dictionary
-    for chunk in chunks:
-        if chunk == '$emotion:':
-            continue  # If the chunk is $emotion:, skip it
-        # If a dictionary was found in the previous iteration, this chunk is text
-        elif emotion_dict is not None:
-            text_str = chunk.split('$', 1)[0].strip()
-            result.append((emotion_dict, text_str))  # Add to result
-            emotion_dict = None
-        else:  # If no dictionary was found in the previous iteration, this chunk is JSON
-            emotion_str = chunk.split('$', 1)[0]
-            emotion_dict = json.loads(emotion_str)  # Convert json_str to a dict
-
-    return result
+    return results
 
 
 class ConversationManager:
@@ -415,3 +426,13 @@ class ConversationManager:
     def save_rules(self, rules):
         with open('rules.json', 'w', encoding='utf8') as f:
             json.dump(rules, f, ensure_ascii=False, indent=4)
+
+
+def test():
+    text = """a$emotion: {"color": [255, 165, 0], "behavior": "breathing", "brightness": "medium", "cycle": 3}$b$emotion: {}$"""
+
+    text_with_emotions = extract_emotions(text)
+
+
+if __name__ == '__main__':
+    test()
