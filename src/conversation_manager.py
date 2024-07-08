@@ -83,7 +83,7 @@ def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, L
         Tuple[str, List[str]]: A tuple containing the modified string and a list of web search results.
     """
     # Regular expression to match {internet query: xxx} pattern
-    pattern = r'$internet query:(.*?)$'
+    pattern = r'\$internet query:(.*?)\$'
 
     # Find all matches
     matches = re.findall(pattern, input_string)
@@ -120,7 +120,7 @@ def extract_facts(text: str) -> Tuple[str, List[str]]:
         Tuple[str, List[str]]: A tuple containing the modified text and a list of extracted facts.
     """
     # Regular expression to match {remember: xxx} pattern
-    pattern = r'$remember:(.*?)$'
+    pattern = r'\$remember:(.*?)\$'
 
     # Find all matches
     matches = re.findall(pattern, text)
@@ -154,10 +154,10 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
         Tuple[str, List[str]]: A tuple containing the modified text and a list of extracted facts.
     """
     # Regular expression to match {remember: xxx} pattern
-    pattern = r'$rule:(.*?)$'
+    pattern = r'\$rule:(.*?)\$'
 
     # Find all matches
-    matches = re.findall(pattern, text)
+    matches = re.findall(pattern, text, re.DOTALL)
 
     # List to store extracted facts
     extracted_rules = []
@@ -257,6 +257,8 @@ class ConversationManager:
                            "Ты можешь выразить их управляя цветным фонариком с рассеяным светом. "
                            "Чтобы отдать команду фонарику, вставь в текст твоего сообшения "
                            '$emotion: {"color": [R, G, B], "behavior": "continuous/blinking/breathing", "brightness": "dark/medium/bright", "cycle": X}$, '
+                           "Сообщать об эмоциях надо перед текстом, к которому они относятся. "
+                           "Отправить пустую эмоцию для выключения фонарика. "
                            "где R, G, B - компоненты цвета от 0 до 255; X - продолжительность цикла в секундах для режимов blinking и breathing.")
         self.message_history = deque([{"role": "system", "content": self.get_system_prompt()}])
 
