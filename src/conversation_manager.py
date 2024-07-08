@@ -200,7 +200,6 @@ class ConversationManager:
         self.ai_model = ai_model
         self.facts = self.load_facts()
         self.rules = self.load_rules()
-        self.message_history = deque([{"role": "system", "content": self.get_system_prompt()}])
         self.hard_rules = ("Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
                            "а пошли мне сообщение в таком формате: "
                             "$internet query:<что ты хочешь поискать на английском языке>$. "
@@ -222,6 +221,7 @@ class ConversationManager:
                            "Чтобы отдать команду фонарику, вставь в текст твоего сообшения "
                            '$emotion: {"color": [R, G, B], "behavior": "continuous/blinking/breathing", "brightness": "dark/medium/bright", "cycle": X}$, '
                            "где R, G, B - компоненты цвета от 0 до 255; X - продолжительность цикла в секундах для режимов blinking и breathing.")
+        self.message_history = deque([{"role": "system", "content": self.get_system_prompt()}])
 
     def get_system_prompt(self):
         prompt = f"{get_current_date_time_location()} "
