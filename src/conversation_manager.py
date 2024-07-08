@@ -177,6 +177,43 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
     return modified_text, extracted_rules
 
 
+def extract_emotions(text: str) -> List[Tuple[dict, str]]:
+    """
+    This function parses given text and extracts 'emotion' dictionary (if any) and the associated text following it.
+    The structured data is returned as a list of tuples - each tuple containing the dictionary and corresponding text.
+
+    :param text: str, Input text which includes 'emotion' dictionaries and text.
+    :return: List of Tuples. Each tuple: (dict, str) : Parsed 'emotion' dictionary and associated text.
+
+    An emotion dictionary is expected to be enclosed inside '$emotion:' and '$' markers in the input text.
+    """
+
+    result = []
+
+    # Split text into chunks, each potentially starting with $emotion:.
+    chunks = re.split(r'(\$emotion:)', text)
+
+    # If first chunk doesn't start with $emotion: prepend an empty emotion
+    if not chunks[0].startswith('$emotion:'):
+        intro_text = chunks.pop(0).strip()
+        result.append(({}, intro_text))
+
+    emotion_dict = None  # Initialize an empty dictionary
+    for chunk in chunks:
+        if chunk == '$emotion:':
+            continue  # If the chunk is $emotion:, skip it
+        # If a dictionary was found in the previous iteration, this chunk is text
+        elif emotion_dict is not None:
+            text_str = chunk.split('$', 1)[0].strip()
+            result.append((emotion_dict, text_str))  # Add to result
+            emotion_dict = None
+        else:  # If no dictionary was found in the previous iteration, this chunk is JSON
+            emotion_str = chunk.split('$', 1)[0]
+            emotion_dict = json.loads(emotion_str)  # Convert json_str to a dict
+
+    return result
+
+
 class ConversationManager:
     """
     Manages the conversation flow, including message history and interaction with AI models.
@@ -335,6 +372,10 @@ class ConversationManager:
 
         if rules:
             logger.info(f"Extracted rules: {rules}")
+
+        text_with_emotions = extract_emotions(response_text)
+        logger.info(f"Extracted emotions: {text_with_emotions}")
+        response_text = " ".join([t for e, t in text_with_emotions])
 
         logger.debug(f"AI response: {text} -> {response_text}")
 
