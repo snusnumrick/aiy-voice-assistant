@@ -83,7 +83,7 @@ def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, L
         Tuple[str, List[str]]: A tuple containing the modified string and a list of web search results.
     """
     # Regular expression to match {internet query: xxx} pattern
-    pattern = r'\{internet query:(.*?)\}'
+    pattern = r'$internet query:(.*?)$'
 
     # Find all matches
     matches = re.findall(pattern, input_string)
@@ -120,7 +120,7 @@ def extract_facts(text: str) -> Tuple[str, List[str]]:
         Tuple[str, List[str]]: A tuple containing the modified text and a list of extracted facts.
     """
     # Regular expression to match {remember: xxx} pattern
-    pattern = r'\{remember:(.*?)\}'
+    pattern = r'$remember:(.*?)$'
 
     # Find all matches
     matches = re.findall(pattern, text)
@@ -154,7 +154,7 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
         Tuple[str, List[str]]: A tuple containing the modified text and a list of extracted facts.
     """
     # Regular expression to match {remember: xxx} pattern
-    pattern = r'\{rule:(.*?)\}'
+    pattern = r'$rule:(.*?)$'
 
     # Find all matches
     matches = re.findall(pattern, text)
@@ -201,6 +201,22 @@ class ConversationManager:
         self.facts = self.load_facts()
         self.rules = self.load_rules()
         self.message_history = deque([{"role": "system", "content": self.get_system_prompt()}])
+        self.hard_rules = ("Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
+                           "а пошли мне сообщение в таком формате: "
+                            "$internet query:<что ты хочешь поискать на английском языке>$. "
+                            "Таких запросов в твоем сообщении может быть несколько. "
+                            "Если в ответе на твой запрос указано время без указания часового пояса, "
+                            "считай что это Восточное стандартное время."
+                            # "Если по этому запросу не нашел нужной информации, попробуй переформулировать запрос. "
+                            "Если тебе надо что-то запомнить, "
+                            "пошли мне сообщение в таком формате: $remember: <текст, который тебе нужно запомнить>$. "
+                            "Таких фактов в твоем сообщении тоже может быть несколько. "
+                            "Например, $remember: <первый текст, который тебе нужно запомнить>$ "
+                            "{remember: $второрй текст, который тебе нужно запомнить>$."
+                            "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
+                            "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
+                            "$rule: <текст нового правила>$. "
+                            "Таких запросов в твоем сообщении тоже может быть несколько. ")
 
     def get_system_prompt(self):
         prompt = f"{get_current_date_time_location()} "
@@ -211,24 +227,8 @@ class ConversationManager:
                              "Например, не говори 1. что-то; 2. что-то. говори во-первых, во-вторых или просто перечисляй. "
                              "При ответе на вопрос где важно время, помни какое сегодня число. "
                              "Если чего-то не знаешь, так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. "
-                             "Будь краток, избегай банальностей и непрошенных советов. "
-                             "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
-                             "а пошли мне сообщение в таком формате: "
-                             "{internet query:<что ты хочешь поискать на английском языке>}. "
-                             "Таких запросов в твоем сообщении может быть несколько. "
-                             "Если в ответе на твой запрос указано время без указания часового пояса, "
-                             "считай что это Восточное стандартное время."
-                             # "Если по этому запросу не нашел нужной информации, попробуй переформулировать запрос. "
-                             "Если тебе надо что-то запомнить, "
-                             "пошли мне сообщение в таком формате: {remember: <текст, который тебе нужно запомнить>}. "
-                             "Таких фактов в твоем сообщении тоже может быть несколько. "
-                             "Например, {remember: <первый текст, который тебе нужно запомнить>} "
-                             "{remember: <второрй текст, который тебе нужно запомнить>}."
-                             "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
-                             "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
-                             "{rule: <текст нового правила>}. "
-                             "Таких запросов в твоем сообщении тоже может быть несколько. "
-                                  )
+                             "Будь краток, избегай банальностей и непрошенных советов. ")
+        prompt += self.hard_rules
         if self.facts:
             prompt += " Ты уже знаешь факты:" + " ".join(self.facts)        
         if self.rules:
