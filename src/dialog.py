@@ -59,14 +59,16 @@ def main_loop(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_ma
             if text:
                 # Generate AI response
                 ai_response = conversation_manager.get_response(text)
-                logger.info('AI says: %s', ai_response)
+                logger.info('AI says: %s', " ".join([t for e, t in ai_response]))
 
                 if ai_response:
                     # Synthesize and play AI response
                     audio_file_name = config.get('audio_file_name', 'speech.wav')
+                    response_text = " ".join([t for e, t in ai_response])
 
                     while True:
-                        if synthesize_speech(tts_engine, ai_response, audio_file_name, config):
+
+                        if synthesize_speech(tts_engine, response_text, audio_file_name, config):
                             break
                         # error happened, retry
 

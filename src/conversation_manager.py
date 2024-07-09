@@ -335,7 +335,7 @@ class ConversationManager:
             new_history.append(self.message_history.popleft())
         self.message_history = deque(new_history)
 
-    def get_response(self, text: str) -> str:
+    def get_response(self, text: str) -> List[Tuple[dict, str]]:
         """
         Get an AI response based on the current conversation state and new input.
 
@@ -343,7 +343,7 @@ class ConversationManager:
             text (str): The new input text to respond to.
 
         Returns:
-            str: The AI-generated response.
+            List[Tuple[dict, str]]: The AI-generated response, marked with emotion response
         """
 
         # update system message
@@ -387,14 +387,14 @@ class ConversationManager:
             logger.info(f"Extracted rules: {rules}")
 
         text_with_emotions = extract_emotions(response_text)
-        logger.info(f"Extracted emotions: {text_with_emotions}")
-        response_text = " ".join([t for e, t in text_with_emotions])
-
-        logger.debug(f"AI response: {text} -> {response_text}")
+        # logger.info(f"Extracted emotions: {text_with_emotions}")
+        # response_text = " ".join([t for e, t in text_with_emotions])
+        #
+        # logger.debug(f"AI response: {text} -> {response_text}")
 
         print("\n" + self.formatted_message_history() + "\n")
 
-        return response_text
+        return text_with_emotions
 
     def formatted_message_history(self):
         """
