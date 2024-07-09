@@ -14,7 +14,6 @@ import time
 from abc import ABC, abstractmethod
 from collections import deque
 from enum import Enum
-from subprocess import Popen
 from typing import Optional, List, Iterator
 
 import grpc
@@ -26,6 +25,7 @@ from pydub import AudioSegment
 
 from src.config import Config
 from src.tts_engine import TTSEngine
+from src.responce_player import ResponsePlayer
 
 logger = logging.getLogger(__name__)
 
@@ -201,12 +201,12 @@ class SpeechTranscriber:
             raise ValueError(f"Unsupported speech recognition service: {service_name}")
         self.speech_service.setup_client(self.config)
 
-    def transcribe_speech(self, player_process: Optional[Popen] = None) -> str:
+    def transcribe_speech(self, player_process: Optional[ResponsePlayer] = None) -> str:
         """
         Transcribe speech from the microphone input, including pre and post buffering.
 
         Args:
-            player_process (Optional[Popen]): A subprocess.Popen object representing a running audio player.
+            player_process (Optional[ResponsePlayer]): Object representing a running audio player.
 
         Returns:
             str: The transcribed text.
@@ -252,12 +252,11 @@ class SpeechTranscriber:
 
             def stop_playing():
                 nonlocal player_process
-                if player_process and player_process.returncode is None:
+                if player_process and player_process.is_playing():
                     try:
                         logger.debug("Terminating player process")
                         chunks_deque.clear()
-                        player_process.kill()
-                        player_process.wait()
+                        player_process.stop()
                         logger.debug("Player process terminated")
                     except Exception as e:
                         logger.error(f"Error terminating player process: {str(e)}")
