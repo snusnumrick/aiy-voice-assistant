@@ -49,7 +49,7 @@ def change_light_behavior(behaviour: dict):
             if behaviour["behaviour"] == "breathing":
                 leds.pattern = Pattern.breathe(behaviour["cycle"] * 1000)
                 leds.update(Leds.rgb_pattern(color))
-                logger.info(f"breathing {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour["cycle"]} period")
+                logger.info(f"breathing {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['cycle']} period")
             elif behaviour["behaviour"] == "blinking":
                 leds.pattern = Pattern.blink(behaviour["cycle"] * 1000)
                 leds.update(Leds.rgb_pattern(color))
