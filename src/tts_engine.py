@@ -29,6 +29,10 @@ class TTSEngine(ABC):
         """
         pass
 
+    @abstractmethod
+    def max_text_length(self) -> int:
+        return -1
+
 
 class OpenAITTSEngine(TTSEngine):
     """
@@ -46,6 +50,9 @@ class OpenAITTSEngine(TTSEngine):
         self.client = OpenAI()
         self.model = config.get('openai_tts_model', 'tts-1')
         self.voice = config.get('openai_tts_voice', 'alloy')
+
+    def max_text_length(self) -> int:
+        return 4096
 
     def synthesize(self, text: str, filename: str) -> None:
         """

@@ -420,29 +420,33 @@ def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Confi
         bool: True if the speech was successfully synthesized, False otherwise.
     """
     logger.debug('Synthesizing speech for: %s', text)
-    max_size_tts = config.get('max_size_tts', 4096)  # Default to 4096 if not in config
-    chunks = split_text(text, max_length=max_size_tts)
-
-    temp_dir = tempfile.mkdtemp()
+    max_size_tts = engine.max_text_length()
     result = True
-    try:
-        chunk_files = []
-        for i, chunk in enumerate(chunks):
-            chunk_file = os.path.join(temp_dir, f"chunk_{i}.wav")
-            logger.debug(f"Synthesizing chunk {i}: {chunk}")
-            engine.synthesize(chunk, chunk_file)
-            logger.debug(f"Saved chunk {i} to {chunk_file}")
-            chunk_files.append(chunk_file)
+    if (max_size_tts > 0) and (len(text) > max_size_tts):
+        # split long text
+        chunks = split_text(text, max_length=max_size_tts)
 
-        if len(chunk_files) > 1:
-            combine_audio_files(chunk_files, filename)
-        else:
-            shutil.move(chunk_files[0], filename)
-    except Exception as e:
-        logger.error(f"Error synthesizing speech: {str(e)}")
-        result = False
-    finally:
-        shutil.rmtree(temp_dir)
+        temp_dir = tempfile.mkdtemp()
+        try:
+            chunk_files = []
+            for i, chunk in enumerate(chunks):
+                chunk_file = os.path.join(temp_dir, f"chunk_{i}.wav")
+                logger.debug(f"Synthesizing chunk {i}: {chunk}")
+                engine.synthesize(chunk, chunk_file)
+                logger.debug(f"Saved chunk {i} to {chunk_file}")
+                chunk_files.append(chunk_file)
+
+            if len(chunk_files) > 1:
+                combine_audio_files(chunk_files, filename)
+            else:
+                shutil.move(chunk_files[0], filename)
+        except Exception as e:
+            logger.error(f"Error synthesizing speech: {str(e)}")
+            result = False
+        finally:
+            shutil.rmtree(temp_dir)
+    else:
+        engine.synthesize(text, filename)
 
     logger.debug(f"Final synthesized speech saved at {filename}")
     return result
