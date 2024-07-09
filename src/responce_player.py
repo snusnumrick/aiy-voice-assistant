@@ -46,11 +46,11 @@ def change_light_behavior(behaviour: dict):
             leds.update(Leds.rgb_off())
         else:
             color = adjust_rgb_brightness(behaviour['color'], behaviour['brightness'])
-            if behaviour["behaviour"] == "breathing":
+            if behaviour["behavior"] == "breathing":
                 leds.pattern = Pattern.breathe(behaviour["cycle"] * 1000)
                 leds.update(Leds.rgb_pattern(color))
                 logger.info(f"breathing {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['cycle']} period")
-            elif behaviour["behaviour"] == "blinking":
+            elif behaviour["behavior"] == "blinking":
                 leds.pattern = Pattern.blink(behaviour["cycle"] * 1000)
                 leds.update(Leds.rgb_pattern(color))
                 logger.info(f"blinking {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['cycle']} period")
