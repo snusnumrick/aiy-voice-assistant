@@ -39,31 +39,32 @@ def adjust_rgb_brightness(rgb: List[int], brightness: str) -> Tuple[int, int, in
     return r, g, b
 
 
-def change_light_behavior(behaviour: dict):
+def change_light_behavior(behaviour: dict, leds: Leds) -> None:
 
-    with Leds() as leds:
-        if not behaviour:
-            leds.update(Leds.rgb_off())
+    if not behaviour:
+        leds.update(Leds.rgb_off())
+    else:
+        color = adjust_rgb_brightness(behaviour['color'], behaviour['brightness'])
+        if behaviour["behavior"] == "breathing":
+            leds.pattern = Pattern.breathe(behaviour["cycle"] * 1000)
+            leds.update(Leds.rgb_pattern(color))
+            logger.info(f"breathing {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['cycle']} period")
+        elif behaviour["behavior"] == "blinking":
+            leds.pattern = Pattern.blink(behaviour["cycle"] * 1000)
+            leds.update(Leds.rgb_pattern(color))
+            logger.info(f"blinking {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['cycle']} period")
         else:
-            color = adjust_rgb_brightness(behaviour['color'], behaviour['brightness'])
-            if behaviour["behavior"] == "breathing":
-                leds.pattern = Pattern.breathe(behaviour["cycle"] * 1000)
-                leds.update(Leds.rgb_pattern(color))
-                logger.info(f"breathing {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['cycle']} period")
-            elif behaviour["behavior"] == "blinking":
-                leds.pattern = Pattern.blink(behaviour["cycle"] * 1000)
-                leds.update(Leds.rgb_pattern(color))
-                logger.info(f"blinking {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['cycle']} period")
-            else:
-                leds.update(Leds.rgb_on(color))
-                logger.info(f"solid {behaviour['color']} {behaviour['brightness']} ({color}) color")
+            leds.update(Leds.rgb_on(color))
+            logger.info(f"solid {behaviour['color']} {behaviour['brightness']} ({color}) color")
+
 
 class ResponsePlayer:
-    def __init__(self, playlist: List[Tuple[Dict, str]]):
+    def __init__(self, playlist: List[Tuple[Dict, str]], leds: Leds):
         self.playlist = playlist
         self.current_process: Optional[Popen] = None
         self._is_playing = False
         self.play_thread: Optional[threading.Thread] = None
+        self.leds = leds
 
     def play(self):
         self._is_playing = True
@@ -75,7 +76,7 @@ class ResponsePlayer:
             if not self._is_playing:
                 break
 
-            change_light_behavior(light_behavior)
+            change_light_behavior(light_behavior, self.leds)
             self.current_process = play_wav_async(audio_file)
 
             # Wait for the audio to finish

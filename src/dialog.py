@@ -100,7 +100,7 @@ def main_loop(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_ma
                         playlist.append((emo, audio_file_name))
                         audio_file_name = append_suffix(audio_file_name, str(n+1))
 
-                    responce_player = ResponsePlayer(playlist)
+                    responce_player = ResponsePlayer(playlist, leds)
                     responce_player.play()
                     # player_process = play_wav_async(audio_file_name)
 
