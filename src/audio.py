@@ -225,7 +225,7 @@ class SpeechTranscriber:
             def start_idle():
                 nonlocal status, time_breathing_started, breathing_on, player_process
                 logger.info('Ready to listen...')
-                if player_process is not None or not player_process.is_playing():
+                if player_process is None and not player_process.is_playing():
                     self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
                     self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
                     time_breathing_started = time.time()
@@ -269,17 +269,17 @@ class SpeechTranscriber:
             recoding_started_at = time.time()
             time_breathing_started = time.time()
             for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
-                if time.time() - time_breathing_started > self.led_breathing_duration and breathing_on:
+                if (time.time() - time_breathing_started > self.led_breathing_duration) and breathing_on:
                     stop_breathing()
 
-                if status != RecordingStatus.FINISHED or (status == RecordingStatus.FINISHED and record_more > 0):
+                if (status != RecordingStatus.FINISHED) or (status == RecordingStatus.FINISHED and record_more > 0):
                     if status == RecordingStatus.FINISHED:
                         record_more -= 1
                     chunks_deque.append(chunk)
                     if (status == RecordingStatus.NOT_STARTED) and (len(chunks_deque) > self.max_number_of_chunks):
                         chunks_deque.popleft()
 
-                if status == RecordingStatus.NOT_STARTED and self.button_is_pressed:
+                if (status == RecordingStatus.NOT_STARTED) and self.button_is_pressed:
                     stop_playing()
                     start_listening()
                     logger.info(f"{len(chunks_deque)} audio chunks buffered")
