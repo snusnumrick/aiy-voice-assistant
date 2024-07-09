@@ -82,6 +82,9 @@ class ResponsePlayer:
             # Wait for the audio to finish
             self.current_process.wait()
 
+            # switch off led
+            self.leds.update(Leds.rgb_off())
+
             if not self._is_playing:
                 break
 

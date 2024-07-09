@@ -247,7 +247,7 @@ class SpeechTranscriber:
             def stop_breathing():
                 nonlocal breathing_on
                 logger.info('Breathing off')
-                # self.leds.update(Leds.rgb_off())
+                self.leds.update(Leds.rgb_off())
                 breathing_on = False
 
             def stop_playing():
