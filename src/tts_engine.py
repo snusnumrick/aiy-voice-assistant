@@ -131,6 +131,9 @@ class GoogleTTSEngine(TTSEngine):
 
         logger.debug(f"Audio content written to file {filename}")
 
+    def max_text_length(self) -> int:
+        return -1
+
 
 class YandexTTSEngine(TTSEngine):
     """
@@ -188,3 +191,6 @@ class YandexTTSEngine(TTSEngine):
         except Exception as e:
             logger.error(f"Error during speech synthesis: {str(e)}")
             raise
+
+    def max_text_length(self) -> int:
+        return -1
