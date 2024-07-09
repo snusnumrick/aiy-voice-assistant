@@ -39,7 +39,7 @@ def adjust_rgb_brightness(rgb: List[int], brightness: str) -> Tuple[int, int, in
     return r, g, b
 
 
-def apply_behaviour(behaviour: dict):
+def change_light_behavior(behaviour: dict):
 
     with Leds() as leds:
         if not behaviour:
@@ -62,39 +62,37 @@ class ResponsePlayer:
     def __init__(self, playlist: List[Tuple[Dict, str]]):
         self.playlist = playlist
         self.current_process: Optional[Popen] = None
-        self.is_playing = False
+        self._is_playing = False
         self.play_thread: Optional[threading.Thread] = None
 
     def play(self):
-        self.is_playing = True
+        self._is_playing = True
         self.play_thread = threading.Thread(target=self._play_sequence)
         self.play_thread.start()
 
     def _play_sequence(self):
         for light_behavior, audio_file in self.playlist:
-            if not self.is_playing:
+            if not self._is_playing:
                 break
 
-            logger.info(f"playing {audio_file} with {light_behavior}")
-            apply_behaviour(light_behavior)
+            change_light_behavior(light_behavior)
             self.current_process = play_wav_async(audio_file)
 
             # Wait for the audio to finish
-            while self.current_process.poll() is None:
-                if not self.is_playing:
-                    self.current_process.terminate()
-                    break
-                time.sleep(0.1)
+            self.current_process.wait()
 
-        self.is_playing = False
+            if not self._is_playing:
+                break
+
+        self._is_playing = False
         self.current_process = None
 
     def stop(self):
-        self.is_playing = False
+        self._is_playing = False
         if self.current_process:
             self.current_process.terminate()
-        if self.play_thread:
+        if self.play_thread and self.play_thread.is_alive():
             self.play_thread.join()
 
     def is_playing(self) -> bool:
-        return self.is_playing
+        return self._is_playing
