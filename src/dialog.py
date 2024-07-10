@@ -9,6 +9,8 @@ import asyncio
 import logging
 import os
 import time
+import traceback
+
 import aiohttp
 
 from aiy.board import Button
@@ -139,14 +141,20 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
                         playlist = []
                         for emo, audio_file_name, task in tasks:
                             try:
-                                success = await task
-                                if success:
-                                    playlist.append((emo, audio_file_name))
+                                result = await task
+                                logger.debug(f"Synthesis result for {audio_file_name}: {result}")
+                                if isinstance(result, bool):
+                                    if result:
+                                        playlist.append((emo, audio_file_name))
+                                    else:
+                                        logger.error(f"Speech synthesis failed for file: {audio_file_name}")
+                                        error_visual(leds)
                                 else:
-                                    logger.error(f"Failed to synthesize speech for file: {audio_file_name}")
+                                    logger.error(f"Unexpected result type from synthesize_async: {type(result)}")
                                     error_visual(leds)
                             except Exception as e:
                                 logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
+                                logger.error(traceback.format_exc())
                                 error_visual(leds)
 
                         if playlist:
@@ -154,5 +162,6 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
                             response_player.play()
 
             except Exception as e:
-                logger.error(f"An error occurred in the main loop: {str(e)}", exc_info=True)
+                logger.error(f"An error occurred in the main loop: {str(e)}")
+                logger.error(traceback.format_exc())
                 error_visual(leds)
