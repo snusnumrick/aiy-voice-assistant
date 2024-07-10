@@ -4,14 +4,18 @@ google-cloud-speech
 google-cloud-texttospeech
 openai
 anthropic==0.26
-pydub
-python-dotenv
+pydub~=0.25.1
+python-dotenv~=1.0.1
 yandex-speechkit
 grpcio
 protobuf
-pytz
-geocoder
-requests
+pytz~=2024.1
+geocoder~=1.38.1
+requests~=2.32.3
 BeautifulSoup4
 duckduckgo_search==3.8.5
 
+
+aiohttp~=3.9.5
+aiofiles~=24.1.0
+httpx~=0.27.0

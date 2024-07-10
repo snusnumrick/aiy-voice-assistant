@@ -6,20 +6,21 @@ It uses the Google AIY Voice Kit for hardware interfacing and various AI service
 speech recognition, synthesis, and conversation management.
 """
 
+import asyncio
 import logging
 import signal
 import sys
 import time
-from dotenv import load_dotenv
+
 from aiy.board import Board
 from aiy.leds import Leds, Color
+from dotenv import load_dotenv
 
+from src.ai_models import OpenRouterModel
 from src.config import Config
-from src.stt_engine import OpenAISTTEngine
-from src.tts_engine import OpenAITTSEngine, YandexTTSEngine
-from src.ai_models import OpenAIModel, ClaudeAIModel, OpenRouterModel
 from src.conversation_manager import ConversationManager
-from src.dialog import main_loop
+from src.dialog import main_loop_async
+from src.tts_engine import YandexTTSEngine
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -49,7 +50,8 @@ def main():
         conversation_manager = ConversationManager(config, ai_model)
 
         # Start the main conversation loop
-        main_loop(board.button, leds, tts_engine, conversation_manager, config)
+        # main_loop(board.button, leds, tts_engine, conversation_manager, config)
+        asyncio.run(main_loop_async(board.button, leds, tts_engine, conversation_manager, config))
 
 
 if __name__ == '__main__':

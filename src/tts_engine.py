@@ -5,9 +5,13 @@ This module provides abstract and concrete implementations of TTS engines,
 including OpenAI's TTS model and Google's Text-to-Speech.
 """
 
-from abc import ABC, abstractmethod
-import os
+import asyncio
 import logging
+import os
+from abc import ABC, abstractmethod
+
+import aiofiles
+import aiohttp
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -32,6 +36,18 @@ class TTSEngine(ABC):
     @abstractmethod
     def max_text_length(self) -> int:
         return -1
+
+    @abstractmethod
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> None:
+        """
+        Asynchronously synthesize speech from text and save it to a file.
+
+        Args:
+            session (aiohttp.ClientSession): An aiohttp client session for making HTTP requests.
+            text (str): The text to synthesize into speech.
+            filename (str): The path to save the synthesized audio file.
+        """
+        pass
 
 
 class OpenAITTSEngine(TTSEngine):
@@ -62,13 +78,21 @@ class OpenAITTSEngine(TTSEngine):
             text (str): The text to synthesize into speech.
             filename (str): The path to save the synthesized audio file.
         """
-        response = self.client.audio.speech.create(
-            model=self.model,
-            voice=self.voice,
-            response_format="wav",
-            input=text
-        )
+        response = self.client.audio.speech.create(model=self.model, voice=self.voice, response_format="wav",
+                                                   input=text)
         response.stream_to_file(filename)
+
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> None:
+        url = "https://api.openai.com/v1/audio/speech"
+        headers = {"Authorization": f"Bearer {self.client.api_key}", "Content-Type": "application/json"}
+        data = {"model": self.model, "input": text, "voice": self.voice, "response_format": "wav"}
+
+        async with session.post(url, headers=headers, json=data) as response:
+            if response.status == 200:
+                async with aiofiles.open(filename, mode='wb') as f:
+                    await f.write(await response.read())
+            else:
+                raise Exception(f"OpenAI API request failed with status {response.status}")
 
 
 class GoogleTTSEngine(TTSEngine):
@@ -89,10 +113,8 @@ class GoogleTTSEngine(TTSEngine):
         service_account_file = config.get('google_service_account_file', '~/gcloud.json')
         service_account_file = os.path.expanduser(service_account_file)
 
-        credentials = service_account.Credentials.from_service_account_file(
-            service_account_file,
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
+        credentials = service_account.Credentials.from_service_account_file(service_account_file, scopes=[
+            "https://www.googleapis.com/auth/cloud-platform"])
 
         self.client = texttospeech.TextToSpeechClient(credentials=credentials)
         self.language_code = config.get('google_tts_language', 'ru-RU')
@@ -111,20 +133,11 @@ class GoogleTTSEngine(TTSEngine):
 
         synthesis_input = texttospeech.SynthesisInput(text=text)
 
-        voice = texttospeech.VoiceSelectionParams(
-            language_code=self.language_code,
-            name=self.voice
-        )
+        voice = texttospeech.VoiceSelectionParams(language_code=self.language_code, name=self.voice)
 
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=self.audio_encoding
-        )
+        audio_config = texttospeech.AudioConfig(audio_encoding=self.audio_encoding)
 
-        response = self.client.synthesize_speech(
-            input=synthesis_input,
-            voice=voice,
-            audio_config=audio_config
-        )
+        response = self.client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
 
         with open(filename, "wb") as out:
             out.write(response.audio_content)
@@ -133,6 +146,22 @@ class GoogleTTSEngine(TTSEngine):
 
     def max_text_length(self) -> int:
         return -1
+
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> None:
+        from google.cloud import texttospeech
+
+        # Google Cloud TTS doesn't have an async API, so we'll run it in an executor
+        synthesis_input = texttospeech.SynthesisInput(text=text)
+        voice = texttospeech.VoiceSelectionParams(language_code=self.language_code, name=self.voice)
+        audio_config = texttospeech.AudioConfig(audio_encoding=self.audio_encoding)
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, self.client.synthesize_speech, synthesis_input, voice, audio_config)
+
+        async with aiofiles.open(filename, "wb") as out:
+            await out.write(response.audio_content)
+
+        logger.debug(f"Audio content written to file {filename}")
 
 
 class YandexTTSEngine(TTSEngine):
@@ -155,11 +184,7 @@ class YandexTTSEngine(TTSEngine):
             raise ValueError("Yandex API key is not provided in environment variables or configuration")
 
         # Configure credentials
-        configure_credentials(
-            yandex_credentials=creds.YandexCredentials(
-                api_key=self.api_key
-            )
-        )
+        configure_credentials(yandex_credentials=creds.YandexCredentials(api_key=self.api_key))
 
         self.voice = config.get('yandex_tts_voice', 'ermil')
         self.role = config.get('yandex_tts_role', 'good')
@@ -173,7 +198,8 @@ class YandexTTSEngine(TTSEngine):
         self.model.language = self.language_code
         self.model.speed = self.speed
 
-        logger.info(f"Initialized Yandex TTS Engine with language {self.language_code}, voice {self.voice}, and role {self.role}")
+        logger.info(
+            f"Initialized Yandex TTS Engine with language {self.language_code}, voice {self.voice}, and role {self.role}")
 
     def synthesize(self, text: str, filename: str) -> None:
         """
@@ -194,3 +220,11 @@ class YandexTTSEngine(TTSEngine):
 
     def max_text_length(self) -> int:
         return -1
+
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> None:
+        # Yandex SpeechKit doesn't have an async API, so we'll run it in an executor
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, self.model.synthesize, text, False)
+
+        async with aiofiles.open(filename, "wb") as out:
+            await out.write(result.data)

@@ -15,6 +15,8 @@ from abc import ABC, abstractmethod
 from collections import deque
 from enum import Enum
 from typing import Optional, List, Iterator
+import asyncio
+import aiohttp
 
 import grpc
 from aiy.board import Button
@@ -450,3 +452,46 @@ def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Confi
 
     logger.debug(f"Final synthesized speech saved at {filename}")
     return result
+
+
+async def synthesize_speech_async(engine: TTSEngine, text: str, filename: str, config: Config) -> bool:
+    """
+    Asynchronous version of synthesize_speech function.
+    """
+    logger.debug('Synthesizing speech for: %s', text)
+    max_size_tts = engine.max_text_length()
+    result = True
+    if (max_size_tts > 0) and (len(text) > max_size_tts):
+        chunks = split_text(text, max_length=max_size_tts)
+        temp_dir = tempfile.mkdtemp()
+        try:
+            chunk_files = []
+            async with aiohttp.ClientSession() as session:
+                tasks = []
+                for i, chunk in enumerate(chunks):
+                    chunk_file = os.path.join(temp_dir, f"chunk_{i}.wav")
+                    logger.debug(f"Synthesizing chunk {i}: {chunk}")
+                    task = asyncio.create_task(engine.synthesize_async(session, chunk, chunk_file))
+                    tasks.append(task)
+
+                await asyncio.gather(*tasks)
+
+                for i, task in enumerate(tasks):
+                    chunk_file = os.path.join(temp_dir, f"chunk_{i}.wav")
+                    chunk_files.append(chunk_file)
+
+            if len(chunk_files) > 1:
+                combine_audio_files(chunk_files, filename)
+            else:
+                shutil.move(chunk_files[0], filename)
+        except Exception as e:
+            logger.error(f"Error synthesizing speech: {str(e)}")
+            result = False
+        finally:
+            shutil.rmtree(temp_dir)
+    else:
+        await engine.synthesize_async(None, text, filename)
+
+    logger.debug(f"Final synthesized speech saved at {filename}")
+    return result
+

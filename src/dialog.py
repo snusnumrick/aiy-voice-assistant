@@ -5,19 +5,19 @@ This module contains the main loop for handling the conversation flow,
 including speech recognition, AI response generation, and speech synthesis.
 """
 
+import asyncio
 import logging
-import time
 import os
+import time
 
 from aiy.board import Button
 from aiy.leds import Leds, Color
-from aiy.voice.audio import play_wav_async
 
-from .audio import SpeechTranscriber, synthesize_speech
+from .audio import SpeechTranscriber, synthesize_speech, synthesize_speech_async
 from .config import Config
 from .conversation_manager import ConversationManager
-from .tts_engine import TTSEngine
 from .responce_player import ResponsePlayer
+from .tts_engine import TTSEngine
 
 logger = logging.getLogger(__name__)
 
@@ -100,13 +100,60 @@ def main_loop(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_ma
                             continue
 
                         playlist.append((emo, audio_file_name))
-                        audio_file_name = append_suffix(original_audio_file_name, str(n+1))
+                        audio_file_name = append_suffix(original_audio_file_name, str(n + 1))
 
                     responce_player = ResponsePlayer(playlist, leds)
-                    responce_player.play()
-                    # player_process = play_wav_async(audio_file_name)
+                    responce_player.play()  # player_process = play_wav_async(audio_file_name)
 
         except Exception as e:
             logger.error(f"An error occurred in the main loop: {str(e)}",
                          exc_info=True)  # Implement appropriate error handling and recovery here
+            error_visual(leds)
+
+
+async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_manager: ConversationManager,
+                          config: Config) -> None:
+    transcriber = SpeechTranscriber(button, leds, config)
+    response_player = None
+    original_audio_file_name = config.get('audio_file_name', 'speech.wav')
+
+    while True:
+        try:
+            text = transcriber.transcribe_speech(response_player)
+            logger.info('You said: %s', text)
+
+            if text:
+                ai_response = conversation_manager.get_response(text)
+                logger.debug('AI response: %s', ai_response)
+                logger.info('AI says: %s', " ".join([t for e, t in ai_response]))
+
+                if ai_response:
+                    tasks = []
+                    for n, (emo, response_text) in enumerate(ai_response):
+                        audio_file_name = append_suffix(original_audio_file_name, str(n + 1))
+                        task = asyncio.create_task(
+                            synthesize_speech_async(tts_engine, response_text, audio_file_name, config))
+                        tasks.append((emo, audio_file_name, task))
+
+                    results = [None] * len(tasks)
+                    for i, (emo, audio_file_name, task) in enumerate(tasks):
+                        try:
+                            success = await task
+                            if success:
+                                results[i] = (emo, audio_file_name)
+                            else:
+                                logger.error(f"Failed to synthesize speech for file: {audio_file_name}")
+                                error_visual(leds)
+                        except Exception as e:
+                            logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
+                            error_visual(leds)
+
+                    # Remove any None entries from the results (in case of errors)
+                    playlist = [item for item in results if item is not None]
+
+                    response_player = ResponsePlayer(playlist, leds)
+                    response_player.play()
+
+        except Exception as e:
+            logger.error(f"An error occurred in the main loop: {str(e)}", exc_info=True)
             error_visual(leds)
