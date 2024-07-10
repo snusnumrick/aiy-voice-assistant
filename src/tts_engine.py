@@ -234,7 +234,7 @@ class YandexTTSEngine(TTSEngine):
     async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> bool:
         # Yandex SpeechKit doesn't have an async API, so we'll run it in an executor
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, self.model.synthesize, text, False)
+        result = await loop.run_in_executor(None, self.model.synthesize, text, raw_format=False)
 
         async with aiofiles.open(filename, "wb") as out:
             await out.write(result.data)
