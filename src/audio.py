@@ -225,7 +225,7 @@ class SpeechTranscriber:
             def start_idle():
                 nonlocal status, time_breathing_started, breathing_on, player_process
                 logger.info('Ready to listen...')
-                if player_process is None and not player_process.is_playing():
+                if player_process is None or not player_process.is_playing():
                     self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
                     self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
                     time_breathing_started = time.time()
