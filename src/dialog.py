@@ -68,6 +68,8 @@ def main_loop(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_ma
     transcriber = SpeechTranscriber(button, leds, config)
     responce_player = None
 
+    original_audio_file_name = config.get('audio_file_name', 'speech.wav')
+
     while True:
         try:
             # Listen and transcribe user speech
@@ -77,13 +79,12 @@ def main_loop(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_ma
             if text:
                 # Generate AI response
                 ai_response = conversation_manager.get_response(text)
-                logger.info('AI response: %s', ai_response)
+                logger.debug('AI response: %s', ai_response)
                 logger.info('AI says: %s', " ".join([t for e, t in ai_response]))
 
                 if ai_response:
                     # Synthesize and play AI response
-                    audio_file_name = config.get('audio_file_name', 'speech.wav')
-                    # response_text = " ".join([t for e, t in ai_response])
+                    audio_file_name = original_audio_file_name
 
                     playlist = []
                     for n, (emo, response_text) in enumerate(ai_response):
@@ -99,7 +100,7 @@ def main_loop(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_ma
                             continue
 
                         playlist.append((emo, audio_file_name))
-                        audio_file_name = append_suffix(audio_file_name, str(n+1))
+                        audio_file_name = append_suffix(original_audio_file_name, str(n+1))
 
                     responce_player = ResponsePlayer(playlist, leds)
                     responce_player.play()
