@@ -244,7 +244,7 @@ class YandexTTSEngine(TTSEngine):
             """Wrapper method to call synthesize with the correct parameters."""
             return self.model.synthesize(
                 text,
-                synthesis_config=self.synthesis_config,
+                # synthesis_config=self.synthesis_config,
                 raw_format=True
             )
 
