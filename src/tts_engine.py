@@ -229,7 +229,7 @@ class YandexTTSEngine(TTSEngine):
             logger.debug(f"Synthesizing text: {text[:50]}...")
             result = self.model.synthesize(text, raw_format=False)
             result.export(filename, 'wav')
-            logger.info(f"Audio content written to file {filename}")
+            logger.debug(f"Audio content written to file {filename}")
         except Exception as e:
             logger.error(f"Error during speech synthesis: {str(e)}")
             raise
@@ -244,7 +244,6 @@ class YandexTTSEngine(TTSEngine):
             """Wrapper method to call synthesize with the correct parameters."""
             return self.model.synthesize(
                 text,
-                # synthesis_config=self.synthesis_config,
                 raw_format=True
             )
 
