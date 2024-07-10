@@ -38,7 +38,7 @@ class TTSEngine(ABC):
         return -1
 
     @abstractmethod
-    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> None:
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> bool:
         """
         Asynchronously synthesize speech from text and save it to a file.
 
@@ -46,6 +46,9 @@ class TTSEngine(ABC):
             session (aiohttp.ClientSession): An aiohttp client session for making HTTP requests.
             text (str): The text to synthesize into speech.
             filename (str): The path to save the synthesized audio file.
+
+        Returns:
+            bool: True if synthesis was successful, False otherwise.
         """
         pass
 
@@ -78,21 +81,27 @@ class OpenAITTSEngine(TTSEngine):
             text (str): The text to synthesize into speech.
             filename (str): The path to save the synthesized audio file.
         """
-        response = self.client.audio.speech.create(model=self.model, voice=self.voice, response_format="wav",
-                                                   input=text)
+        response = self.client.with_streaming_response.audio.speech.create(model=self.model, voice=self.voice,
+                                                                           response_format="wav", input=text)
         response.stream_to_file(filename)
 
-    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> None:
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> bool:
         url = "https://api.openai.com/v1/audio/speech"
         headers = {"Authorization": f"Bearer {self.client.api_key}", "Content-Type": "application/json"}
         data = {"model": self.model, "input": text, "voice": self.voice, "response_format": "wav"}
 
-        async with session.post(url, headers=headers, json=data) as response:
-            if response.status == 200:
-                async with aiofiles.open(filename, mode='wb') as f:
-                    await f.write(await response.read())
-            else:
-                raise Exception(f"OpenAI API request failed with status {response.status}")
+        try:
+            async with session.post(url, headers=headers, json=data) as response:
+                if response.status == 200:
+                    async with aiofiles.open(filename, mode='wb') as f:
+                        await f.write(await response.read())
+                else:
+                    raise Exception(f"OpenAI API request failed with status {response.status}")
+        except Exception as e:
+            logger.error(f"Error in speech synthesis: {str(e)}")
+            return False
+
+        return True
 
 
 class GoogleTTSEngine(TTSEngine):
@@ -147,7 +156,7 @@ class GoogleTTSEngine(TTSEngine):
     def max_text_length(self) -> int:
         return -1
 
-    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> None:
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> bool:
         from google.cloud import texttospeech
 
         # Google Cloud TTS doesn't have an async API, so we'll run it in an executor
@@ -162,6 +171,7 @@ class GoogleTTSEngine(TTSEngine):
             await out.write(response.audio_content)
 
         logger.debug(f"Audio content written to file {filename}")
+        return True
 
 
 class YandexTTSEngine(TTSEngine):
@@ -221,10 +231,12 @@ class YandexTTSEngine(TTSEngine):
     def max_text_length(self) -> int:
         return -1
 
-    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> None:
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> bool:
         # Yandex SpeechKit doesn't have an async API, so we'll run it in an executor
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, self.model.synthesize, text, False)
 
         async with aiofiles.open(filename, "wb") as out:
             await out.write(result.data)
+
+        return True
