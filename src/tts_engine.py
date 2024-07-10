@@ -187,6 +187,7 @@ class YandexTTSEngine(TTSEngine):
             config (Config): The application configuration object.
         """
         from speechkit import model_repository, configure_credentials, creds
+        from speechkit.tts import SynthesisConfig, AudioEncoding
 
         # Try to get the API key from environment variable first, then fall back to config
         self.api_key = os.environ.get('YANDEX_API_KEY') or config.get('yandex_api_key')
@@ -207,6 +208,11 @@ class YandexTTSEngine(TTSEngine):
         self.model.role = self.role
         self.model.language = self.language_code
         self.model.speed = self.speed
+
+        self.synthesis_config = SynthesisConfig(
+            audio_encoding=AudioEncoding.WAV,
+            voice=self.voice
+        )
 
         logger.info(
             f"Initialized Yandex TTS Engine with language {self.language_code}, voice {self.voice}, and role {self.role}")
@@ -233,8 +239,17 @@ class YandexTTSEngine(TTSEngine):
 
     async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str) -> bool:
         # Yandex SpeechKit doesn't have an async API, so we'll run it in an executor
+
+        def synthesize_wrapper(text: str) -> bytes:
+            """Wrapper method to call synthesize with the correct parameters."""
+            return self.model.synthesize(
+                text,
+                synthesis_config=self.synthesis_config,
+                raw_format=True
+            )
+
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, self.model.synthesize, text, raw_format=False)
+        result = await loop.run_in_executor(None, synthesize_wrapper, text)
 
         async with aiofiles.open(filename, "wb") as out:
             await out.write(result.data)
