@@ -252,6 +252,6 @@ class YandexTTSEngine(TTSEngine):
         result = await loop.run_in_executor(None, synthesize_wrapper, text)
 
         async with aiofiles.open(filename, "wb") as out:
-            await out.write(result.data)
+            await out.write(result)
 
         return True
