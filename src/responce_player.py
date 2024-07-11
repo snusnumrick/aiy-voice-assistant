@@ -31,11 +31,9 @@ def emotions_prompt() -> str:
     #         "X - продолжительность цикла в секундах для режимов blinking и breathing. "
     #         "Сообщать об эмоциях надо перед текстом, к которому они относятся. "
     #         "Отправить пустую эмоцию для выключения фонарика. ")
-    return """
-Express emotions with light: 
-Emotions (always place before relevant text): $emotion:{"color":[R,G,B] (0-255),"behavior":"continuous/blinking/breathing","brightness":"dark/medium/bright","cycle":X}$
-Empty emotion turns off light.
-    """
+    return ('Express emotions with light (always place before relevant text): '
+            '$emotion:{"color":[R,G,B] (0-255),"behavior":"continuous/blinking/breathing",'
+            '"brightness":"dark/medium/bright","cycle":X}$. Empty emotion turns off light. ')
 
 
 def adjust_rgb_brightness(rgb: List[int], brightness: str) -> Tuple[int, int, int]:

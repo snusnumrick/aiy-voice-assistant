@@ -311,10 +311,8 @@ class ConversationManager:
         #                    "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
         #                    "$rule: <текст нового правила>$. "
         #                    "Таких запросов в твоем сообщении тоже может быть несколько. ")
-        self.hard_rules = """
-For web searches: $internet query:<query in English>$
-To remember: $remember:<text>$
-For new rules: $rule:<text>$ """
+        self.hard_rules = ("For web searches: $internet query:<query in English>$. "
+                           "To remember: $remember:<text>$. For new rules: $rule:<text>$ ")
         # self.default_system_prompt = ("Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
         #                               " Отвечай естественно, как в устной речи. "
         #                               "Говори максимально просто и понятно. Не используй списки и нумерации. "
