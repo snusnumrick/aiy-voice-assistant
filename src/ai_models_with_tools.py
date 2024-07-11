@@ -6,6 +6,8 @@ from src.ai_models import ClaudeAIModel
 from src.config import Config
 from src.llm_tools import WebSearchTool
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class ToolParameter:
