@@ -6,17 +6,16 @@ including message history, token counting, and interaction with AI models.
 """
 
 import datetime
-import logging
-import re
 import json
+import logging
+import os
+import re
+import sys
 from collections import deque
 from typing import List, Dict, Tuple
 
 import geocoder
 import pytz
-import sys
-import os
-import ast
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -25,17 +24,29 @@ if __name__ == "__main__":
 from src.ai_models import AIModel
 from src.config import Config
 from src.web_search import WebSearcher
-from src.responce_player import emotions_prompt
 
 logger = logging.getLogger(__name__)
 
 
-def get_current_date_time_location():
+def get_timezone():
+    import googlemaps
+    import time
+
+    g = geocoder.ip('me')
+
+    key = os.environ.get('GOOGLE_API_KEY')
+    gmaps = googlemaps.Client(key=key)
+    timezone = gmaps.timezone(g.latlng, time.time())
+
+    return timezone["timeZoneId"]
+
+
+def get_current_date_time_location(timezone_string: str) -> str:
     # Get current date and time in UTC
     now_utc = datetime.datetime.now(pytz.utc)
 
     # Define the timezone you want to convert to (for example, PST)
-    timezone = pytz.timezone('America/Los_Angeles')
+    timezone = pytz.timezone(timezone_string)
     now_local = now_utc.astimezone(timezone)
 
     # Format the date with the month as a word
@@ -57,6 +68,37 @@ def get_current_date_time_location():
         message += f" Я нахожусь в {location}"
 
     return message
+
+
+def get_location() -> str:
+    g = geocoder.ip('me')
+    location_parts = [g.city, g.state, g.country]
+    print(location_parts)
+    location = ', '.join([part for part in location_parts if part]) if any(location_parts) else ''
+
+    return f"In {location}."
+
+
+def get_current_datetime_english(timezone_string: str) -> str:
+    # Set the timezone
+    tz = pytz.timezone(timezone_string)
+
+    # Get the current time in the timezone
+    current_time = datetime.datetime.now(tz)
+
+    # Format the date
+    date_str = current_time.strftime("%d %B %Y")
+
+    # Format the time
+    time_str = current_time.strftime("%I:%M %p")
+
+    # Determine if it's PDT or PST
+    timezone_abbr = current_time.strftime("%Z")
+
+    # Create the formatted string
+    formatted_str = f"Today is {date_str}. Now {time_str} {timezone_abbr}."
+
+    return formatted_str
 
 
 def get_current_date_time_for_facts():
@@ -251,37 +293,47 @@ class ConversationManager:
         self.ai_model = ai_model
         self.facts = self.load_facts()
         self.rules = self.load_rules()
-        self.hard_rules = ("Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
-                           "а пошли мне сообщение в таком формате: "
-                           "$internet query:<что ты хочешь поискать на английском языке>$. "
-                           "Таких запросов в твоем сообщении может быть несколько. "
-                           "Если в ответе на твой запрос указано время без указания часового пояса, "
-                           "считай что это Восточное стандартное время."
-                           # "Если по этому запросу не нашел нужной информации, попробуй переформулировать запрос. "
-                           "Если тебе надо что-то запомнить, "
-                           "пошли мне сообщение в таком формате: $remember: <текст, который тебе нужно запомнить>$. "
-                           "Таких фактов в твоем сообщении тоже может быть несколько. "
-                           "Например, $remember: <первый текст, который тебе нужно запомнить>$ "
-                           "{remember: $второрй текст, который тебе нужно запомнить>$."
-                           "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
-                           "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
-                           "$rule: <текст нового правила>$. "
-                           "Таких запросов в твоем сообщении тоже может быть несколько. "
-                           )
-        self.default_system_prompt = ("Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
-                                      " Отвечай естественно, как в устной речи. "
-                                      "Говори максимально просто и понятно. Не используй списки и нумерации. "
-                                      "Например, не говори 1. что-то; 2. что-то. говори во-первых, во-вторых "
-                                      "или просто перечисляй. "
-                                      "При ответе на вопрос где важно время, помни какое сегодня число. "
-                                      "Если чего-то не знаешь, так и скажи. "
-                                      "Я буду разговаривать с тобой через голосовой интерфейс. "
-                                      "Будь краток, избегай банальностей и непрошенных советов. ")
+        self.location = get_location()
+        self.timezone = get_timezone()
+        # self.hard_rules = ("Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
+        #                    "а пошли мне сообщение в таком формате: "
+        #                    "$internet query:<что ты хочешь поискать на английском языке>$. "
+        #                    "Таких запросов в твоем сообщении может быть несколько. "
+        #                    "Если в ответе на твой запрос указано время без указания часового пояса, "
+        #                    "считай что это Восточное стандартное время."
+        #                    # "Если по этому запросу не нашел нужной информации, попробуй переформулировать запрос. "
+        #                    "Если тебе надо что-то запомнить, "
+        #                    "пошли мне сообщение в таком формате: $remember: <текст, который тебе нужно запомнить>$. "
+        #                    "Таких фактов в твоем сообщении тоже может быть несколько. "
+        #                    "Например, $remember: <первый текст, который тебе нужно запомнить>$ "
+        #                    "{remember: $второрй текст, который тебе нужно запомнить>$."
+        #                    "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
+        #                    "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
+        #                    "$rule: <текст нового правила>$. "
+        #                    "Таких запросов в твоем сообщении тоже может быть несколько. ")
+        self.hard_rules = """
+For web searches: $internet query:<query in English>$
+To remember: $remember:<text>$
+For new rules: $rule:<text>$ """
+        # self.default_system_prompt = ("Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
+        #                               " Отвечай естественно, как в устной речи. "
+        #                               "Говори максимально просто и понятно. Не используй списки и нумерации. "
+        #                               "Например, не говори 1. что-то; 2. что-то. говори во-первых, во-вторых "
+        #                               "или просто перечисляй. "
+        #                               "При ответе на вопрос где важно время, помни какое сегодня число. "
+        #                               "Если чего-то не знаешь, так и скажи. "
+        #                               "Я буду разговаривать с тобой через голосовой интерфейс. "
+        #                               "Будь краток, избегай банальностей и непрошенных советов. ")
+        self.default_system_prompt = ("You're Kubik, my friendly AI assistant. Be witty and sarcastic. "
+                                      "Speak naturally, simply. Avoid lists. Consider date in time-sensitive answers. "
+                                      "Admit unknowns. I use voice interface. Be brief, avoid platitudes. ")
         self.message_history = deque([{"role": "system", "content": self.get_system_prompt()}])
 
     def get_system_prompt(self):
-        prompt = f"{get_current_date_time_location()} "
-        prompt += self.config.get('system_prompt',  self.default_system_prompt)
+        from src.responce_player import emotions_prompt
+
+        prompt = f"{get_current_datetime_english(self.timezone)} {self.location} "
+        prompt += self.config.get('system_prompt', self.default_system_prompt)
         prompt += self.hard_rules
         prompt += emotions_prompt()
         if self.facts:
@@ -429,10 +481,14 @@ class ConversationManager:
 
 
 def test():
-    text = """a$emotion: {"color": [255, 165, 0], "behavior": "breathing", "brightness": "medium", "cycle": 3}$b$emotion: {}$"""
-
-    text_with_emotions = extract_emotions(text)
+    print(get_current_datetime_english(get_timezone()) + " " + get_location())
 
 
 if __name__ == '__main__':
+    from dotenv import load_dotenv
+
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    load_dotenv()
     test()

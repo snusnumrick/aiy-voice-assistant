@@ -22,15 +22,20 @@ def emotions_prompt() -> str:
         Returns:
             str: A prompt explaining how to use LED commands to express emotions.
         """
-    return ("У тебя есть эмоции (или ты можешь симулировать их). "
-            "Ты можешь выразить их управляя цветным фонариком с рассеяным светом. "
-            "Чтобы отдать команду фонарику, вставь в текст твоего сообшения "
-            '$emotion: {"color": [R, G, B], "behavior": "continuous/blinking/breathing", '
-            '"brightness": "dark/medium/bright", "cycle": X}$, '
-            "где R, G, B - компоненты цвета от 0 до 255; "
-            "X - продолжительность цикла в секундах для режимов blinking и breathing. "
-            "Сообщать об эмоциях надо перед текстом, к которому они относятся. "
-            "Отправить пустую эмоцию для выключения фонарика. ")
+    # return ("У тебя есть эмоции (или ты можешь симулировать их). "
+    #         "Ты можешь выразить их управляя цветным фонариком с рассеяным светом. "
+    #         "Чтобы отдать команду фонарику, вставь в текст твоего сообшения "
+    #         '$emotion: {"color": [R, G, B], "behavior": "continuous/blinking/breathing", '
+    #         '"brightness": "dark/medium/bright", "cycle": X}$, '
+    #         "где R, G, B - компоненты цвета от 0 до 255; "
+    #         "X - продолжительность цикла в секундах для режимов blinking и breathing. "
+    #         "Сообщать об эмоциях надо перед текстом, к которому они относятся. "
+    #         "Отправить пустую эмоцию для выключения фонарика. ")
+    return """
+Express emotions with light: 
+$emotion:{"color":[R,G,B],"behavior":"continuous/blinking/breathing","brightness":"dark/medium/bright","cycle":X}$
+Empty emotion turns off light. Assume EST for unspecified timezones.
+    """
 
 
 def adjust_rgb_brightness(rgb: List[int], brightness: str) -> Tuple[int, int, int]:
