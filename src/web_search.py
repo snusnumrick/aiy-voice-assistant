@@ -269,20 +269,21 @@ class WebSearcher:
 
         try:
             result_1 = await self.search_async(query, first_line_providers)
-            logger.debug(f"result 1: {result_1}")
+            logger.info(f"result 1: {result_1}")
 
-            prompt = (f"Answer Yes or No, nothing else. Besides resultd from internet search below, "
+            prompt = (f"Answer Yes or No, nothing else. Besides results from internet search below, "
                       f"do you need more information to answer the question: "
                       f"{query}\n\n{result_1}")
             result = self.ai_model.get_response([{"role": "user", "content": prompt}])
+            logger.info(f"need more information? {result}")
 
             combined_result = result_1
             if 'Yes' in result:
                 result_2 = await self.search_async(query, backup_providers)
-                logger.debug(f"result 2: {result_2}")
+                logger.info(f"result 2: {result_2}")
                 combined_result += "\n\n" + result_2
 
-            logger.debug(f"\n---------\n{query} result: {combined_result}")
+            logger.info(f"\n---------\n{query} result: {combined_result}")
 
             prompt = (f"Answer short. Based on result from internet search below, what is the answer to the question: "
                       f"{query}\n\n{combined_result}")
