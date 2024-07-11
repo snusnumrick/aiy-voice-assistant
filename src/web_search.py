@@ -219,13 +219,13 @@ class WebSearcher:
                              ["Result from {}: \n{}\n".format(prov, res) for prov, res in zip(enabled_providers, results)])
 
         for provider, result in joined_results:
-            logger.debug(f"\n---------\n{provider} result: {result}")
+            logger.info(f"\n---------\n{provider} result: {result}")
             combined_result += result
 
         return combined_result
 
     def search(self, query: str) -> str:
-        first_line_providers = ["google", "ddgs"]
+        first_line_providers = ["google"]
         backup_providers = ["perplexity", "tavily"]
 
         try:
@@ -235,9 +235,9 @@ class WebSearcher:
             result_1 = loop.run_until_complete(self.search_providers_async(query, first_line_providers))
             logger.debug(f"result 1: {result_1}")
 
-            prompt = (f"Answer Yes or No, nothing else. Besides resultd from internet search below, "
-                      f"do you need more information to answer the question: "
-                      f"{query}\n\n{result_1}")
+            prompt = (f"Besides results from internet search below, "
+                      f"do you need additional details to answer the question: "
+                      f"{query}? Simply answer Yes or No, nothing else. \n\n{result_1}")
             result = self.ai_model.get_response([{"role": "user", "content": prompt}])
 
             combined_result = result_1
@@ -260,32 +260,35 @@ class WebSearcher:
             raise
 
     async def search_async(self, query: str) -> str:
-        first_line_providers = ["google", "ddgs"]
-        backup_providers = ["perplexity", "tavily"]
+        # first_line_providers = ["google", "ddgs"]
+        # backup_providers = ["perplexity", "tavily"]
+        providers = ["google", "google", "google"]
 
         try:
-            result_1 = await self.search_providers_async(query, first_line_providers)
-            logger.debug(f"result 1: {result_1}")
+            # result_1 = await self.search_providers_async(query, first_line_providers)
+            # logger.debug(f"result 1: {result_1}")
+            #
+            # prompt = (f"Answer Yes or No, nothing else. Besides results from internet search below, "
+            #           f"do you need more information to answer the question: "
+            #           f"{query}\n\n{result_1}")
+            # result = self.ai_model.get_response([{"role": "user", "content": prompt}])
+            # logger.debug(f"need more information? {result}")
+            #
+            # combined_result = result_1
+            # if 'Yes' in result:
+            #     result_2 = await self.search_providers_async(query, backup_providers)
+            #     logger.debug(f"result 2: {result_2}")
+            #     combined_result += "\n\n" + result_2
 
-            prompt = (f"Answer Yes or No, nothing else. Besides results from internet search below, "
-                      f"do you need more information to answer the question: "
-                      f"{query}\n\n{result_1}")
-            result = self.ai_model.get_response([{"role": "user", "content": prompt}])
-            logger.debug(f"need more information? {result}")
+            combined_result = await self.search_providers_async(query, providers)
 
-            combined_result = result_1
-            if 'Yes' in result:
-                result_2 = await self.search_providers_async(query, backup_providers)
-                logger.debug(f"result 2: {result_2}")
-                combined_result += "\n\n" + result_2
-
-            logger.debug(f"\n---------\n{query} result: {combined_result}")
+            logger.info(f"\n---------\n{query} result: {combined_result}")
 
             prompt = (f"Answer short. Based on result from internet search below, what is the answer to the question: "
                       f"{query}\n\n{combined_result}")
             result = self.ai_model.get_response([{"role": "user", "content": prompt}])
 
-            logger.debug(f"Final search result for query '{query}' is: {result}")
+            logger.info(f"Final search result for query '{query}' is: {result}")
             return result
 
         except Exception as e:

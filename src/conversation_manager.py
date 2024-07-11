@@ -293,10 +293,11 @@ class ConversationManager:
         self.rules = self.load_rules()
         self.location = get_location()
         self.timezone = get_timezone()
-        self.hard_rules = ("Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
-                           "а пошли мне сообщение в таком формате: "
-                           "$internet query:<что ты хочешь поискать на английском языке>$. "
-                           "Таких запросов в твоем сообщении может быть несколько. "
+        self.hard_rules = (""
+                           # "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
+                           # "а пошли мне сообщение в таком формате: "
+                           # "$internet query:<что ты хочешь поискать на английском языке>$. "
+                           # "Таких запросов в твоем сообщении может быть несколько. "
                            "Если в ответе на твой запрос указано время без указания часового пояса, "
                            "считай что это Восточное стандартное время."
                            # "Если по этому запросу не нашел нужной информации, попробуй переформулировать запрос. "
@@ -406,7 +407,11 @@ class ConversationManager:
 
         logger.debug(f"Message history: \n{self.formatted_message_history()}")
 
-        response_text = self.ai_model.get_response(list(self.message_history))
+        response_text = []
+        async for response_part in self.ai_model.get_response_async(list(self.message_history)):
+            response_text += response_part
+
+        response_text = self.ai_model.get_response_async(list(self.message_history))
         logger.debug(f"AI response: {text} -> {response_text}")
         self.message_history.append({"role": "assistant", "content": response_text})
 

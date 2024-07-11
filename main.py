@@ -17,6 +17,7 @@ from aiy.leds import Leds, Color
 from dotenv import load_dotenv
 
 from src.ai_models import OpenRouterModel
+from src.ai_models_with_tools import ClaudeAIModelWithTools
 from src.config import Config
 from src.conversation_manager import ConversationManager
 from src.dialog import main_loop_async
@@ -46,7 +47,8 @@ def main():
 
         # Initialize components
         tts_engine = YandexTTSEngine(config)
-        ai_model = OpenRouterModel(config)
+        # ai_model = OpenRouterModel(config)
+        ai_model = ClaudeAIModelWithTools(config)
         conversation_manager = ConversationManager(config, ai_model)
 
         # Start the main conversation loop
