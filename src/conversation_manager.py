@@ -411,7 +411,7 @@ class ConversationManager:
         self.message_history.append({"role": "assistant", "content": response_text})
 
         _, search_results = await process_and_search(response_text, self.searcher)
-        logger.unfo(f"Response Text: {_}; Search results: {search_results}")
+        logger.info(f"Response Text: {_}; Search results: {search_results}")
 
         if search_results:
             result_message = f"результаты поиска: {search_results[0]}"
