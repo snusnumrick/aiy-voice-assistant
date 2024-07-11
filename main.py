@@ -17,7 +17,8 @@ from aiy.leds import Leds, Color
 from dotenv import load_dotenv
 
 from src.ai_models import OpenRouterModel
-from src.ai_models_with_tools import ClaudeAIModelWithTools
+from src.ai_models_with_tools import ClaudeAIModelWithTools, Tool, ToolParameter
+from src.llm_tools import WebSearchTool
 from src.config import Config
 from src.conversation_manager import ConversationManager
 from src.dialog import main_loop_async
@@ -39,6 +40,12 @@ def main():
     Main function to initialize and run the AI Voice Assistant.
     """
     config = Config()
+
+    search_tool = WebSearchTool()
+    tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
+                  parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
+                  processor=search_tool.do_search_async), ]
+
     with Board() as board, Leds() as leds:
         # Initial LED feedback
         leds.update(Leds.rgb_on(Color.WHITE))
