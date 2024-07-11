@@ -43,7 +43,8 @@ def main():
 
     search_tool = WebSearchTool()
     tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
-                  parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
+                  parameters=[ToolParameter(name='query', type='string',
+                                            description='A query to search for. Use english for best results')],
                   processor=search_tool.do_search_async), ]
 
     with Board() as board, Leds() as leds:
