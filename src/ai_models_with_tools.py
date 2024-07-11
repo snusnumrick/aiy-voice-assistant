@@ -67,6 +67,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         logger.info(f"get_response_async: {messages}")
 
         response_dict = await self._get_response_async(messages)
+        logger.info(f"get_response_async: {response_dict}")
         messages.append({"role": "assistant", "content": response_dict['content']})
         for content in response_dict['content']:
             if content['type'] == 'text':
