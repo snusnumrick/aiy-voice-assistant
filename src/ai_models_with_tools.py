@@ -3,6 +3,8 @@ from dataclasses import dataclass
 import logging
 import asyncio
 import json
+import aiohttp
+
 from src.ai_models import ClaudeAIModel
 from src.config import Config
 from src.llm_tools import WebSearchTool
