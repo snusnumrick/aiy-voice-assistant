@@ -409,11 +409,10 @@ class ConversationManager:
 
         logger.debug(f"Message history: \n{self.formatted_message_history()}")
 
-        response_text = []
+        response_text = ""
         async for response_part in self.ai_model.get_response_async(list(self.message_history)):
             response_text += response_part
 
-        response_text = self.ai_model.get_response_async(list(self.message_history))
         logger.debug(f"AI response: {text} -> {response_text}")
         self.message_history.append({"role": "assistant", "content": response_text})
 
