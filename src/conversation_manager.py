@@ -136,6 +136,8 @@ async def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[
     # Regular expression to match {internet query: xxx} pattern
     pattern = r'\$internet query:(.*?)\$'
 
+    logger.info(f"Searching {input_string}")
+
     # Find all matches
     matches = re.findall(pattern, input_string)
 
