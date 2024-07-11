@@ -326,7 +326,8 @@ For new rules: $rule:<text>$ """
         #                               "Будь краток, избегай банальностей и непрошенных советов. ")
         self.default_system_prompt = ("You're Kubik, my friendly AI assistant. Be witty and sarcastic. "
                                       "Speak naturally, simply. Avoid lists. Consider date in time-sensitive answers. "
-                                      "Admit unknowns. I use voice interface. Be brief, avoid platitudes. ")
+                                      "Admit unknowns. I use voice interface. Be brief, avoid platitudes. "
+                                      "Assume EST if timezone unspecified. Treat responses as spoken.")
         self.message_history = deque([{"role": "system", "content": self.get_system_prompt()}])
 
     def get_system_prompt(self):

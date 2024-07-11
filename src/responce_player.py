@@ -33,8 +33,8 @@ def emotions_prompt() -> str:
     #         "Отправить пустую эмоцию для выключения фонарика. ")
     return """
 Express emotions with light: 
-$emotion:{"color":[R,G,B],"behavior":"continuous/blinking/breathing","brightness":"dark/medium/bright","cycle":X}$
-Empty emotion turns off light. Assume EST for unspecified timezones.
+Emotions (always place before relevant text): $emotion:{"color":[R,G,B] (0-255),"behavior":"continuous/blinking/breathing","brightness":"dark/medium/bright","cycle":X}$
+Empty emotion turns off light.
     """
 
 
