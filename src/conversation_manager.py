@@ -144,7 +144,7 @@ async def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[
 
     # Process each match
     for match in matches:
-        logger.debug(f"Performing web search for: {match}")
+        logger.info(f"Performing web search for: {match}")
         try:
             result = await searcher.search_2(match)
             search_results.append(result)
@@ -323,6 +323,7 @@ class ConversationManager:
         self.default_system_prompt = ("You're Kubik, my friendly AI assistant. Be witty and sarcastic. "
                                       "Speak naturally, simply. Avoid lists. Consider date in time-sensitive answers. "
                                       "Admit unknowns. I use voice interface. Be brief, avoid platitudes. "
+                                      "Use internet searches when needed for up-to-date or specific information. "
                                       "Assume EST if timezone unspecified. Treat responses as spoken.")
         self.message_history = deque([{"role": "system", "content": self.get_system_prompt()}])
 
@@ -410,7 +411,7 @@ class ConversationManager:
         self.message_history.append({"role": "assistant", "content": response_text})
 
         _, search_results = await process_and_search(response_text, self.searcher)
-        logger.debug(f"Response Text: {_}; Search results: {search_results}")
+        logger.unfo(f"Response Text: {_}; Search results: {search_results}")
 
         if search_results:
             result_message = f"результаты поиска: {search_results[0]}"
