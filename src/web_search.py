@@ -204,11 +204,7 @@ class WebSearcher:
         self.ddgs = DuckDuckGoSearch(config)
         self.config = config
 
-    async def search_async(self, query: str, providers):
-        providers = ["perplexity", "tavily", "google", "ddgs"]
-        provider_defaults = [False, False, True, True]
-        enabled_providers = [prov for (prov, default) in zip(providers, provider_defaults) if
-                             self.config.get(f"use_{prov}", default)]
+    async def search_providers_async(self, query: str, enabled_providers):
 
         def search_provider(provider, query):
             return getattr(self, provider).search(query)
@@ -236,7 +232,7 @@ class WebSearcher:
             loop = asyncio.get_event_loop()
 
             # use the loop to run your function
-            result_1 = loop.run_until_complete(self.search_async(query, first_line_providers))
+            result_1 = loop.run_until_complete(self.search_providers_async(query, first_line_providers))
             logger.debug(f"result 1: {result_1}")
 
             prompt = (f"Answer Yes or No, nothing else. Besides resultd from internet search below, "
@@ -246,7 +242,7 @@ class WebSearcher:
 
             combined_result = result_1
             if 'Yes' in result:
-                result_2 = loop.run_until_complete(self.search_async(query, backup_providers))
+                result_2 = loop.run_until_complete(self.search_providers_async(query, backup_providers))
                 logger.debug(f"result 2: {result_2}")
                 combined_result += "\n\n" + result_2
 
@@ -263,27 +259,27 @@ class WebSearcher:
             print(f"Error performing web search: {e}")
             raise
 
-    async def search_2(self, query: str) -> str:
+    async def search_async(self, query: str) -> str:
         first_line_providers = ["google", "ddgs"]
         backup_providers = ["perplexity", "tavily"]
 
         try:
-            result_1 = await self.search_async(query, first_line_providers)
-            logger.info(f"result 1: {result_1}")
+            result_1 = await self.search_providers_async(query, first_line_providers)
+            logger.debug(f"result 1: {result_1}")
 
             prompt = (f"Answer Yes or No, nothing else. Besides results from internet search below, "
                       f"do you need more information to answer the question: "
                       f"{query}\n\n{result_1}")
             result = self.ai_model.get_response([{"role": "user", "content": prompt}])
-            logger.info(f"need more information? {result}")
+            logger.debug(f"need more information? {result}")
 
             combined_result = result_1
             if 'Yes' in result:
-                result_2 = await self.search_async(query, backup_providers)
-                logger.info(f"result 2: {result_2}")
+                result_2 = await self.search_providers_async(query, backup_providers)
+                logger.debug(f"result 2: {result_2}")
                 combined_result += "\n\n" + result_2
 
-            logger.info(f"\n---------\n{query} result: {combined_result}")
+            logger.debug(f"\n---------\n{query} result: {combined_result}")
 
             prompt = (f"Answer short. Based on result from internet search below, what is the answer to the question: "
                       f"{query}\n\n{combined_result}")
@@ -297,13 +293,22 @@ class WebSearcher:
             raise
 
 
+async def loop():
+    config = Config()
+    web_searcher = WebSearcher(config)
+    while True:
+        query = input(">")
+        result = await web_searcher.search_async(query)
+        print(result)
+
+
 def main():
-    if __name__ == "__main__":
-        config = Config()
-        web_searcher = WebSearcher(config)
-        while True:
-            query = input(">")
-            print (web_searcher.search(query))
+    config = Config()
+    web_searcher = WebSearcher(config)
+    while True:
+        query = input(">")
+        result = web_searcher.search(query)
+        print(result)
 
 
 if __name__ == "__main__":
@@ -313,4 +318,6 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     load_dotenv()
-    main()
+    asyncio.run(loop())
+
+    # main()

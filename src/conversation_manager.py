@@ -146,7 +146,7 @@ async def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[
     for match in matches:
         logger.info(f"Performing web search for: {match}")
         try:
-            result = await searcher.search_2(match)
+            result = await searcher.search_async(match)
             search_results.append(result)
         except Exception as e:
             search_results.append(f"Error performing search: {str(e)}")
