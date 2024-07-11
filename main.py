@@ -55,7 +55,7 @@ def main():
         # Initialize components
         tts_engine = YandexTTSEngine(config)
         # ai_model = OpenRouterModel(config)
-        ai_model = ClaudeAIModelWithTools(config)
+        ai_model = ClaudeAIModelWithTools(config, tools)
         conversation_manager = ConversationManager(config, ai_model)
 
         # Start the main conversation loop
