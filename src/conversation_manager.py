@@ -369,7 +369,7 @@ class ConversationManager:
         """
         return sum(self.estimate_tokens(msg["content"]) for msg in messages)
 
-    def summarize_and_compress_history(self):
+    async def summarize_and_compress_history(self):
         """
         Summarize and compress the conversation history to reduce token count.
         """
@@ -381,7 +381,7 @@ class ConversationManager:
         while len(self.message_history) > min_number_of_messages:
             msg = self.message_history.popleft()
             summary_prompt += f"\n{msg['role']}: {msg['content']}"
-        summary = self.ai_model.get_response([{"role": "user", "content": summary_prompt}])
+        summary = await self.ai_model.get_response_async([{"role": "user", "content": summary_prompt}])
         logger.info(f"Summarized conversation: {summary}")
         new_history.append({"role": "system", "content": f"Earlier conversation summary: {summary}"})
         while self.message_history:
@@ -405,7 +405,7 @@ class ConversationManager:
         self.message_history.append({"role": "user", "content": text})
 
         while self.get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
-            self.summarize_and_compress_history()
+            await self.summarize_and_compress_history()
 
         logger.debug(f"Message history: \n{self.formatted_message_history()}")
 
