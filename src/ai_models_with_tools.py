@@ -2,6 +2,7 @@ from typing import List, Dict, Callable, AsyncGenerator
 from dataclasses import dataclass
 import logging
 import asyncio
+import json
 from src.ai_models import ClaudeAIModel
 from src.config import Config
 from src.llm_tools import WebSearchTool
@@ -62,6 +63,15 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     responce_text += response
                 pass
         return responce_text
+
+    async def _get_response_async(self, messages: List[Dict[str, str]]) -> dict:
+        data = {"model": self.model, "max_tokens": self.max_tokens, "tools": self.tools_description,
+                "system": messages[0]["content"], "messages": messages[1:]}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.url, headers=self.headers, json=data) as response:
+                res = await response.text()
+                return json.loads(res)
 
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
         logger.info(f"get_response_async: {messages}")
