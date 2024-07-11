@@ -73,7 +73,6 @@ def get_current_date_time_location(timezone_string: str) -> str:
 def get_location() -> str:
     g = geocoder.ip('me')
     location_parts = [g.city, g.state, g.country]
-    print(location_parts)
     location = ', '.join([part for part in location_parts if part]) if any(location_parts) else ''
 
     return f"In {location}."
@@ -123,7 +122,7 @@ def get_current_date_time_for_facts():
     return message
 
 
-def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, List[str]]:
+async def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, List[str]]:
     """
     Process the input string, perform web searches for queries, and return modified string and results.
 
@@ -147,7 +146,7 @@ def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, L
     for match in matches:
         logger.debug(f"Performing web search for: {match}")
         try:
-            result = searcher.search(match)
+            result = await searcher.search_2(match)
             search_results.append(result)
         except Exception as e:
             search_results.append(f"Error performing search: {str(e)}")
@@ -159,7 +158,6 @@ def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, L
     modified_string = ' '.join(modified_string.split())
 
     return (modified_string, search_results)
-
 
 def extract_facts(text: str) -> Tuple[str, List[str]]:
     """
@@ -386,7 +384,7 @@ class ConversationManager:
             new_history.append(self.message_history.popleft())
         self.message_history = deque(new_history)
 
-    def get_response(self, text: str) -> List[Tuple[dict, str]]:
+    async def get_response(self, text: str) -> List[Tuple[dict, str]]:
         """
         Get an AI response based on the current conversation state and new input.
 
@@ -411,7 +409,7 @@ class ConversationManager:
         logger.debug(f"AI response: {text} -> {response_text}")
         self.message_history.append({"role": "assistant", "content": response_text})
 
-        _, search_results = process_and_search(response_text, self.searcher)
+        _, search_results = await process_and_search(response_text, self.searcher)
         logger.debug(f"Response Text: {_}; Search results: {search_results}")
 
         if search_results:
