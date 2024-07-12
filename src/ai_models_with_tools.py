@@ -8,6 +8,7 @@ import aiohttp
 from src.ai_models import ClaudeAIModel
 from src.config import Config
 from src.llm_tools import WebSearchTool
+from src.tools import get_token_count
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
         response_dict = await self._get_response_async(message_list)
         logger.debug(f"get_response_async: {json.dumps(response_dict, indent=2)}")
-        logger.info(f"tokens usage: {response_dict['usage']}")
+        logger.info(f"tokens usage: {response_dict['usage']} vs estimate {get_token_count(message_list)}")
         message_list.append({"role": "assistant", "content": response_dict['content']})
         for content in response_dict['content']:
             if content['type'] == 'text':
@@ -141,7 +142,7 @@ async def loop():
 if __name__ == "__main__":
     from dotenv import load_dotenv
 
-    # logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
     load_dotenv()
