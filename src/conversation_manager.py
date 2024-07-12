@@ -382,6 +382,8 @@ class ConversationManager:
             msg = self.message_history.popleft()
             summary_prompt += f"\n{msg['role']}: {msg['content']}"
         summary = await self.ai_model.get_response_async([{"role": "user", "content": summary_prompt}])
+        async for response_part in self.ai_model.get_response_async(list(self.message_history)):
+            summary += response_part
         logger.info(f"Summarized conversation: {summary}")
         new_history.append({"role": "system", "content": f"Earlier conversation summary: {summary}"})
         while self.message_history:

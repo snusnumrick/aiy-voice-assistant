@@ -97,8 +97,11 @@ class ClaudeAIModel(AIModel):
         return json.loads(response.content.decode('utf-8'))
 
     async def _get_response_async(self, messages: List[Dict[str, str]]) -> dict:
-        data = {"model": self.model, "max_tokens": self.max_tokens, "system": messages[0]["content"],
+        data = {"model": self.model, "max_tokens": self.max_tokens,
                 "messages": messages[1:]}
+        if messages[0] == "system":
+            data["system"] = messages[0]["content"]
+            data["messages"] = messages[1:]
 
         async with aiohttp.ClientSession() as session:
             async with session.post(self.url, headers=self.headers, json=data) as response:
