@@ -67,8 +67,13 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         return responce_text
 
     async def _get_response_async(self, messages: List[Dict[str, str]]) -> dict:
+        system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
+        non_system_message = [m for m in messages if m["role"] != 'system']
+
         data = {"model": self.model, "max_tokens": self.max_tokens, "tools": self.tools_description,
-                "system": messages[0]["content"], "messages": messages[1:]}
+                "messages": non_system_message}
+        if system_message_combined:
+            data["system"] = system_message_combined
 
         async with aiohttp.ClientSession() as session:
             async with session.post(self.url, headers=self.headers, json=data) as response:
@@ -76,11 +81,13 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 return json.loads(res)
 
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
-        logger.info(f"get_response_async: {messages}")
+        logger.debug(f"get_response_async: {messages}")
+        message_list = [m for m in messages]
 
-        response_dict = await self._get_response_async(messages)
-        logger.info(f"get_response_async: {response_dict}")
-        messages.append({"role": "assistant", "content": response_dict['content']})
+        response_dict = await self._get_response_async(message_list)
+        logger.debug(f"get_response_async: {json.dumps(response_dict, indent=2)}")
+        logger.info(f"tokens usage: {response_dict['usage']}")
+        message_list.append({"role": "assistant", "content": response_dict['content']})
         for content in response_dict['content']:
             if content['type'] == 'text':
                 yield content['text']
@@ -92,9 +99,9 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 tool_processor = self.tools_processors[tool_name]
                 tool_result = await tool_processor(tool_parameters)
                 if self.tools[tool_name].iterative:
-                    messages.append({"role": "user", "content": [
+                    message_list.append({"role": "user", "content": [
                         {'type': 'tool_result',  'content': tool_result, "tool_use_id": tool_use_id}]})
-                    async for response in self.get_response_async(messages):
+                    async for response in self.get_response_async(message_list):
                         yield response
 
 
@@ -121,15 +128,20 @@ async def loop():
                   parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
                   processor=search_tool.do_search_async), ]
     model = ClaudeAIModelWithTools(config, tools=tools)
-    messages = [{"role": "user", "content": "Today is July 11, 2024. who will play at euro 2024 final?"}]
+    message = "Today is July 11, 2024. who will play at euro 2024 final?"
+    print(message)
+    messages = [{"role": "user", "content": message}]
     async for response_part in model.get_response_async(messages):
-        print(response_part, end='', flush=True)
+        messages.append({"role": "assistant", "content": response_part})
+        print(response_part, flush=True)
+
+    pass
 
 
 if __name__ == "__main__":
     from dotenv import load_dotenv
 
-    logging.basicConfig(level=logging.INFO)
+    # logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
     load_dotenv()
