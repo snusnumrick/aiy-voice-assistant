@@ -262,7 +262,7 @@ class WebSearcher:
     async def search_async(self, query: str) -> str:
         # first_line_providers = ["google", "ddgs"]
         # backup_providers = ["perplexity", "tavily"]
-        providers = ["google", "google", "google"]
+        providers = ["google", "google", "google", "tavily", "perplexity"]
 
         try:
             # result_1 = await self.search_providers_async(query, first_line_providers)
