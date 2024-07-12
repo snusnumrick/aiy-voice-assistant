@@ -1,5 +1,8 @@
 import re
-from typing import List, Dict
+from typing import List, Dict, Union
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def estimate_tokens(text: str) -> int:
@@ -17,7 +20,7 @@ def estimate_tokens(text: str) -> int:
     return int(words * 1.5 + punctuation)
 
 
-def get_token_count(messages: List[Dict[str, str]]) -> int:
+def get_token_count(messages: List[Dict[str, Union[str, Dict]]]) -> int:
     """
     Get the total token count for a list of messages.
 
@@ -27,4 +30,14 @@ def get_token_count(messages: List[Dict[str, str]]) -> int:
     Returns:
         int: Total estimated token count.
     """
+    count = 0
+    for msg in messages:
+        content = msg['content']
+        if isinstance(content, str):
+            count += estimate_tokens(content)
+        elif isinstance(content, dict) and 'text' in content:
+            count += estimate_tokens(content['text'])
+        else:
+            logger.error(f"unknown message type {content}")
+
     return sum(estimate_tokens(msg["content"]) for msg in messages)
