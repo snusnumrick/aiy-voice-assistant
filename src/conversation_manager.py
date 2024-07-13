@@ -167,10 +167,11 @@ class ConversationManager:
         prompt += self.hard_rules
         prompt += emotions_prompt()
 
-        return prompt
-
         if self.facts:
             prompt += " Ты уже знаешь факты:" + " ".join(self.facts)
+
+        return prompt
+
         if self.rules:
             prompt += " Ты уже помнишь правила:" + " ".join(self.rules)
         return prompt
