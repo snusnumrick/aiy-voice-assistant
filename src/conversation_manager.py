@@ -162,23 +162,13 @@ class ConversationManager:
     def get_system_prompt(self):
         from src.responce_player import emotions_prompt
 
-        return  ("Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
-                                      " Отвечай естественно, как в устной речи. "
-                                      "Говори максимально просто и понятно. Не используй списки и нумерации. "
-                                      "Например, не говори 1. что-то; 2. что-то. говори во-первых, во-вторых "
-                                      "или просто перечисляй. "
-                                      "При ответе на вопрос где важно время, помни какое сегодня число. "
-                                      "Если чего-то не знаешь, так и скажи. "
-                                      "Я буду разговаривать с тобой через голосовой интерфейс. "
-                                      "Будь краток, избегай банальностей и непрошенных советов. ")
-
         prompt = f"{get_current_datetime_english(self.timezone)} {self.location} "
         prompt += self.config.get('system_prompt', self.default_system_prompt)
         prompt += self.hard_rules
+        prompt += emotions_prompt()
 
         return prompt
 
-        prompt += emotions_prompt()
         if self.facts:
             prompt += " Ты уже знаешь факты:" + " ".join(self.facts)
         if self.rules:
