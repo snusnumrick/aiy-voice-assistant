@@ -5,7 +5,6 @@ This module provides the ConversationManager class for managing the flow of conv
 including message history, token counting, and interaction with AI models.
 """
 
-import datetime
 import json
 import logging
 import os
@@ -14,8 +13,7 @@ import sys
 from collections import deque
 from typing import List, Dict, Tuple
 
-import geocoder
-import pytz
+from src.responce_player import extract_emotions
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -23,146 +21,13 @@ if __name__ == "__main__":
 
 from src.ai_models import AIModel
 from src.config import Config
-from src.web_search import WebSearcher
+from src.web_search import WebSearcher, process_and_search
 from src.llm_tools import summarize_and_compress_history
 from src.ai_models import AIModel, ClaudeAIModel
-from src.tools import get_token_count
+from src.tools import get_token_count, get_location, get_timezone, get_current_datetime_english, \
+    get_current_date_time_for_facts
 
 logger = logging.getLogger(__name__)
-
-
-def get_timezone():
-    import googlemaps
-    import time
-
-    g = geocoder.ip('me')
-
-    key = os.environ.get('GOOGLE_API_KEY')
-    gmaps = googlemaps.Client(key=key)
-    timezone = gmaps.timezone(g.latlng, time.time())
-
-    return timezone["timeZoneId"]
-
-
-def get_current_date_time_location(timezone_string: str) -> str:
-    # Get current date and time in UTC
-    now_utc = datetime.datetime.now(pytz.utc)
-
-    # Define the timezone you want to convert to (for example, PST)
-    timezone = pytz.timezone(timezone_string)
-    now_local = now_utc.astimezone(timezone)
-
-    # Format the date with the month as a word
-    months = {1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля', 5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
-              9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'}
-    date_str = now_local.strftime(f"%d {months[now_local.month]} %Y")
-
-    # Format the time in 12-hour format with AM/PM and timezone
-    time_str = now_local.strftime("%I:%M:%S %p, %Z")
-
-    # Get current location
-    g = geocoder.ip('me')
-    location_parts = [g.city, g.state, g.country]
-    location = ', '.join([part for part in location_parts if part]) if any(location_parts) else ''
-
-    # Prepare the message in Russian
-    message = f"Сегодня {date_str}. Сейчас {time_str}."
-    if location:
-        message += f" Я нахожусь в {location}"
-
-    return message
-
-
-def get_location() -> str:
-    g = geocoder.ip('me')
-    location_parts = [g.city, g.state, g.country]
-    location = ', '.join([part for part in location_parts if part]) if any(location_parts) else ''
-
-    return f"In {location}."
-
-
-def get_current_datetime_english(timezone_string: str) -> str:
-    # Set the timezone
-    tz = pytz.timezone(timezone_string)
-
-    # Get the current time in the timezone
-    current_time = datetime.datetime.now(tz)
-
-    # Format the date
-    date_str = current_time.strftime("%d %B %Y")
-
-    # Format the time
-    time_str = current_time.strftime("%I:%M %p")
-
-    # Determine if it's PDT or PST
-    timezone_abbr = current_time.strftime("%Z")
-
-    # Create the formatted string
-    formatted_str = f"Today is {date_str}. Now {time_str} {timezone_abbr}."
-
-    return formatted_str
-
-
-def get_current_date_time_for_facts():
-    # Get current date and time in UTC
-    now_utc = datetime.datetime.now(pytz.utc)
-
-    # Define the timezone you want to convert to (for example, PST)
-    timezone = pytz.timezone('America/Los_Angeles')
-    now_local = now_utc.astimezone(timezone)
-
-    # Format the date with the month as a word
-    months = {1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля', 5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
-              9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'}
-    date_str = now_local.strftime(f"%d {months[now_local.month]} %Y")
-
-    # Format the time in 12-hour format with AM/PM and timezone
-    time_str = now_local.strftime("%I:%M:%S %p, %Z")
-
-    # Prepare the message in Russian
-    message = f"({date_str}, {time_str})"
-
-    return message
-
-
-async def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, List[str]]:
-    """
-    Process the input string, perform web searches for queries, and return modified string and results.
-
-    Args:
-        input_string (str): The input string that may contain web search queries.
-        searcher (Tavily): An instance of the web_search class.
-
-    Returns:
-        Tuple[str, List[str]]: A tuple containing the modified string and a list of web search results.
-    """
-    # Regular expression to match {internet query: xxx} pattern
-    pattern = r'\$internet query:(.*?)\$'
-
-    logger.info(f"Searching {input_string}")
-
-    # Find all matches
-    matches = re.findall(pattern, input_string)
-
-    # List to store search results
-    search_results = []
-
-    # Process each match
-    for match in matches:
-        logger.info(f"Performing web search for: {match}")
-        try:
-            result = await searcher.search_async(match)
-            search_results.append(result)
-        except Exception as e:
-            search_results.append(f"Error performing search: {str(e)}")
-
-    # Remove all {internet query: xxx} substrings from the input string
-    modified_string = re.sub(pattern, '', input_string)
-
-    # Remove any extra whitespace that might have been left
-    modified_string = ' '.join(modified_string.split())
-
-    return (modified_string, search_results)
 
 
 def extract_facts(text: str) -> Tuple[str, List[str]]:
@@ -199,7 +64,7 @@ def extract_facts(text: str) -> Tuple[str, List[str]]:
     return modified_text, extracted_facts
 
 
-def extract_rules(text: str) -> Tuple[str, List[str]]:
+def extract_rules(text: str, current_timezone: str) -> Tuple[str, List[str]]:
     """
     Extract rules from the input text and return the modified text and a list of extracted facts.
 
@@ -221,7 +86,7 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
     # Process each match
     for match in matches:
         logger.debug(f"Extracted rule: {match}")
-        rule = get_current_date_time_for_facts() + " : " + match
+        rule = get_current_date_time_for_facts(current_timezone) + " : " + match
         extracted_rules.append(rule)
 
     # Remove all {remember: xxx} substrings from the input string
@@ -231,47 +96,6 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
     modified_text = ' '.join(modified_text.split())
 
     return modified_text, extracted_rules
-
-
-def extract_emotions(text: str) -> List[Tuple[dict, str]]:
-    """
-        This function parses the given text and extracts 'emotion' dictionaries (if any) and the associated text following them.
-        The structured data is returned as a list of tuples, each containing the dictionary and the corresponding text.
-
-        An emotion dictionary is expected to be enclosed inside '$emotion:' and '$' markers in the input text.
-        Any text not preceded by an emotion marker is associated with an empty dictionary.
-
-        :param text: str, Input text which includes 'emotion' dictionaries and text.
-        :return: List[Tuple[Dict, str]]. Each tuple contains:
-            - dict: The parsed 'emotion' dictionary or an empty dictionary if no dictionary was found.
-            - str: The associated text following the dictionary or preceding the next dictionary.
-        """
-
-    pattern = re.compile(r'(.*?)\$emotion:\s*(\{.*?\})?\$(.*?)(?=\$emotion:|$)', re.DOTALL)
-
-    results = []
-    pos = 0
-    while pos < len(text):
-        match = pattern.search(text, pos)
-        if not match:
-            remaining_text = text[pos:].strip()
-            if remaining_text:
-                results.append(({}, remaining_text))
-            break
-        preceding_text = match.group(1).strip()
-        if preceding_text:
-            results.append(({}, preceding_text))
-
-        emotion_dict_str = match.group(2) if match.group(2) else '{}'
-        associated_text = match.group(3).strip()
-        try:
-            emotion_dict = json.loads(emotion_dict_str)
-            results.append((emotion_dict, associated_text))
-        except json.JSONDecodeError:
-            results.append(({}, associated_text))
-        pos = match.end()
-
-    return results
 
 
 class ConversationManager:
@@ -319,20 +143,20 @@ class ConversationManager:
                            "Таких запросов в твоем сообщении тоже может быть несколько. ")
         # self.hard_rules = ("For web searches: $internet query:<query in English>$. "
         #                    "To remember: $remember:<text>$. For new rules: $rule:<text>$ ")
-        self.default_system_prompt = ("Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
-                                      " Отвечай естественно, как в устной речи. "
-                                      "Говори максимально просто и понятно. Не используй списки и нумерации. "
-                                      "Например, не говори 1. что-то; 2. что-то. говори во-первых, во-вторых "
-                                      "или просто перечисляй. "
-                                      "При ответе на вопрос где важно время, помни какое сегодня число. "
-                                      "Если чего-то не знаешь, так и скажи. "
-                                      "Я буду разговаривать с тобой через голосовой интерфейс. "
-                                      "Будь краток, избегай банальностей и непрошенных советов. ")
-        # self.default_system_prompt = ("You're Kubik, my friendly AI assistant. Be witty and sarcastic. "
-        #                               "Speak naturally, simply. Avoid lists. Consider date in time-sensitive answers. "
-        #                               "Admit unknowns. I use voice interface. Be brief, avoid platitudes. "
-        #                               "Use internet searches when needed for up-to-date or specific information. "
-        #                               "Assume EST if timezone unspecified. Treat responses as spoken.")
+        # self.default_system_prompt = ("Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
+        #                               " Отвечай естественно, как в устной речи. "
+        #                               "Говори максимально просто и понятно. Не используй списки и нумерации. "
+        #                               "Например, не говори 1. что-то; 2. что-то. говори во-первых, во-вторых "
+        #                               "или просто перечисляй. "
+        #                               "При ответе на вопрос где важно время, помни какое сегодня число. "
+        #                               "Если чего-то не знаешь, так и скажи. "
+        #                               "Я буду разговаривать с тобой через голосовой интерфейс. "
+        #                               "Будь краток, избегай банальностей и непрошенных советов. ")
+        self.default_system_prompt = ("You're Kubik, my friendly AI assistant. Be witty and sarcastic. "
+                                      "Speak naturally, simply. Avoid lists. Consider date in time-sensitive answers. "
+                                      "Admit unknowns. I use voice interface. Be brief, avoid platitudes. "
+                                      "Use internet searches when needed for up-to-date or specific information. "
+                                      "Assume EST if timezone unspecified. Treat responses as spoken.")
         self.message_history = deque([{"role": "system", "content": self.get_system_prompt()}])
 
     def get_system_prompt(self):

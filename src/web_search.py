@@ -1,17 +1,18 @@
 import json
 import logging
 import os
+import re
 import sys
 import requests
 import time
 import asyncio
+from typing import List, Tuple
 from concurrent.futures import ThreadPoolExecutor
 from abc import ABC, abstractmethod
 
 if __name__ == "__main__":
     # add current directory to python path
     sys.path.append(os.getcwd())
-
 
 from src.config import Config
 
@@ -105,7 +106,8 @@ class Tavily(SearchProvider):
         url = "https://api.tavily.com/search"
 
         # Prepare the request payload
-        payload = {"api_key": self.api_key, "query": query, "include_answer": True, "search_depth": "advanced", "topic": "news"}
+        payload = {"api_key": self.api_key, "query": query, "include_answer": True, "search_depth": "advanced",
+                   "topic": "news"}
 
         try:
             # Make the POST request to the API
@@ -128,9 +130,10 @@ from duckduckgo_search import DDGS
 from typing import Optional
 import httpx
 
+
 class PersistentDDGS(DDGS):
     def _get_url(
-        self, method: str, url: str, **kwargs
+            self, method: str, url: str, **kwargs
     ) -> Optional[httpx._models.Response]:
         resp = self._client.request(
             method, url, follow_redirects=True, **kwargs
@@ -154,6 +157,7 @@ class PersistentDDGS(DDGS):
         if resp.status_code == 200:
             return resp
         return None
+
 
 class DuckDuckGoSearch(SearchProvider):
     def __init__(self, config):
@@ -194,7 +198,6 @@ class DuckDuckGoSearch(SearchProvider):
         return results
 
 
-
 class WebSearcher:
     def __init__(self, config):
         self.tavily = Tavily(config)
@@ -216,7 +219,8 @@ class WebSearcher:
 
         combined_result = ""
         joined_results = zip(enabled_providers,
-                             ["Result from {}: \n{}\n".format(prov, res) for prov, res in zip(enabled_providers, results)])
+                             ["Result from {}: \n{}\n".format(prov, res) for prov, res in
+                              zip(enabled_providers, results)])
 
         for provider, result in joined_results:
             logger.info(f"\n---------\n{provider} result: {result}")
@@ -294,6 +298,46 @@ class WebSearcher:
         except Exception as e:
             print(f"Error performing web search: {e}")
             raise
+
+
+async def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, List[str]]:
+    """
+    Process the input string, extract search queries, perform web searches, and return modified string and results.
+
+    Args:
+        input_string (str): The input string that may contain web search queries.
+        searcher (Tavily): An instance of the web_search class.
+
+    Returns:
+        Tuple[str, List[str]]: A tuple containing the modified string and a list of web search results.
+    """
+    # Regular expression to match {internet query: xxx} pattern
+    pattern = r'\$internet query:(.*?)\$'
+
+    logger.info(f"Searching {input_string}")
+
+    # Find all matches
+    matches = re.findall(pattern, input_string)
+
+    # List to store search results
+    search_results = []
+
+    # Process each match
+    for match in matches:
+        logger.info(f"Performing web search for: {match}")
+        try:
+            result = await searcher.search_async(match)
+            search_results.append(result)
+        except Exception as e:
+            search_results.append(f"Error performing search: {str(e)}")
+
+    # Remove all {internet query: xxx} substrings from the input string
+    modified_string = re.sub(pattern, '', input_string)
+
+    # Remove any extra whitespace that might have been left
+    modified_string = ' '.join(modified_string.split())
+
+    return (modified_string, search_results)
 
 
 async def loop():

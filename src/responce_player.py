@@ -3,10 +3,11 @@ This module provides functionality for controlling LED behavior and playing audi
 based on emotional states. It includes utilities for adjusting RGB colors, changing LED
 patterns, and managing a playlist of audio files with corresponding LED behaviors.
 """
-
+import json
 import logging
 import threading
 from subprocess import Popen
+import re
 from typing import List, Tuple, Dict, Optional
 
 from aiy.leds import Leds, Pattern
@@ -34,6 +35,47 @@ def emotions_prompt() -> str:
     return ('Express emotions with light (always place before relevant text): '
             '$emotion:{"color":[R,G,B] (0-255),"behavior":"continuous/blinking/breathing",'
             '"brightness":"dark/medium/bright","cycle":X}$. Empty emotion turns off light. ')
+
+
+def extract_emotions(text: str) -> List[Tuple[dict, str]]:
+    """
+        This function parses the given text and extracts 'emotion' dictionaries (if any) and the associated text following them.
+        The structured data is returned as a list of tuples, each containing the dictionary and the corresponding text.
+
+        An emotion dictionary is expected to be enclosed inside '$emotion:' and '$' markers in the input text.
+        Any text not preceded by an emotion marker is associated with an empty dictionary.
+
+        :param text: str, Input text which includes 'emotion' dictionaries and text.
+        :return: List[Tuple[Dict, str]]. Each tuple contains:
+            - dict: The parsed 'emotion' dictionary or an empty dictionary if no dictionary was found.
+            - str: The associated text following the dictionary or preceding the next dictionary.
+        """
+
+    pattern = re.compile(r'(.*?)\$emotion:\s*(\{.*?\})?\$(.*?)(?=\$emotion:|$)', re.DOTALL)
+
+    results = []
+    pos = 0
+    while pos < len(text):
+        match = pattern.search(text, pos)
+        if not match:
+            remaining_text = text[pos:].strip()
+            if remaining_text:
+                results.append(({}, remaining_text))
+            break
+        preceding_text = match.group(1).strip()
+        if preceding_text:
+            results.append(({}, preceding_text))
+
+        emotion_dict_str = match.group(2) if match.group(2) else '{}'
+        associated_text = match.group(3).strip()
+        try:
+            emotion_dict = json.loads(emotion_dict_str)
+            results.append((emotion_dict, associated_text))
+        except json.JSONDecodeError:
+            results.append(({}, associated_text))
+        pos = match.end()
+
+    return results
 
 
 def adjust_rgb_brightness(rgb: List[int], brightness: str) -> Tuple[int, int, int]:
