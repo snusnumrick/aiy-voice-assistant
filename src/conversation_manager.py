@@ -162,6 +162,8 @@ class ConversationManager:
     def get_system_prompt(self):
         from src.responce_player import emotions_prompt
 
+        return ""
+
         prompt = f"{get_current_datetime_english(self.timezone)} {self.location} "
         prompt += self.config.get('system_prompt', self.default_system_prompt)
         prompt += self.hard_rules
