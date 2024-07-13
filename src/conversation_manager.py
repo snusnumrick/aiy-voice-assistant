@@ -164,10 +164,10 @@ class ConversationManager:
 
         prompt = f"{get_current_datetime_english(self.timezone)} {self.location} "
         prompt += self.config.get('system_prompt', self.default_system_prompt)
+        prompt += self.hard_rules
 
         return prompt
 
-        prompt += self.hard_rules
         prompt += emotions_prompt()
         if self.facts:
             prompt += " Ты уже знаешь факты:" + " ".join(self.facts)
