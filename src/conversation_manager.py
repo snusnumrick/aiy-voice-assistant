@@ -220,7 +220,7 @@ class ConversationManager:
         if facts:
             logger.info(f"Extracted facts: {facts}")
 
-        response_text, rules = extract_rules(response_text)
+        response_text, rules = extract_rules(response_text, self.timezone)
         self.rules += rules
         self.save_rules(self.rules)
 
