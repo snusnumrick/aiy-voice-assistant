@@ -109,7 +109,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 def main():
     config = Config()
 
-    search_tool = WebSearchTool()
+    search_tool = WebSearchTool(config)
 
     tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
                   parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
@@ -123,7 +123,7 @@ def main():
 async def loop():
     config = Config()
 
-    search_tool = WebSearchTool()
+    search_tool = WebSearchTool(config)
 
     tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
                   parameters=[ToolParameter(name='query', type='string', description='A query to search for')],

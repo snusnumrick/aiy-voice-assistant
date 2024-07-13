@@ -90,8 +90,7 @@ class ClaudeAIModel(AIModel):
                         "anthropic-version": "2023-06-01"}
 
     def _get_response(self, messages: List[Dict[str, str]]) -> dict:
-        data = {"model": self.model, "max_tokens": self.max_tokens, "tools": self.tools_description,
-                "messages": messages}
+        data = {"model": self.model, "max_tokens": self.max_tokens, "messages": messages}
 
         response = requests.post(self.url, headers=self.headers, json=data)
         return json.loads(response.content.decode('utf-8'))
@@ -125,6 +124,21 @@ class ClaudeAIModel(AIModel):
             if content['type'] == 'text':
                 responce_text += content['text']
         return responce_text
+
+    async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
+        """
+        Generate a response using Anthropic's Claude model.
+
+        Args:
+            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+
+        Returns:
+            str: The generated response.
+        """
+        response_dict = await self._get_response_async(messages)
+        for content in response_dict['content']:
+            if content['type'] == 'text':
+                yield content['text']
 
 
 class OpenRouterModel(AIModel):

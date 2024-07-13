@@ -40,6 +40,12 @@ def get_token_count(messages: List[Dict[str, Union[str, Dict]]]) -> int:
                 count += estimate_tokens(content['text'])
             elif 'content' in content:
                 count += get_token_count(content)
+        elif isinstance(content, list):
+            for item in content:
+                if isinstance(item, str):
+                    count += estimate_tokens(item)
+                elif isinstance(item, dict) and 'type' in item and item['type'] == 'text' and 'text' in item:
+                    count += estimate_tokens(item['text'])
         else:
             logger.error(f"unknown message type {content}")
 

@@ -24,6 +24,8 @@ if __name__ == "__main__":
 from src.ai_models import AIModel
 from src.config import Config
 from src.web_search import WebSearcher
+from src.llm_tools import summarize_and_compress_history
+from src.ai_models import AIModel, ClaudeAIModel
 from src.tools import get_token_count
 
 logger = logging.getLogger(__name__)
@@ -162,6 +164,7 @@ async def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[
 
     return (modified_string, search_results)
 
+
 def extract_facts(text: str) -> Tuple[str, List[str]]:
     """
     Extract facts from the input text and return the modified text and a list of extracted facts.
@@ -292,6 +295,7 @@ class ConversationManager:
         self.config = config
         self.searcher = WebSearcher(config)
         self.ai_model = ai_model
+        self.summarize_model = ClaudeAIModel(config)
         self.facts = self.load_facts()
         self.rules = self.load_rules()
         self.location = get_location()
@@ -344,27 +348,6 @@ class ConversationManager:
             prompt += " Ты уже помнишь правила:" + " ".join(self.rules)
         return prompt
 
-    # async def summarize_and_compress_history(self):
-    #     """
-    #     Summarize and compress the conversation history to reduce token count.
-    #     """
-    #     summary_prompt = self.config.get('summary_prompt', "Summarize the key points of this conversation, "
-    #                                                        "focusing on the most important facts and context. Be concise:")
-    #     min_number_of_messages = self.config.get('min_number_of_messages', 10)
-    #     new_history = [{"role": "system", "content": self.get_system_prompt()}]
-    #     self.message_history.popleft()
-    #     while len(self.message_history) > min_number_of_messages:
-    #         msg = self.message_history.popleft()
-    #         summary_prompt += f"\n{msg['role']}: {msg['content']}"
-    #     summary = ""
-    #     async for response_part in self.ai_model.get_response_async(list(self.message_history)):
-    #         summary += response_part
-    #     logger.info(f"Summarized conversation: {summary}")
-    #     new_history.append({"role": "system", "content": f"Earlier conversation summary: {summary}"})
-    #     while self.message_history:
-    #         new_history.append(self.message_history.popleft())
-    #     self.message_history = deque(new_history)
-
     async def get_response(self, text: str) -> List[Tuple[dict, str]]:
         """
         Get an AI response based on the current conversation state and new input.
@@ -381,8 +364,9 @@ class ConversationManager:
 
         self.message_history.append({"role": "user", "content": text})
 
-        # while self.get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
-        #     await self.summarize_and_compress_history()
+        if get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
+            self.message_history = summarize_and_compress_history(self.message_history, self.summarize_model,
+                                                                  self.config)
 
         logger.debug(f"Message history: \n{self.formatted_message_history()}")
 
