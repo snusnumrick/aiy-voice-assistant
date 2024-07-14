@@ -163,7 +163,7 @@ class ResponsePlayer:
         """Starts playing the playlist in a separate thread."""
 
         self._is_playing = True
-        self.play_thread = threading.Thread(target=self._play_bsequence)
+        self.play_thread = threading.Thread(target=self._play_sequence)
         self.play_thread.start()
 
     def _play_sequence(self):
