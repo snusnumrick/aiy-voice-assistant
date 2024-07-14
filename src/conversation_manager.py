@@ -11,7 +11,7 @@ import os
 import re
 import sys
 from collections import deque
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, AsyncGenerator
 
 from src.responce_player import extract_emotions
 
@@ -177,7 +177,7 @@ class ConversationManager:
 
         return prompt
 
-    async def get_response(self, text: str) -> List[Tuple[dict, str]]:
+    async def get_response(self, text: str) -> AsyncGenerator[List[Tuple[dict, str]], None]:
         """
         Get an AI response based on the current conversation state and new input.
 
@@ -199,48 +199,50 @@ class ConversationManager:
 
         logger.debug(f"Message history: \n{self.formatted_message_history()}")
 
-        response_text = ""
-        async for response_part in self.ai_model.get_response_async(list(self.message_history)):
-            response_text += response_part
+        async for response_text in self.ai_model.get_response_async(list(self.message_history)):
 
-        logger.debug(f"AI response: {text} -> {response_text}")
-        self.message_history.append({"role": "assistant", "content": response_text})
+            logger.debug(f"AI response: {text} -> {response_text}")
+            if self.message_history[-1]["role"] != "assistant":
+                self.message_history.append({"role": "assistant", "content": response_text})
+            else:
+                self.message_history[-1]["content"] += " " + response_text
 
-        _, search_results = await process_and_search(response_text, self.searcher)
-        logger.info(f"Response Text: {_}; Search results: {search_results}")
+                # _, search_results = await process_and_search(response_text, self.searcher)
+            # logger.info(f"Response Text: {_}; Search results: {search_results}")
+            #
+            # if search_results:
+            #     result_message = f"результаты поиска: {search_results[0]}"
+            #     self.message_history.append({"role": "system", "content": result_message})
+            #     self.message_history.append({"role": "user", "content": "?"})
+            #     logger.debug(self.formatted_message_history())
+            #     response_text = self.ai_model.get_response(list(self.message_history))
+            #     self.message_history.pop()
+            #     self.message_history.append({"role": "assistant", "content": response_text})
 
-        if search_results:
-            result_message = f"результаты поиска: {search_results[0]}"
-            self.message_history.append({"role": "system", "content": result_message})
-            self.message_history.append({"role": "user", "content": "?"})
-            logger.debug(self.formatted_message_history())
-            response_text = self.ai_model.get_response(list(self.message_history))
-            self.message_history.pop()
-            self.message_history.append({"role": "assistant", "content": response_text})
+            response_text, facts = extract_facts(response_text)
+            self.facts += facts
+            self.save_facts(self.facts)
 
-        response_text, facts = extract_facts(response_text)
-        self.facts += facts
-        self.save_facts(self.facts)
+            if facts:
+                logger.info(f"Extracted facts: {facts}")
 
-        if facts:
-            logger.info(f"Extracted facts: {facts}")
+            response_text, rules = extract_rules(response_text, self.timezone)
+            self.rules += rules
+            self.save_rules(self.rules)
 
-        response_text, rules = extract_rules(response_text, self.timezone)
-        self.rules += rules
-        self.save_rules(self.rules)
+            if rules:
+                logger.info(f"Extracted rules: {rules}")
 
-        if rules:
-            logger.info(f"Extracted rules: {rules}")
+            text_with_emotions = extract_emotions(response_text)
+            # logger.info(f"Extracted emotions: {text_with_emotions}")
+            # response_text = " ".join([t for e, t in text_with_emotions])
+            #
+            # logger.debug(f"AI response: {text} -> {response_text}")
 
-        text_with_emotions = extract_emotions(response_text)
-        # logger.info(f"Extracted emotions: {text_with_emotions}")
-        # response_text = " ".join([t for e, t in text_with_emotions])
-        #
-        # logger.debug(f"AI response: {text} -> {response_text}")
+            # print("\n" + self.formatted_message_history() + "\n")
 
-        print("\n" + self.formatted_message_history() + "\n")
-
-        return text_with_emotions
+            logger.info(f"yoelding {text_with_emotions}")
+            yield text_with_emotions
 
     def formatted_message_history(self):
         """

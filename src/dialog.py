@@ -149,7 +149,10 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
 
                 if text:
                     # Step 2: Generate AI response
-                    ai_response = await conversation_manager.get_response(text)
+                    ai_response = []
+                    async for ai_response_part in conversation_manager.get_response(text):
+                        ai_response += ai_response_part
+
                     logger.debug('AI response: %s', ai_response)
                     logger.info('AI says: %s', " ".join([t for e, t in ai_response]))
 
