@@ -20,11 +20,13 @@ class WebSearchTool:
         self.led_processing_blink_period_ms = config.get('processing_blink_period_ms', 300)
 
     def _start_processing(self):
-        self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
-        self.leds.update(Leds.rgb_pattern(self.led_processing_color))
+        # self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
+        # self.leds.update(Leds.rgb_pattern(self.led_processing_color))
+        pass
 
     def _stop_processing(self):
-        self.leds.update(Leds.rgb_off())
+        # self.leds.update(Leds.rgb_off())
+        pass
 
     def do_search(self, parameters: Dict[str, any]) -> str:
         if 'query' in parameters:
