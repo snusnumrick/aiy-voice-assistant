@@ -163,7 +163,7 @@ class ResponsePlayer:
         """Starts playing the playlist in a separate thread."""
 
         self._is_playing = True
-        self.play_thread = threading.Thread(target=self._play_sequence)
+        self.play_thread = threading.Thread(target=self._play_bsequence)
         self.play_thread.start()
 
     def _play_sequence(self):
@@ -187,9 +187,6 @@ class ResponsePlayer:
             # switch off led
             self.leds.update(Leds.rgb_off())
 
-            if not self._is_playing:
-                break
-
         self._is_playing = False
         self.current_process = None
 
@@ -198,7 +195,7 @@ class ResponsePlayer:
 
         self._is_playing = False
         if self.current_process:
-            self.current_process.terminate()
+            self.current_process.kill()
         if self.play_thread and self.play_thread.is_alive():
             self.play_thread.join()
 
