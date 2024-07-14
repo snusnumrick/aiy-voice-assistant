@@ -16,8 +16,8 @@ class WebSearchTool:
     def __init__(self, config: Config, leds: Leds):
         self.web_searcher = WebSearcher(config)
         self.leds = leds
-        self.led_processing_color = self.config.get('processing_color', (0, 1, 0))  # dark green
-        self.led_processing_blink_period_ms = self.config.get('processing_blink_period_ms', 300)
+        self.led_processing_color = config.get('processing_color', (0, 1, 0))  # dark green
+        self.led_processing_blink_period_ms = config.get('processing_blink_period_ms', 300)
 
     def _start_processing(self):
         self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
