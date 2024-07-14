@@ -257,10 +257,10 @@ class SpeechTranscriber:
                 nonlocal player_process
                 if player_process and player_process.is_playing():
                     try:
-                        logger.debug("Terminating player process")
+                        logger.info("Terminating player process")
                         chunks_deque.clear()
                         player_process.stop()
-                        logger.debug("Player process terminated")
+                        logger.info("Player process terminated")
                     except Exception as e:
                         logger.error(f"Error terminating player process: {str(e)}")
 
@@ -343,7 +343,7 @@ class SpeechTranscriber:
         Callback function for button press event.
         """
         self.button_is_pressed = True
-        logger.debug('Button pressed')
+        logger.info('Button pressed')
 
     def button_released(self):
         """
