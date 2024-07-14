@@ -7,22 +7,40 @@ from src.config import Config
 from src.web_search import WebSearcher
 from src.ai_models import AIModel, ClaudeAIModel
 
+from aiy.leds import Leds, Color, Pattern
+
 logger = logging.getLogger(__name__)
 
 
 class WebSearchTool:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, leds: Leds):
         self.web_searcher = WebSearcher(config)
+        self.leds = leds
+        self.led_processing_color = self.config.get('processing_color', (0, 1, 0))  # dark green
+        self.led_processing_blink_period_ms = self.config.get('processing_blink_period_ms', 300)
+
+    def _start_processing(self):
+        self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
+        self.leds.update(Leds.rgb_pattern(self.led_processing_color))
+
+    def _stop_processing(self):
+        self.leds.update(Leds.rgb_off())
 
     def do_search(self, parameters: Dict[str, any]) -> str:
         if 'query' in parameters:
-            return self.web_searcher.search(parameters['query'])
+            self._start_processing()
+            result = self.web_searcher.search(parameters['query'])
+            self._stop_processing()
+            return result
         logger.error(f"missing  parameter  query:  {parameters}")
         return ""
 
     async def do_search_async(self, parameters: Dict[str, any]) -> str:
         if 'query' in parameters:
-            return await  self.web_searcher.search_async(parameters['query'])
+            self._start_processing()
+            result = await  self.web_searcher.search_async(parameters['query'])
+            self._stop_processing()
+            return result
         logger.error(f"missing  parameter  query:  {parameters}")
         return ""
 
