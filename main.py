@@ -41,13 +41,14 @@ def main():
     """
     config = Config()
 
-    search_tool = WebSearchTool(config)
-    tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
-                  parameters=[ToolParameter(name='query', type='string',
-                                            description='A query to search for. Use english for best results')],
-                  processor=search_tool.do_search_async), ]
-
     with Board() as board, Leds() as leds:
+
+        search_tool = WebSearchTool(config, leds)
+        tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
+                      parameters=[ToolParameter(name='query', type='string',
+                                                description='A query to search for. Use english for best results')],
+                      processor=search_tool.do_search_async), ]
+
         # Initial LED feedback
         leds.update(Leds.rgb_on(Color.WHITE))
         time.sleep(1)

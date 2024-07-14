@@ -185,7 +185,7 @@ class ResponsePlayer:
             self.current_process.wait()
 
             # switch off led
-            self.leds.update(Leds.rgb_off())
+            # self.leds.update(Leds.rgb_off())
 
             if not self._is_playing:
                 break
