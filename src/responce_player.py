@@ -175,11 +175,7 @@ class ResponsePlayer:
 
             change_light_behavior(light_behavior, self.leds)
 
-            # load byte array from file
-            with open(audio_file, 'rb') as f:
-                audio_data = f.read()
-
-            self.current_process = play_wav_async(audio_data)
+            self.current_process = play_wav_async(audio_file)
 
             # Wait for the audio to finish
             self.current_process.wait()
@@ -195,7 +191,7 @@ class ResponsePlayer:
 
         self._is_playing = False
         if self.current_process:
-            self.current_process.kill()
+            self.current_process.terminate()
         if self.play_thread and self.play_thread.is_alive():
             self.play_thread.join()
 
