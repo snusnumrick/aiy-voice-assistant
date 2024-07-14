@@ -174,7 +174,12 @@ class ResponsePlayer:
                 break
 
             change_light_behavior(light_behavior, self.leds)
-            self.current_process = play_wav_async(audio_file)
+
+            # load byte array from file
+            with open(audio_file, 'rb') as f:
+                audio_data = f.read()
+
+            self.current_process = play_wav_async(audio_data)
 
             # Wait for the audio to finish
             self.current_process.wait()
