@@ -184,6 +184,9 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
 
                             # Step 5: Play synthesized responses
                             if playlist:
+                                if response_player:
+                                    response_player.stop()
+                                    time.sleep(0.5)
                                 response_player = ResponsePlayer(playlist, leds)
                                 response_player.play()
 
