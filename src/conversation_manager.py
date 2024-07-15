@@ -249,7 +249,15 @@ class ConversationManager:
             str: Formatted and indented content.
             """
             # Tokenize the content into sentences
-            sentences = nltk.sent_tokenize(content.strip())
+            sentences = []
+            try:
+                sentences = nltk.sent_tokenize(content.strip())
+            except LookupError as e:
+                logger.error(e)
+                nltk.download('punkt')
+            if not sentences:
+                sentences = nltk.sent_tokenize(content.strip())
+
             wrapped_sentences = []
 
             for sentence in sentences:
