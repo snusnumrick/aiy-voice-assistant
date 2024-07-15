@@ -12,9 +12,8 @@ import re
 import sys
 from collections import deque
 from typing import List, Dict, Tuple, AsyncGenerator, Deque
-import nltk
-from textwrap import wrap
 
+from src.tools import indent_content
 from src.responce_player import extract_emotions
 
 if __name__ == "__main__":
@@ -236,44 +235,7 @@ class ConversationManager:
         Returns:
             str: A formatted string representation of the message history.
         """
-
-        def indent_content(content, max_width=80):
-            """
-            Indent and format content, splitting long lines at sentence boundaries.
-
-            Args:
-            content (str): The text content to format.
-            max_width (int): Maximum line width before splitting (default 80).
-
-            Returns:
-            str: Formatted and indented content.
-            """
-            # Tokenize the content into sentences
-            sentences = []
-            try:
-                sentences = nltk.sent_tokenize(content.strip())
-            except LookupError as e:
-                logger.error(e)
-                nltk.download('punkt')
-            if not sentences:
-                sentences = nltk.sent_tokenize(content.strip())
-
-            formatted_lines = []
-
-            for sentence in sentences:
-                # Wrap each sentence
-                wrapped_sentence = wrap(sentence, width=max_width, replace_whitespace=False, break_long_words=False)
-                formatted_lines.extend(wrapped_sentence)
-
-                # Add a blank line after each sentence, except the last one
-                if sentence != sentences[-1]:
-                    formatted_lines.append('')
-
-            # Join all lines with newline and indentation
-            return '\n    '.join(formatted_lines)
-
         return "\n\n".join([f'{msg["role"]}:\n    {indent_content(msg["content"])}' for msg in self.message_history])
-
 
     def save_dialog(self):
         # save message history to dialog.txt

@@ -202,11 +202,73 @@ def get_current_date_time_for_facts(timezone_string: str) -> str:
     return message
 
 
+def indent_content(content, max_width=120):
+    """
+    Indent and format content, splitting by sentence boundaries and line length.
+    Put newlines before and after special $<word>:<more text>$ parts.
+
+    Args:
+    content (str): The text content to format.
+    max_width (int): Target maximum line width (default 80).
+
+    Returns:
+    str: Formatted and indented content.
+    """
+
+    # Replace special parts with placeholders and store them
+    special_parts = []
+
+    def replace_special(match):
+        special_parts.append(match.group(0))
+        return f'\n{{{len(special_parts)-1}}}\n'
+
+    content = re.sub(r'\$\w+:.+?\$', replace_special, content)
+    # Split content into sentences
+    sentences = re.split(r'(?<=[.!?])\s+', content.strip())
+    formatted_lines = []
+
+    current_line = []
+    current_length = 0
+    for sentence in sentences:
+        words = sentence.split()
+
+        for word in words:
+            if word.startswith('{') and word.endswith('}'):
+                # This is a placeholder for a special part
+                if current_line:
+                    formatted_lines.append(' '.join(current_line))
+                formatted_lines.append(special_parts[int(word[1:-1])])
+                current_line = []
+                current_length = 0
+
+            elif current_length + len(word) + (1 if current_line else 0) > max_width:
+                formatted_lines.append(' '.join(current_line))
+                current_line = [word]
+                current_length = len(word)
+            else:
+                current_line.append(word)
+                current_length += len(word) + (1 if current_line else 0)
+
+    if current_line:
+        formatted_lines.append(' '.join(current_line))
+
+        # Add a blank line after each sentence, except the last one
+        if sentence != sentences[-1]:
+            formatted_lines.append('')
+
+    # Join all lines with newline and indentation
+    return '    ' + '\n    '.join(formatted_lines)
+
+
 def test():
-    tz = get_timezone()
-    print(tz)
-    print(get_current_datetime_english(tz) + " " + get_location())
-    print(get_current_date_time_for_facts(tz))
+    # tz = get_timezone()
+    # print(tz)
+    # print(get_current_datetime_english(tz) + " " + get_location())
+    # print(get_current_date_time_for_facts(tz))
+    print(indent_content('$emotion:{"color":[0,255,0],"behavior":"breathing","brightness":"medium","cycle":1}$'
+                         'Привет, Антон!   Рад тебя снова слышать. Как твои дела? Надеюсь, у тебя всё хорошо.'
+                         ' Что нового произошло с нашей последней беседы? Может, Ксения и Жозефина наконец-то '
+                         'позволили себя погладить? Или у тебя есть какие-нибудь интересные планы на сегодняшний день?'))
 
 
 if __name__ == '__main__':
