@@ -8,6 +8,7 @@ import logging
 import threading
 from subprocess import Popen
 import re
+import time
 from typing import List, Tuple, Dict, Optional
 
 from aiy.leds import Leds, Pattern
@@ -182,6 +183,7 @@ class ResponsePlayer:
 
             # switch off led
             self.leds.update(Leds.rgb_off())
+            time.sleep(1)
 
         self._is_playing = False
         self.current_process = None
