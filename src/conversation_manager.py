@@ -30,12 +30,13 @@ from src.tools import get_token_count, get_location, get_timezone, get_current_d
 logger = logging.getLogger(__name__)
 
 
-def extract_facts(text: str) -> Tuple[str, List[str]]:
+def extract_facts(text: str, timezone: str) -> Tuple[str, List[str]]:
     """
     Extract facts from the input text and return the modified text and a list of extracted facts.
 
     Args:
         text (str): The input text to extract facts from.
+        timezone (str): Current timezone to store time
 
     Returns:
         Tuple[str, List[str]]: A tuple containing the modified text and a list of extracted facts.
@@ -52,7 +53,7 @@ def extract_facts(text: str) -> Tuple[str, List[str]]:
     # Process each match
     for match in matches:
         logger.debug(f"Extracted fact: {match}")
-        fact = get_current_date_time_for_facts() + " : " + match
+        fact = get_current_date_time_for_facts(timezone) + " : " + match
         extracted_facts.append(fact)
 
     # Remove all {remember: xxx} substrings from the input string
@@ -220,7 +221,7 @@ class ConversationManager:
             #     self.message_history.pop()
             #     self.message_history.append({"role": "assistant", "content": response_text})
 
-            response_text, facts = extract_facts(response_text)
+            response_text, facts = extract_facts(response_text, self.timezone)
             self.facts += facts
             self.save_facts(self.facts)
 
