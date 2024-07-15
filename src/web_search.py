@@ -96,7 +96,7 @@ class GoogleCustomSearch(SearchProvider):
         self.api_key = os.environ.get('GOOGLE_API_KEY')
 
     def search(self, term: str) -> str:
-
+        start_time = time.time()
         params = {
             'q': term,
             'key': self.api_key,
@@ -110,7 +110,9 @@ class GoogleCustomSearch(SearchProvider):
             results = response.json()
 
             # Process and return the results
-            return "\n".join([item['snippet'] for item in results['items']]) if 'items' in results else ""
+            text_result =  "\n".join([item['snippet'] for item in results['items']]) if 'items' in results else ""
+            logger.info(f"Google Custom Search search took {time.time() - start_time} seconds")
+            return text_result
 
         except requests.RequestException as e:
             logger.error(f"An error occurred: {e}")
