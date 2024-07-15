@@ -89,6 +89,9 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         logger.debug(f"get_response_async: {json.dumps(response_dict, indent=2)}")
         if 'usage' in response_dict:
             logger.info(f"tokens usage: {response_dict['usage']} vs estimate {get_token_count(message_list)}")
+        if 'content' not in response_dict:
+            logger.error(f"No content in response: {json.dumps(response_dict, indent=2)}")
+            return
         message_list.append({"role": "assistant", "content": response_dict['content']})
         for content in response_dict['content']:
             if content['type'] == 'text':
