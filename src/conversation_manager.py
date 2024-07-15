@@ -241,7 +241,7 @@ class ConversationManager:
         # save message history to dialog.txt
         dialog_file_name = "dialog.txt"
         with open(dialog_file_name, "w") as dialog_file:
-            dialog_file.write(self.formatted_message_history())
+            dialog_file.write("\n\n" + self.formatted_message_history() + "\n\n")
 
     def load_facts(self):
         try:
