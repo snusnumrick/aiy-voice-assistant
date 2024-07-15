@@ -258,19 +258,19 @@ class ConversationManager:
             if not sentences:
                 sentences = nltk.sent_tokenize(content.strip())
 
-            wrapped_sentences = []
+            formatted_lines = []
 
             for sentence in sentences:
-                if len(sentence) > max_width:
-                    # If sentence is longer than max_width, wrap it
-                    wrapped = wrap(sentence, width=max_width)
-                    wrapped_sentences.extend(wrapped)
-                else:
-                    # If sentence is short enough, keep it as is
-                    wrapped_sentences.append(sentence)
+                # Wrap each sentence
+                wrapped_sentence = wrap(sentence, width=max_width, replace_whitespace=False, break_long_words=False)
+                formatted_lines.extend(wrapped_sentence)
 
-            # Join all sentences/lines with newline and indentation
-            return '\n    '.join(wrapped_sentences)
+                # Add a blank line after each sentence, except the last one
+                if sentence != sentences[-1]:
+                    formatted_lines.append('')
+
+            # Join all lines with newline and indentation
+            return '\n    '.join(formatted_lines)
 
         return "\n\n".join([f'{msg["role"]}:\n    {indent_content(msg["content"])}' for msg in self.message_history])
 
