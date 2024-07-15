@@ -62,6 +62,7 @@ class Google(SearchProvider):
             response = requests.get(url, headers=headers)
             return BeautifulSoup(response.text, 'html.parser')
 
+        start_time = time.time()
         soup = fetch_data(term, "en")
 
         brief = " ".join([element.text for element in soup.select(".sXLaOe")])
@@ -78,6 +79,8 @@ class Google(SearchProvider):
         brief_result = "; ".join(filter(None, [brief, extract, denotion, place, wiki]))
         result = brief_result or a2 or a1
 
+        duration = time.time() - start_time
+        logger.info(f"Google search took {duration:.2f} seconds")
         return result
 
 
@@ -87,13 +90,17 @@ class Perplexity(SearchProvider):
         self.model = PerplexityModel(config)
 
     def search(self, query: str) -> str:
+        start_time = time.time()
         messages = [
             {
                 "role": "user",
                 "content": (query),
             },
         ]
-        return self.model.get_response(messages)
+        response: str = self.model.get_response(messages)
+        duration = time.time() - start_time
+        logger.info(f"Perplexity search took {duration:.2f} seconds")
+        return response
 
 
 class Tavily(SearchProvider):
@@ -105,6 +112,8 @@ class Tavily(SearchProvider):
     def search(self, query: str):
         url = "https://api.tavily.com/search"
 
+        start_time = time.time()
+
         # Prepare the request payload
         payload = {"api_key": self.api_key, "query": query, "include_answer": True, "search_depth": "advanced",
                    "topic": "news"}
@@ -115,7 +124,10 @@ class Tavily(SearchProvider):
             response.raise_for_status()  # Raise an exception for bad status codes
 
             # Parse and return the JSON response
-            return response.json()["answer"]
+            answer =  response.json()["answer"]
+            duration = time.time() - start_time
+            logger.info(f"Tavily search took {duration:.2f} seconds")
+            return answer
 
         except requests.exceptions.RequestException as e:
             print(f"Error making request to Tavily API: {e}")
@@ -168,6 +180,7 @@ class DuckDuckGoSearch(SearchProvider):
             self.ddgs = None
 
     def search(self, query: str):
+        start_time = time.time()
         if not self.ddgs:
             return ""
         try:
@@ -194,7 +207,8 @@ class DuckDuckGoSearch(SearchProvider):
 
         # make it safe
         results = results.encode("utf-8", "ignore").decode("utf-8")
-
+        duration = time.time() - start_time
+        logger.info(f"DDGS search took {duration:.2f} seconds")
         return results
 
 
@@ -264,6 +278,8 @@ class WebSearcher:
             raise
 
     async def search_async(self, query: str) -> str:
+        start_time = time.time()
+
         # first_line_providers = ["google", "ddgs"]
         # backup_providers = ["perplexity", "tavily"]
         providers = ["google", "google", "google", "tavily", "perplexity"]
@@ -293,6 +309,8 @@ class WebSearcher:
             result = self.ai_model.get_response([{"role": "user", "content": prompt}])
 
             logger.info(f"Final search result for query '{query}' is: {result}")
+            duration = time.time() - start_time
+            logger.info(f"Web search took {duration:.2f} seconds")
             return result
 
         except Exception as e:

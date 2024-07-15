@@ -11,7 +11,7 @@ import os
 import re
 import sys
 from collections import deque
-from typing import List, Dict, Tuple, AsyncGenerator
+from typing import List, Dict, Tuple, AsyncGenerator, Deque, Optional
 
 from src.responce_player import extract_emotions
 
@@ -125,41 +125,42 @@ class ConversationManager:
         self.location = get_location()
         self.timezone = get_timezone()
         self.hard_rules_russian = (""
-                           # "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
-                           # "а пошли мне сообщение в таком формате: "
-                           # "$internet query:<что ты хочешь поискать на английском языке>$. "
-                           # "Таких запросов в твоем сообщении может быть несколько. "
-                           "Если в ответе на твой запрос указано время без указания часового пояса, "
-                           "считай что это Восточное стандартное время."
-                           # "Если по этому запросу не нашел нужной информации, попробуй переформулировать запрос. "
-                           "Если тебе надо что-то запомнить, "
-                           "пошли мне сообщение в таком формате: $remember: <текст, который тебе нужно запомнить>$. "
-                           "Таких фактов в твоем сообщении тоже может быть несколько. "
-                           "Например, $remember: <первый текст, который тебе нужно запомнить>$ "
-                           "{remember: $второрй текст, который тебе нужно запомнить>$."
-                           "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
-                           "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
-                           "$rule: <текст нового правила>$. "
-                           "Таких запросов в твоем сообщении тоже может быть несколько. ")
+                                   # "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
+                                   # "а пошли мне сообщение в таком формате: "
+                                   # "$internet query:<что ты хочешь поискать на английском языке>$. "
+                                   # "Таких запросов в твоем сообщении может быть несколько. "
+                                   "Если в ответе на твой запрос указано время без указания часового пояса, "
+                                   "считай что это Восточное стандартное время."
+                                   # "Если по этому запросу не нашел нужной информации, попробуй переформулировать запрос. "
+                                   "Если тебе надо что-то запомнить, "
+                                   "пошли мне сообщение в таком формате: $remember: <текст, который тебе нужно запомнить>$. "
+                                   "Таких фактов в твоем сообщении тоже может быть несколько. "
+                                   "Например, $remember: <первый текст, который тебе нужно запомнить>$ "
+                                   "{remember: $второрй текст, который тебе нужно запомнить>$."
+                                   "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
+                                   "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
+                                   "$rule: <текст нового правила>$. "
+                                   "Таких запросов в твоем сообщении тоже может быть несколько. ")
         self.hard_rules_english = ("For web searches: $internet query:<query in English>$. "
-                           "To remember: $remember:<text>$. For new rules: $rule:<text>$ ")
+                                   "To remember: $remember:<text>$. For new rules: $rule:<text>$ ")
         self.hard_rules = self.hard_rules_russian
-        self.default_system_prompt_russian = ("Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
-                                      " Отвечай естественно, как в устной речи. "
-                                      "Говори максимально просто и понятно. Не используй списки и нумерации. "
-                                      "Например, не говори 1. что-то; 2. что-то. говори во-первых, во-вторых "
-                                      "или просто перечисляй. "
-                                      "При ответе на вопрос где важно время, помни какое сегодня число. "
-                                      "Если чего-то не знаешь, так и скажи. "
-                                      "Я буду разговаривать с тобой через голосовой интерфейс. "
-                                      "Будь краток, избегай банальностей и непрошенных советов. ")
+        self.default_system_prompt_russian = (
+            "Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
+            " Отвечай естественно, как в устной речи. "
+            "Говори максимально просто и понятно. Не используй списки и нумерации. "
+            "Например, не говори 1. что-то; 2. что-то. говори во-первых, во-вторых "
+            "или просто перечисляй. "
+            "При ответе на вопрос где важно время, помни какое сегодня число. "
+            "Если чего-то не знаешь, так и скажи. "
+            "Я буду разговаривать с тобой через голосовой интерфейс. "
+            "Будь краток, избегай банальностей и непрошенных советов. ")
         self.default_system_prompt_english = ("You're Kubik, my friendly AI assistant. Be witty and sarcastic. "
-                                      "Speak naturally, simply. Avoid lists. Consider date in time-sensitive answers. "
-                                      "Admit unknowns. I use voice interface. Be brief, avoid platitudes. "
-                                      "Use internet searches when needed for up-to-date or specific information. "
-                                      "Assume EST if timezone unspecified. Treat responses as spoken.")
+                                              "Speak naturally, simply. Avoid lists. Consider date in time-sensitive answers. "
+                                              "Admit unknowns. I use voice interface. Be brief, avoid platitudes. "
+                                              "Use internet searches when needed for up-to-date or specific information. "
+                                              "Assume EST if timezone unspecified. Treat responses as spoken.")
         self.default_system_prompt = self.default_system_prompt_russian
-        self.message_history = deque([{"role": "system", "content": self.get_system_prompt()}])
+        self.message_history: Deque[dict] = deque([{"role": "system", "content": self.get_system_prompt()}])
 
     def get_system_prompt(self):
         from src.responce_player import emotions_prompt
@@ -194,8 +195,8 @@ class ConversationManager:
         self.message_history.append({"role": "user", "content": text})
 
         if get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
-            self.message_history = summarize_and_compress_history(self.message_history, self.summarize_model,
-                                                                  self.config)
+            self.message_history = await summarize_and_compress_history(self.message_history, self.summarize_model,
+                                                                        self.config)
 
         logger.debug(f"Message history: \n{self.formatted_message_history()}")
 
