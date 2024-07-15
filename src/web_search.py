@@ -61,13 +61,12 @@ class Google(SearchProvider):
 
             url = f"https://www.google.com/search?q={requests.utils.quote(term)}&hl={lang}"
             headers = {"User-Agent": random.choice(user_agents)}
-            start = time.time()
             response = requests.get(url, headers=headers)
-            logger.info(f"Google requests.get time: {time.time() - start}")
             return BeautifulSoup(response.text, 'html.parser')
 
         start_time = time.time()
         soup = fetch_data(term, "en")
+        logger.info(f"Google search fetch_data time: {time.time() - start_time}")
 
         brief = " ".join([element.text for element in soup.select(".sXLaOe")])
         extract = " ".join([element.text for element in soup.select(".hgKElc")])
