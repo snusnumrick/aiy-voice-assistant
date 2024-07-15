@@ -6,9 +6,11 @@ import sys
 import requests
 import time
 import asyncio
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
 from abc import ABC, abstractmethod
+from duckduckgo_search import DDGS
+import httpx
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -59,7 +61,9 @@ class Google(SearchProvider):
 
             url = f"https://www.google.com/search?q={requests.utils.quote(term)}&hl={lang}"
             headers = {"User-Agent": random.choice(user_agents)}
+            start = time.time()
             response = requests.get(url, headers=headers)
+            logger.info(f"Google requests.get time: {time.time() - start}")
             return BeautifulSoup(response.text, 'html.parser')
 
         start_time = time.time()
@@ -82,6 +86,34 @@ class Google(SearchProvider):
         duration = time.time() - start_time
         logger.info(f"Google search took {duration:.2f} seconds")
         return result
+
+
+class GoogleCustomSearch(SearchProvider):
+    def __init__(self, config: Config):
+        self.base_url = "https://customsearch.googleapis.com/customsearch/v1"
+        self.cs_key = os.environ.get('GOOGLE_CUSTOMSEARCH_KEY')
+        self.api_key = os.environ.get('GOOGLE_API_KEY')
+
+    def search(self, term: str) -> str:
+
+        params = {
+            'q': term,
+            'key': self.api_key,
+            'cx': self.cs_key,
+        }
+
+        try:
+            response = requests.get(self.base_url, params=params)
+            response.raise_for_status()  # Raise an exception for bad status codes
+
+            results = response.json()
+
+            # Process and return the results
+            return "\n".join([item['snippet'] for item in results['items']]) if 'items' in results else ""
+
+        except requests.RequestException as e:
+            logger.error(f"An error occurred: {e}")
+            return ""
 
 
 class Perplexity(SearchProvider):
@@ -136,11 +168,6 @@ class Tavily(SearchProvider):
         except json.JSONDecodeError as e:
             print(f"Error decoding JSON response: {e}")
             raise
-
-
-from duckduckgo_search import DDGS
-from typing import Optional
-import httpx
 
 
 class PersistentDDGS(DDGS):
@@ -216,6 +243,7 @@ class WebSearcher:
     def __init__(self, config):
         self.tavily = Tavily(config)
         self.google = Google(config)
+        self.google_cs = GoogleCustomSearch(config)
         self.ai_model = OpenRouterModel(config, use_simple_model=True)
         self.perplexity = Perplexity(config)
         self.ddgs = DuckDuckGoSearch(config)
@@ -282,7 +310,7 @@ class WebSearcher:
 
         # first_line_providers = ["google", "ddgs"]
         # backup_providers = ["perplexity", "tavily"]
-        providers = ["google", "google", "google", "tavily", "perplexity"]
+        providers = ["google_cs", "google", "google", "google", "tavily", "perplexity"]
 
         try:
             # result_1 = await self.search_providers_async(query, first_line_providers)
@@ -376,6 +404,7 @@ def main():
         print(result)
 
 
+
 if __name__ == "__main__":
     from dotenv import load_dotenv
 
@@ -383,6 +412,7 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     load_dotenv()
+
     asyncio.run(loop())
 
     # main()
