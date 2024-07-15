@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from abc import ABC, abstractmethod
 from duckduckgo_search import DDGS
 import httpx
-from bs4 import BeautifulSoup
+from lxml import html
 import random
 
 if __name__ == "__main__":
@@ -61,24 +61,24 @@ class Google(SearchProvider):
         url = f"https://www.google.com/search?q={requests.utils.quote(term)}&hl={lang}"
         headers = {"User-Agent": random.choice(USER_AGENTS)}
         response = self.session.get(url, headers=headers)
-        return BeautifulSoup(response.text, 'lxml')
+        return html.fromstring(response.content)
 
     @staticmethod
-    def _get_text(soup, selector):
-        elements = soup.select(selector)
-        return " ".join(element.text for element in elements) if elements else ""
+    def _get_text(tree, selector):
+        elements = tree.cssselect(selector)
+        return " ".join(element.text_content() for element in elements) if elements else ""
 
     def search(self, term: str) -> str:
         start_time = time.time()
-        soup = self._fetch_data(term, "en")
+        tree = self._fetch_data(term, "en")
         logger.info(f"Google search fetch_data time: {time.time() - start_time}")
 
         selectors = [".sXLaOe", ".hgKElc", ".wx62f", ".HwtpBd", ".yxjZuf span"]
-        results = [self._get_text(soup, selector) for selector in selectors]
+        results = [self._get_text(tree, selector) for selector in selectors]
 
-        a1 = self._get_text(soup, ".UDZeY span").replace("Описание", "").replace("ЕЩЁ", "")
-        a1 += self._get_text(soup, ".LGOjhe span")
-        a2 = self._get_text(soup, ".yXK7lf span")
+        a1 = self._get_text(tree, ".UDZeY span").replace("Описание", "").replace("ЕЩЁ", "")
+        a1 += self._get_text(tree, ".LGOjhe span")
+        a2 = self._get_text(tree, ".yXK7lf span")
 
         brief_result = "; ".join(filter(None, results))
         result = brief_result or a2 or a1

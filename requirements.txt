@@ -16,6 +16,7 @@ BeautifulSoup4
 duckduckgo_search==3.8.5
 chardet
 lxml
+cssselect
 
 
 aiohttp~=3.9.5
