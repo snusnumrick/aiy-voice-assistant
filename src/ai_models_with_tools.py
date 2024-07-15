@@ -1,4 +1,4 @@
-from typing import List, Dict, Callable, AsyncGenerator
+from typing import List, Dict, Callable, AsyncGenerator, Awaitable
 from dataclasses import dataclass
 import logging
 import asyncio
@@ -26,7 +26,7 @@ class Tool:
     description: str
     iterative: bool
     parameters: List[ToolParameter]
-    processor: Callable[[Dict[str, any]], str]
+    processor: Callable[[Dict[str, any]], Awaitable[str]]
 
 
 class ClaudeAIModelWithTools(ClaudeAIModel):
@@ -47,11 +47,11 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
     def get_response(self, messages: List[Dict[str, str]]) -> str:
         response_dict = self._get_response(messages)
-        responce_text = ""
+        response_text = ""
         messages.append({"role": "assistant", "content": response_dict['content']})
         for content in response_dict['content']:
             if content['type'] == 'text':
-                responce_text += content['text']
+                response_text += content['text']
 
             elif content['type'] == 'tool_use':
                 tool_name = content['name']
@@ -63,9 +63,9 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     messages.append({"role": "user", "content": [
                         {'type': 'tool_result',  'content': tool_result, "tool_use_id": tool_use_id}]})
                     response = self.get_response(messages)
-                    responce_text += response
+                    response_text += response
                 pass
-        return responce_text
+        return response_text
 
     async def _get_response_async(self, messages: List[Dict[str, str]]) -> dict:
         system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
@@ -87,7 +87,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
         response_dict = await self._get_response_async(message_list)
         logger.debug(f"get_response_async: {json.dumps(response_dict, indent=2)}")
-        logger.info(f"tokens usage: {response_dict['usage']} vs estimate {get_token_count(message_list)}")
+        if 'usage' in response_dict:
+            logger.info(f"tokens usage: {response_dict['usage']} vs estimate {get_token_count(message_list)}")
         message_list.append({"role": "assistant", "content": response_dict['content']})
         for content in response_dict['content']:
             if content['type'] == 'text':
@@ -115,11 +116,11 @@ def main():
 
         tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
                       parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
-                      processor=search_tool.do_search), ]
+                      processor=search_tool.do_search_async), ]
         model = ClaudeAIModelWithTools(config, tools=tools)
         messages = [{"role": "user", "content": "who will play at euro 2024 final?"}]
-        responce = model.get_response(messages)
-        print(responce)
+        response = model.get_response(messages)
+        print(response)
 
 
 async def loop():
