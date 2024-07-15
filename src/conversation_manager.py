@@ -228,20 +228,20 @@ class ConversationManager:
             logger.debug(f"yielding {text_with_emotions}")
             yield text_with_emotions
 
-    def formatted_message_history(self) -> str:
+    def formatted_message_history(self, max_width=120) -> str:
         """
         Format the message history for logging purposes.
 
         Returns:
             str: A formatted string representation of the message history.
         """
-        return "\n\n".join([f'{msg["role"]}:\n{indent_content(msg["content"])}' for msg in self.message_history])
+        return "\n\n".join([f'{msg["role"]}:\n{indent_content(msg["content"], max_width)}' for msg in self.message_history])
 
     def save_dialog(self):
         # save message history to dialog.txt
         dialog_file_name = "dialog.txt"
         with open(dialog_file_name, "w") as dialog_file:
-            dialog_file.write("\n\n" + self.formatted_message_history() + "\n\n")
+            dialog_file.write("\n\n" + self.formatted_message_history(150) + "\n\n")
 
     def load_facts(self):
         try:
