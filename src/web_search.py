@@ -49,6 +49,8 @@ class Google(SearchProvider):
     def search(self, term: str) -> str:
         def fetch_data(term, lang):
             from bs4 import BeautifulSoup
+            import lxml
+            import chardet
             import random
 
             user_agents = [
@@ -62,7 +64,7 @@ class Google(SearchProvider):
             url = f"https://www.google.com/search?q={requests.utils.quote(term)}&hl={lang}"
             headers = {"User-Agent": random.choice(user_agents)}
             response = requests.get(url, headers=headers)
-            return BeautifulSoup(response.text, 'html.parser')
+            return BeautifulSoup(response.text, 'lxml')
 
         start_time = time.time()
         soup = fetch_data(term, "en")
