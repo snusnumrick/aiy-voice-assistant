@@ -11,6 +11,8 @@ from concurrent.futures import ThreadPoolExecutor
 from abc import ABC, abstractmethod
 from duckduckgo_search import DDGS
 import httpx
+from bs4 import BeautifulSoup
+import random
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -21,6 +23,15 @@ from src.config import Config
 from src.ai_models import OpenRouterModel
 
 logger = logging.getLogger(__name__)
+
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.157 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36",
+]
 
 
 class SearchProvider(ABC):
@@ -44,44 +55,32 @@ class SearchProvider(ABC):
 
 class Google(SearchProvider):
     def __init__(self, config: Config):
-        pass
+        self.session = requests.Session()
+
+    def _fetch_data(self, term, lang):
+        url = f"https://www.google.com/search?q={requests.utils.quote(term)}&hl={lang}"
+        headers = {"User-Agent": random.choice(USER_AGENTS)}
+        response = self.session.get(url, headers=headers)
+        return BeautifulSoup(response.text, 'lxml')
+
+    @staticmethod
+    def _get_text(soup, selector):
+        elements = soup.select(selector)
+        return " ".join(element.text for element in elements) if elements else ""
 
     def search(self, term: str) -> str:
-        def fetch_data(term, lang):
-            from bs4 import BeautifulSoup
-            import lxml
-            import chardet
-            import random
-
-            user_agents = [
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.157 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36", ]
-
-            url = f"https://www.google.com/search?q={requests.utils.quote(term)}&hl={lang}"
-            headers = {"User-Agent": random.choice(user_agents)}
-            response = requests.get(url, headers=headers)
-            return BeautifulSoup(response.text, 'lxml')
-
         start_time = time.time()
-        soup = fetch_data(term, "en")
+        soup = self._fetch_data(term, "en")
         logger.info(f"Google search fetch_data time: {time.time() - start_time}")
 
-        brief = " ".join([element.text for element in soup.select(".sXLaOe")])
-        extract = " ".join([element.text for element in soup.select(".hgKElc")])
-        denotion = " ".join([element.text for element in soup.select(".wx62f")])
-        place = " ".join([element.text for element in soup.select(".HwtpBd")])
-        wiki = " ".join([element.text for element in soup.select(".yxjZuf span")])
+        selectors = [".sXLaOe", ".hgKElc", ".wx62f", ".HwtpBd", ".yxjZuf span"]
+        results = [self._get_text(soup, selector) for selector in selectors]
 
-        a1 = (" ".join([element.text for element in soup.select(".UDZeY span")]).replace("Описание", "").replace("ЕЩЁ",
-                                                                                                                 "") + soup.select_one(
-            ".LGOjhe span").text) if soup.select_one(".LGOjhe span") else ""
-        a2 = " ".join([element.text for element in soup.select(".yXK7lf span")])
+        a1 = self._get_text(soup, ".UDZeY span").replace("Описание", "").replace("ЕЩЁ", "")
+        a1 += self._get_text(soup, ".LGOjhe span")
+        a2 = self._get_text(soup, ".yXK7lf span")
 
-        brief_result = "; ".join(filter(None, [brief, extract, denotion, place, wiki]))
+        brief_result = "; ".join(filter(None, results))
         result = brief_result or a2 or a1
 
         duration = time.time() - start_time
