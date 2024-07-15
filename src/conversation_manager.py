@@ -21,7 +21,7 @@ if __name__ == "__main__":
 
 from src.ai_models import AIModel
 from src.config import Config
-from src.web_search import WebSearcher, process_and_search
+from src.web_search import WebSearcher
 from src.llm_tools import summarize_and_compress_history
 from src.ai_models import AIModel, ClaudeAIModel
 from src.tools import get_token_count, get_location, get_timezone, get_current_datetime_english, \
