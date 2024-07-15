@@ -224,24 +224,27 @@ class ConversationManager:
                 logger.info(f"Extracted rules: {rules}")
 
             text_with_emotions = extract_emotions(response_text)
-            # logger.info(f"Extracted emotions: {text_with_emotions}")
-            # response_text = " ".join([t for e, t in text_with_emotions])
-            #
-            # logger.debug(f"AI response: {text} -> {response_text}")
-
-            # print("\n" + self.formatted_message_history() + "\n")
-
-            logger.debug(f"yoelding {text_with_emotions}")
+            logger.debug(f"yielding {text_with_emotions}")
             yield text_with_emotions
 
-    def formatted_message_history(self):
+    def formatted_message_history(self) -> str:
         """
         Format the message history for logging purposes.
 
         Returns:
             str: A formatted string representation of the message history.
         """
-        return "\n\n".join([f'{msg["role"]}:{msg["content"].strip()}' for msg in self.message_history])
+
+        def indent_content(content):
+            return '\n    '.join(content.strip().split('\n'))
+
+        return "\n\n".join([f'{msg["role"]}:\n    {indent_content(msg["content"])}' for msg in self.message_history])
+
+    def save_dialog(self):
+        # save message history to dialog.txt
+        dialog_file_name = "dialog.txt"
+        with open(dialog_file_name, "w") as dialog_file:
+            dialog_file.write(self.formatted_message_history())
 
     def load_facts(self):
         try:

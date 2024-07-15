@@ -271,64 +271,12 @@ class WebSearcher:
 
         return combined_result
 
-    def search(self, query: str) -> str:
-        first_line_providers = ["google"]
-        backup_providers = ["perplexity", "tavily"]
-
-        try:
-            loop = asyncio.get_event_loop()
-
-            # use the loop to run your function
-            result_1 = loop.run_until_complete(self.search_providers_async(query, first_line_providers))
-            logger.debug(f"result 1: {result_1}")
-
-            prompt = (f"Besides results from internet search below, "
-                      f"do you need additional details to answer the question: "
-                      f"{query}? Simply answer Yes or No, nothing else. \n\n{result_1}")
-            result = self.ai_model.get_response([{"role": "user", "content": prompt}])
-
-            combined_result = result_1
-            if 'Yes' in result:
-                result_2 = loop.run_until_complete(self.search_providers_async(query, backup_providers))
-                logger.debug(f"result 2: {result_2}")
-                combined_result += "\n\n" + result_2
-
-            logger.debug(f"\n---------\n{query} result: {combined_result}")
-
-            prompt = (f"Answer short. Based on result from internet search below, what is the answer to the question: "
-                      f"{query}\n\n{combined_result}")
-            result = self.ai_model.get_response([{"role": "user", "content": prompt}])
-
-            logger.debug(f"Final search result for query '{query}' is: {result}")
-            return result
-
-        except Exception as e:
-            print(f"Error performing web search: {e}")
-            raise
-
     async def search_async(self, query: str) -> str:
         start_time = time.time()
 
-        # first_line_providers = ["google", "ddgs"]
-        # backup_providers = ["perplexity", "tavily"]
-        providers = ["google", "google", "google", "tavily", "perplexity"]
+        providers = ["google", "google", "tavily", "perplexity"]
 
         try:
-            # result_1 = await self.search_providers_async(query, first_line_providers)
-            # logger.debug(f"result 1: {result_1}")
-            #
-            # prompt = (f"Answer Yes or No, nothing else. Besides results from internet search below, "
-            #           f"do you need more information to answer the question: "
-            #           f"{query}\n\n{result_1}")
-            # result = self.ai_model.get_response([{"role": "user", "content": prompt}])
-            # logger.debug(f"need more information? {result}")
-            #
-            # combined_result = result_1
-            # if 'Yes' in result:
-            #     result_2 = await self.search_providers_async(query, backup_providers)
-            #     logger.debug(f"result 2: {result_2}")
-            #     combined_result += "\n\n" + result_2
-
             combined_result = await self.search_providers_async(query, providers)
 
             logger.debug(f"\n---------\n{query} result: {combined_result}")
@@ -347,46 +295,6 @@ class WebSearcher:
             raise
 
 
-async def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[str, List[str]]:
-    """
-    Process the input string, extract search queries, perform web searches, and return modified string and results.
-
-    Args:
-        input_string (str): The input string that may contain web search queries.
-        searcher (Tavily): An instance of the web_search class.
-
-    Returns:
-        Tuple[str, List[str]]: A tuple containing the modified string and a list of web search results.
-    """
-    # Regular expression to match {internet query: xxx} pattern
-    pattern = r'\$internet query:(.*?)\$'
-
-    logger.debug(f"Searching {input_string}")
-
-    # Find all matches
-    matches = re.findall(pattern, input_string)
-
-    # List to store search results
-    search_results = []
-
-    # Process each match
-    for match in matches:
-        logger.debug(f"Performing web search for: {match}")
-        try:
-            result = await searcher.search_async(match)
-            search_results.append(result)
-        except Exception as e:
-            search_results.append(f"Error performing search: {str(e)}")
-
-    # Remove all {internet query: xxx} substrings from the input string
-    modified_string = re.sub(pattern, '', input_string)
-
-    # Remove any extra whitespace that might have been left
-    modified_string = ' '.join(modified_string.split())
-
-    return (modified_string, search_results)
-
-
 async def loop():
     config = Config()
     web_searcher = WebSearcher(config)
@@ -394,16 +302,6 @@ async def loop():
         query = input(">")
         result = await web_searcher.search_async(query)
         print(result)
-
-
-def main():
-    config = Config()
-    web_searcher = WebSearcher(config)
-    while True:
-        query = input(">")
-        result = web_searcher.search(query)
-        print(result)
-
 
 
 if __name__ == "__main__":
@@ -416,4 +314,3 @@ if __name__ == "__main__":
 
     asyncio.run(loop())
 
-    # main()
