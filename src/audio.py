@@ -226,7 +226,7 @@ class SpeechTranscriber:
 
             def start_idle():
                 nonlocal status, time_breathing_started, breathing_on, player_process
-                logger.info('Ready to listen...')
+                logger.debug('Ready to listen...')
                 if player_process is None or not player_process.is_playing():
                     self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
                     self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
@@ -235,21 +235,21 @@ class SpeechTranscriber:
 
             def start_listening():
                 nonlocal status, breathing_on, recoding_started_at
-                logger.info('Recording audio...')
+                logger.debug('Recording audio...')
                 self.leds.update(Leds.rgb_on(self.led_recording_color))
                 breathing_on = False
                 recoding_started_at = time.time()
 
             def start_processing():
                 nonlocal status, record_more
-                logger.info('Processing audio...')
+                logger.debug('Processing audio...')
                 self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_processing_color))
                 record_more = self.number_of_chuncks_to_record_after_button_depressed
 
             def stop_breathing():
                 nonlocal breathing_on
-                logger.info('Breathing off')
+                logger.debug('Breathing off')
                 self.leds.update(Leds.rgb_off())
                 breathing_on = False
 
@@ -284,12 +284,12 @@ class SpeechTranscriber:
                 if (status == RecordingStatus.NOT_STARTED) and self.button_is_pressed:
                     stop_playing()
                     start_listening()
-                    logger.info(f"{len(chunks_deque)} audio chunks buffered")
+                    logger.debug(f"{len(chunks_deque)} audio chunks buffered")
                     status = RecordingStatus.STARTED
                     continue
 
                 if not chunks_deque:
-                    logger.info("No audio chunk available")
+                    logger.debug("No audio chunk available")
 
                     import wave
 

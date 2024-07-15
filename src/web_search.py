@@ -71,7 +71,7 @@ class Google(SearchProvider):
     def search(self, term: str) -> str:
         start_time = time.time()
         tree = self._fetch_data(term, "en")
-        logger.info(f"Google search fetch_data time: {time.time() - start_time}")
+        logger.debug(f"Google search fetch_data time: {time.time() - start_time}")
 
         selectors = [".sXLaOe", ".hgKElc", ".wx62f", ".HwtpBd", ".yxjZuf span"]
         results = [self._get_text(tree, selector) for selector in selectors]
@@ -83,8 +83,7 @@ class Google(SearchProvider):
         brief_result = "; ".join(filter(None, results))
         result = brief_result or a2 or a1
 
-        duration = time.time() - start_time
-        logger.info(f"Google search took {duration:.2f} seconds")
+        logger.debug(f"Google search took {(time.time() - start_time):.2f} seconds")
         return result
 
 
@@ -110,7 +109,7 @@ class GoogleCustomSearch(SearchProvider):
 
             # Process and return the results
             text_result =  "\n".join([item['snippet'] for item in results['items']]) if 'items' in results else ""
-            logger.info(f"Google Custom Search search took {time.time() - start_time} seconds")
+            logger.debug(f"Google Custom Search search took {time.time() - start_time} seconds")
             return text_result
 
         except requests.RequestException as e:
@@ -133,7 +132,7 @@ class Perplexity(SearchProvider):
         ]
         response: str = self.model.get_response(messages)
         duration = time.time() - start_time
-        logger.info(f"Perplexity search took {duration:.2f} seconds")
+        logger.debug(f"Perplexity search took {duration:.2f} seconds")
         return response
 
 
@@ -160,7 +159,7 @@ class Tavily(SearchProvider):
             # Parse and return the JSON response
             answer =  response.json()["answer"]
             duration = time.time() - start_time
-            logger.info(f"Tavily search took {duration:.2f} seconds")
+            logger.debug(f"Tavily search took {duration:.2f} seconds")
             return answer
 
         except requests.exceptions.RequestException as e:
@@ -237,7 +236,7 @@ class DuckDuckGoSearch(SearchProvider):
         # make it safe
         results = results.encode("utf-8", "ignore").decode("utf-8")
         duration = time.time() - start_time
-        logger.info(f"DDGS search took {duration:.2f} seconds")
+        logger.debug(f"DDGS search took {duration:.2f} seconds")
         return results
 
 
@@ -312,7 +311,7 @@ class WebSearcher:
 
         # first_line_providers = ["google", "ddgs"]
         # backup_providers = ["perplexity", "tavily"]
-        providers = ["google_cs", "google", "google", "google", "tavily", "perplexity"]
+        providers = ["google", "google", "google", "tavily", "perplexity"]
 
         try:
             # result_1 = await self.search_providers_async(query, first_line_providers)
@@ -332,7 +331,7 @@ class WebSearcher:
 
             combined_result = await self.search_providers_async(query, providers)
 
-            logger.info(f"\n---------\n{query} result: {combined_result}")
+            logger.debug(f"\n---------\n{query} result: {combined_result}")
 
             prompt = (f"Answer short. Based on result from internet search below, what is the answer to the question: "
                       f"{query}\n\n{combined_result}")
@@ -340,7 +339,7 @@ class WebSearcher:
 
             logger.info(f"Final search result for query '{query}' is: {result}")
             duration = time.time() - start_time
-            logger.info(f"Web search took {duration:.2f} seconds")
+            logger.debug(f"Web search took {duration:.2f} seconds")
             return result
 
         except Exception as e:
@@ -362,7 +361,7 @@ async def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[
     # Regular expression to match {internet query: xxx} pattern
     pattern = r'\$internet query:(.*?)\$'
 
-    logger.info(f"Searching {input_string}")
+    logger.debug(f"Searching {input_string}")
 
     # Find all matches
     matches = re.findall(pattern, input_string)
@@ -372,7 +371,7 @@ async def process_and_search(input_string: str, searcher: WebSearcher) -> Tuple[
 
     # Process each match
     for match in matches:
-        logger.info(f"Performing web search for: {match}")
+        logger.debug(f"Performing web search for: {match}")
         try:
             result = await searcher.search_async(match)
             search_results.append(result)
