@@ -235,7 +235,7 @@ class ConversationManager:
         Returns:
             str: A formatted string representation of the message history.
         """
-        return "\n\n".join([f'{msg["role"]}:\n    {indent_content(msg["content"])}' for msg in self.message_history])
+        return "\n\n".join([f'{msg["role"]}:\n{indent_content(msg["content"])}' for msg in self.message_history])
 
     def save_dialog(self):
         # save message history to dialog.txt
