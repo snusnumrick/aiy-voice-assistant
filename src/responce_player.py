@@ -24,18 +24,11 @@ def emotions_prompt() -> str:
         Returns:
             str: A prompt explaining how to use LED commands to express emotions.
         """
-    # return ("У тебя есть эмоции (или ты можешь симулировать их). "
-    #         "Ты можешь выразить их управляя цветным фонариком с рассеяным светом. "
-    #         "Чтобы отдать команду фонарику, вставь в текст твоего сообшения "
-    #         '$emotion: {"color": [R, G, B], "behavior": "continuous/blinking/breathing", '
-    #         '"brightness": "dark/medium/bright", "cycle": X}$, '
-    #         "где R, G, B - компоненты цвета от 0 до 255; "
-    #         "X - продолжительность цикла в секундах для режимов blinking и breathing. "
-    #         "Сообщать об эмоциях надо перед текстом, к которому они относятся. "
-    #         "Отправить пустую эмоцию для выключения фонарика. ")
-    return ('Express emotions with light (always place before relevant text): '
-            '$emotion:{"color":[R,G,B] (0-255),"behavior":"continuous/blinking/breathing",'
-            '"brightness":"dark/medium/bright","cycle":X}$. Empty emotion turns off light. ')
+    return ('Express emotions with light and tone of voice (always place before relevant text): '
+            '$emotion:{"light":{"color":[R,G,B] (0-255),"behavior":"continuous/blinking/breathing",'
+            '"brightness":"dark/medium/bright","period":X (sec)}}, {"voice":{"tone":"plain/happy"}}}$. '
+            'Empty emotion or emotion with empty light turns off light. '
+            'Empty emotion or emotion with empty voice reset tone to plain.')
 
 
 def extract_emotions(text: str) -> List[Tuple[dict, str]]:
@@ -170,9 +163,18 @@ class ResponsePlayer:
     def _play_sequence(self):
         """Internal method to play the sequence of audio files and control LED behavior."""
 
-        for light_behavior, audio_file in self.playlist:
+        for emotion, audio_file in self.playlist:
             if not self._is_playing:
                 break
+
+            light_behavior = {}
+            if "light" in emotion:
+                light_behavior = emotion["light"]
+
+            voice = {}
+            if "voice" in emotion:
+                voice = emotion["voice"]
+                logger.info(f"Voice: {voice}")
 
             change_light_behavior(light_behavior, self.leds)
 
