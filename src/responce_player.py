@@ -171,11 +171,6 @@ class ResponsePlayer:
             if "light" in emotion:
                 light_behavior = emotion["light"]
 
-            voice = {}
-            if "voice" in emotion:
-                voice = emotion["voice"]
-                logger.info(f"Voice: {voice}")
-
             change_light_behavior(light_behavior, self.leds)
 
             self.current_process = play_wav_async(audio_file)

@@ -20,7 +20,7 @@ from .audio import SpeechTranscriber, synthesize_speech, synthesize_speech_async
 from .config import Config
 from .conversation_manager import ConversationManager
 from .responce_player import ResponsePlayer
-from .tts_engine import TTSEngine
+from .tts_engine import TTSEngine, Tone
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,11 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
                             tasks = []
                             for n, (emo, response_text) in enumerate(ai_response):
                                 audio_file_name = append_suffix(original_audio_file_name, str(n+1))
-                                task = asyncio.create_task(tts_engine.synthesize_async(session, response_text, audio_file_name))
+                                tone = Tone.PLAIN
+                                if 'voice' in emo and 'tone' in emo['voice'] and emo['voice']['tone'] == "happy":
+                                    tone = Tone.HAPPY
+                                task = asyncio.create_task(tts_engine.synthesize_async(session, response_text,
+                                                                                       audio_file_name, tone))
                                 tasks.append((emo, audio_file_name, task))
 
                             # Step 4: Wait for all synthesis tasks to complete and build playlist

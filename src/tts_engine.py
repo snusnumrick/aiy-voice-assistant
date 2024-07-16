@@ -246,9 +246,10 @@ class YandexTTSEngine(TTSEngine):
             filename (str): The path to save the synthesized audio file.
             tone (tone): The tone to use.
         """
+        model = self.model_happy if tone == Tone.PLAIN else self.model_plain
         try:
             logger.debug(f"Synthesizing text: {text[:50]}...")
-            result = self.model.synthesize(text, raw_format=False)
+            result = model.synthesize(text, raw_format=False)
             result.export(filename, 'wav')
             logger.debug(f"Audio content written to file {filename}")
         except Exception as e:
