@@ -1,25 +1,24 @@
+import asyncio
 import json
 import logging
 import os
-import re
-import sys
-import requests
-import time
-import asyncio
-from typing import List, Tuple, Optional
-from concurrent.futures import ThreadPoolExecutor
-from abc import ABC, abstractmethod
-from duckduckgo_search import DDGS
-import httpx
-from lxml import html
 import random
+import sys
+import time
+from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
+from typing import Optional
+
+import httpx
+import requests
+from duckduckgo_search import DDGS
+from lxml import html
 
 if __name__ == "__main__":
     # add current directory to python path
     sys.path.append(os.getcwd())
 
 from src.config import Config
-
 from src.ai_models import OpenRouterModel
 
 logger = logging.getLogger(__name__)
@@ -30,8 +29,7 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.157 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36",
-]
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36", ]
 
 
 class SearchProvider(ABC):
@@ -95,11 +93,7 @@ class GoogleCustomSearch(SearchProvider):
 
     def search(self, term: str) -> str:
         start_time = time.time()
-        params = {
-            'q': term,
-            'key': self.api_key,
-            'cx': self.cs_key,
-        }
+        params = {'q': term, 'key': self.api_key, 'cx': self.cs_key, }
 
         try:
             response = requests.get(self.base_url, params=params)
@@ -108,7 +102,7 @@ class GoogleCustomSearch(SearchProvider):
             results = response.json()
 
             # Process and return the results
-            text_result =  "\n".join([item['snippet'] for item in results['items']]) if 'items' in results else ""
+            text_result = "\n".join([item['snippet'] for item in results['items']]) if 'items' in results else ""
             logger.debug(f"Google Custom Search search took {time.time() - start_time} seconds")
             return text_result
 
@@ -124,12 +118,7 @@ class Perplexity(SearchProvider):
 
     def search(self, query: str) -> str:
         start_time = time.time()
-        messages = [
-            {
-                "role": "user",
-                "content": (query),
-            },
-        ]
+        messages = [{"role": "user", "content": (query), }, ]
         response: str = self.model.get_response(messages)
         duration = time.time() - start_time
         logger.debug(f"Perplexity search took {duration:.2f} seconds")
@@ -157,7 +146,7 @@ class Tavily(SearchProvider):
             response.raise_for_status()  # Raise an exception for bad status codes
 
             # Parse and return the JSON response
-            answer =  response.json()["answer"]
+            answer = response.json()["answer"]
             duration = time.time() - start_time
             logger.debug(f"Tavily search took {duration:.2f} seconds")
             return answer
@@ -172,12 +161,8 @@ class Tavily(SearchProvider):
 
 
 class PersistentDDGS(DDGS):
-    def _get_url(
-            self, method: str, url: str, **kwargs
-    ) -> Optional[httpx._models.Response]:
-        resp = self._client.request(
-            method, url, follow_redirects=True, **kwargs
-        )
+    def _get_url(self, method: str, url: str, **kwargs) -> Optional[httpx._models.Response]:
+        resp = self._client.request(method, url, follow_redirects=True, **kwargs)
         if resp.status_code == 202:
             # try again in a few seconds if there is no answer yet
             if 'Location' in resp.headers:
@@ -213,25 +198,15 @@ class DuckDuckGoSearch(SearchProvider):
             return ""
         try:
             search_results = [
-                {
-                    "title": r["title"],
-                    "url": r["href"],
-                    **({"exerpt": r["body"]} if r.get("body") else {}),
-                }
-                for r in self.ddgs.text(query)
-            ]
+                {"title": r["title"], "url": r["href"], **({"exerpt": r["body"]} if r.get("body") else {}), } for r in
+                self.ddgs.text(query)]
         except Exception as e:
             logger.error(f"DDGS dsearch failed: {e}")
             return ""
 
         results = "## Search results\n" + "\n\n".join(
-            "### \"{}\"\n**URL:** {}  \n**Excerpt:** {}".format(
-                r['title'],
-                r['url'],
-                "\"{}\"".format(r.get("exerpt")) if r.get("exerpt") else "N/A"
-            )
-            for r in search_results
-        )
+            "### \"{}\"\n**URL:** {}  \n**Excerpt:** {}".format(r['title'], r['url'],
+                "\"{}\"".format(r.get("exerpt")) if r.get("exerpt") else "N/A") for r in search_results)
 
         # make it safe
         results = results.encode("utf-8", "ignore").decode("utf-8")
@@ -261,9 +236,8 @@ class WebSearcher:
             results = await asyncio.gather(*tasks)
 
         combined_result = ""
-        joined_results = zip(enabled_providers,
-                             ["Result from {}: \n{}\n".format(prov, res) for prov, res in
-                              zip(enabled_providers, results)])
+        joined_results = zip(enabled_providers, ["Result from {}: \n{}\n".format(prov, res) for prov, res in
+                                                 zip(enabled_providers, results)])
 
         for provider, result in joined_results:
             logger.info(f"\n---------\n{provider} result: {result}")
@@ -313,4 +287,3 @@ if __name__ == "__main__":
     load_dotenv()
 
     asyncio.run(loop())
-

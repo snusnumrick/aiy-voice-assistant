@@ -13,7 +13,7 @@ import sys
 from collections import deque
 from typing import List, Dict, Tuple, AsyncGenerator, Deque
 
-from src.tools import indent_content
+from src.tools import indent_content, format_message_history
 from src.responce_player import extract_emotions
 
 if __name__ == "__main__":
@@ -138,13 +138,28 @@ class ConversationManager:
                                    "пошли мне сообщение в таком формате: $remember: <текст, который тебе нужно запомнить>$. "
                                    "Таких фактов в твоем сообщении тоже может быть несколько. "
                                    "Например, $remember: <первый текст, который тебе нужно запомнить>$ "
-                                   "{remember: $второрй текст, который тебе нужно запомнить>$."
+                                   "{remember: $второрй текст, который тебе нужно запомнить>$. "
+                                   "Когда не совсем понятно, какое ударение надо ставить в слове, "
+                                   "используй знак "+" перед предполагаемой ударной гласной. "
+                                   "Знак ударения "+" всегда ставится непосредственно перед "
+                                   "ударной гласной буквой в слове. "
+                                   "Например: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
+                                   "Этот знак никогда не ставится в конце слова или перед согласными. "
+                                   "Его единственная функция - указать на ударный гласный звук."
                                    "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
                                    "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
                                    "$rule: <текст нового правила>$. "
                                    "Таких запросов в твоем сообщении тоже может быть несколько. ")
         self.hard_rules_english = ("For web searches: $internet query:<query in English>$. "
-                                   "To remember: $remember:<text>$. For new rules: $rule:<text>$ ")
+                                   "To remember: $remember:<text>$. For new rules: $rule:<text>$ "
+                                   "When it's not entirely clear where to place the stress in a word, "
+                                   "use the '+' sign before the presumed stressed vowel. "
+                                   "The stress mark '+' is always placed directly before "
+                                   "the stressed vowel letter in the word. "
+                                   "For example: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
+                                   "This sign is never placed at the end of a word or before consonants. "
+                                   "Its sole function is to indicate the stressed vowel sound."
+                                   )
         self.hard_rules = self.hard_rules_russian
         self.default_system_prompt_russian = (
             "Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
@@ -235,7 +250,7 @@ class ConversationManager:
         Returns:
             str: A formatted string representation of the message history.
         """
-        return "\n\n".join([f'{msg["role"]}:\n{indent_content(msg["content"], max_width)}' for msg in self.message_history])
+        return format_message_history(self.message_history, max_width)
 
     def save_dialog(self):
         # save message history to dialog.txt

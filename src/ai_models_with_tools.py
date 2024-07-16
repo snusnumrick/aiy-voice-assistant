@@ -7,7 +7,6 @@ import aiohttp
 
 from src.ai_models import ClaudeAIModel
 from src.config import Config
-# from src.llm_tools import WebSearchTool
 from src.tools import get_token_count
 
 logger = logging.getLogger(__name__)

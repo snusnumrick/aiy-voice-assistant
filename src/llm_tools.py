@@ -1,65 +1,22 @@
 import asyncio
 import logging
 from collections import deque
-from typing import Dict, Deque
-
-from aiy.leds import Leds
+from typing import Deque
 
 from src.ai_models import AIModel, ClaudeAIModel
-from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
-from src.web_search import WebSearcher
+from src.tools import format_message_history
 
 logger = logging.getLogger(__name__)
-
-
-class WebSearchTool:
-
-    def tool_definition(self) -> Tool:
-        return Tool(name="internet_search", description="Search Internet", iterative=True, parameters=[
-            ToolParameter(name='query', type='string', description='A query to search for, preferable in English')],
-                    processor=self.do_search_async)
-
-    def __init__(self, config: Config, leds: Leds):
-        self.web_searcher = WebSearcher(config)
-        self.leds = leds
-        self.led_processing_color = config.get('processing_color', (0, 1, 0))  # dark green
-        self.led_processing_blink_period_ms = config.get('processing_blink_period_ms', 300)
-
-    def _start_processing(self):
-        # self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
-        # self.leds.update(Leds.rgb_pattern(self.led_processing_color))
-        pass
-
-    def _stop_processing(self):
-        # self.leds.update(Leds.rgb_off())
-        pass
-
-    def do_search(self, parameters: Dict[str, any]) -> str:
-        if 'query' in parameters:
-            self._start_processing()
-            result = self.web_searcher.search(parameters['query'])
-            self._stop_processing()
-            return result
-        logger.error(f"missing  parameter  query:  {parameters}")
-        return ""
-
-    async def do_search_async(self, parameters: Dict[str, any]) -> str:
-        if 'query' in parameters:
-            self._start_processing()
-            result = await  self.web_searcher.search_async(parameters['query'])
-            self._stop_processing()
-            return result
-        logger.error(f"missing  parameter  query:  {parameters}")
-        return ""
 
 
 async def summarize_and_compress_history(message_history: Deque, ai_model: AIModel, config: Config):
     """
     Summarize  and  compress  the  conversation  history  to  reduce  token  count.
     """
-    summary_prompt = config.get('summary_prompt', "Summarize  the  key  points  of  conversation,  "
-                                                  "focusing  on  the  most  important  facts  and  context.  Be  concise:\n\n")
+    summary_prompt = config.get('summary_prompt', '''
+        Обобщите основные моменты разговора, сосредоточившись на наиболее важных фактах и контексте. 
+        Будьте лаконичны. Начните ответ с "Ранее мы говорили о "''')
     min_number_of_messages = config.get('min_number_of_messages', 10)
     new_history = []
     if message_history[0]["role"] == "system":
@@ -71,7 +28,11 @@ async def summarize_and_compress_history(message_history: Deque, ai_model: AIMod
     async  for response_part in ai_model.get_response_async([{"role": "user", "content": summary_prompt}]):
         summary += response_part
     # logger.info(f"Summarized  conversation:  {summary}")
-    new_history.append({"role": "system", "content": summary})
+    # should be only one (first) system message and user and assistant should follow each other
+    if not message_history or message_history[0]["role"] != "user":
+        new_history.append({"role": "user", "content": summary})
+    else:
+        message_history[0]['content'] = summary + "\n---------\n" + message_history[0]['content']
     while message_history:
         new_history.append(message_history.popleft())
     return deque(new_history)
@@ -190,7 +151,7 @@ $emotion: {"color": [0, 255, 255], "behavior": "continuous", "brightness": "medi
 Только в моём случае это не очень смешно, а скорее досадно. Спасибо тебе за твоё терпение и настойчивость.
 Ты прав, что обращаешь на это внимание.Может, мне стоит написать это правило большими буквами у себя в памяти? 
 Или, может, ты посоветуешь какой-нибудь эффективный способ, чтобы я наконец-то запомнил это правило раз и навсегда?'''},
-                       {"role": "user", "conternt": "Попробуй как нибудь по другому сформулировать."},
+                       {"role": "user", "content": "Попробуй как нибудь по другому сформулировать."},
                        {"role": "assistant", "content": '''
 $emotion: {"color": [255, 255, 0], "behavior": "breathing", "brightness": "medium", "period": 2}$ 
 Хорошая идея, Антон! Давай попробуем сформулировать это правило по-другому.
@@ -223,9 +184,10 @@ $emotion: {"color": [255, 255, 0], "behavior": "continuous", "brightness": "medi
 Твой подход к обучению и организации информации впечатляет.
 У тебя есть опыт в сфере образования или управления знаниями?'''}]
 
+    config.config['min_number_of_messages'] = 3
     new_history = await summarize_and_compress_history(deque(message_history), ai_model, config)
 
-    print(new_history)
+    print(format_message_history(new_history))
 
 
 if __name__ == "__main__":

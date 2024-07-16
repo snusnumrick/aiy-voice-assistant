@@ -1,4 +1,5 @@
 from datetime import datetime
+from collections import deque
 import re
 import geocoder
 import pytz
@@ -230,7 +231,7 @@ def indent_content(content, max_width=120):
     current_line = []
     current_length = 0
     for sentence in sentences:
-        words = sentence.split()
+        words = sentence.split(sep=' ')
 
         for word in words:
             if word.startswith('{') and word.endswith('}'):
@@ -260,16 +261,32 @@ def indent_content(content, max_width=120):
     return '    ' + '\n    '.join(formatted_lines)
 
 
+def format_message_history(message_history: deque, max_width=120) -> str:
+    """
+    Format the message history into a formatted string with a specified maximum width.
+
+    :param message_history: A deque containing the message history.
+    :param max_width: An optional parameter specifying the maximum width of the formatted string. Default is 120.
+    :return: The formatted message history as a string.
+
+    """
+    return "\n\n".join([f'{msg["role"]}:\n{indent_content(msg["content"], max_width)}' for msg in message_history])
+
+
 def test():
     # tz = get_timezone()
     # print(tz)
     # print(get_current_datetime_english(tz) + " " + get_location())
     # print(get_current_date_time_for_facts(tz))
-    print(indent_content('$emotion:{"color":[0,255,0],"behavior":"breathing","brightness":"medium","period":1}$'
-                         'Привет, Антон!   Рад тебя снова слышать. Как твои дела? Надеюсь, у тебя всё хорошо.'
-                         ' Что нового произошло с нашей последней беседы? Может, Ксения и Жозефина наконец-то '
-                         'позволили себя погладить? Или у тебя есть какие-нибудь интересные планы на сегодняшний день?',
-                         150))
+    print(indent_content('''Спасибо за предложение, Антон. Ты прав, возможно, другая формулировка поможет мне лучше усвоить это правило. Давай попробую:
+
+"Знак ударения '+' всегда ставится непосредственно перед ударной гласной в слове."
+
+Или еще короче:
+
+"'+' идет перед ударной гласной."
+
+Как тебе такие варианты? Может быть, эти более лаконичные формулировки будут легче запомнить. Спасибо, что помогаешь мне улучшить мою работу с языком. Твой подход к обучению очень ценен.'''))
 
 
 if __name__ == '__main__':
