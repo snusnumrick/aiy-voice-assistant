@@ -209,6 +209,11 @@ class ConversationManager:
         # update system message
         self.message_history[0] = {"role": "system", "content": self.get_system_prompt()}
 
+        # cleanup in case of previous errors
+        if self.message_history[-1]['role'] == "user":
+            logger.warning(f"ignoring previous user message: {self.message_history[-1]['content']}")
+            self.message_history.pop()
+
         self.message_history.append({"role": "user", "content": text})
 
         if get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
