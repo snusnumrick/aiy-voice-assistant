@@ -1,8 +1,9 @@
-from typing import List, Dict, Callable, AsyncGenerator, Awaitable
-from dataclasses import dataclass
-import logging
 import asyncio
 import json
+import logging
+from dataclasses import dataclass
+from typing import List, Dict, Callable, AsyncGenerator, Awaitable
+
 import aiohttp
 
 from src.ai_models import ClaudeAIModel
@@ -31,15 +32,13 @@ class Tool:
 class ClaudeAIModelWithTools(ClaudeAIModel):
     def __init__(self, config: Config, tools: List[Tool]) -> None:
         super().__init__(config)
-        self.tools_description = [{'name': t.name,
-                                   'description': t.description,
-                                   'input_schema': {'type': 'object',
-                                                    'properties': {
-                                                        p.name: {
-                                                            'type': p.type,
-                                                            'description': p.description}
-                                                        for p in
-                                                        t.parameters}}}
+        self.tools_description = [{'name': t.name, 'description': t.description, 'input_schema': {'type': 'object',
+                                                                                                  'properties': {
+                                                                                                      p.name: {
+                                                                                                          'type': p.type,
+                                                                                                          'description': p.description}
+                                                                                                      for p in
+                                                                                                      t.parameters}}}
                                   for t in tools]
         self.tools_processors = {t.name: t.processor for t in tools}
         self.tools = {t.name: t for t in tools}
@@ -60,7 +59,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 tool_result = tool_processor(tool_parameters)
                 if self.tools[tool_name].iterative:
                     messages.append({"role": "user", "content": [
-                        {'type': 'tool_result',  'content': tool_result, "tool_use_id": tool_use_id}]})
+                        {'type': 'tool_result', 'content': tool_result, "tool_use_id": tool_use_id}]})
                     response = self.get_response(messages)
                     response_text += response
                 pass
@@ -90,7 +89,10 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             logger.info(f"tokens usage: {response_dict['usage']} vs estimate {get_token_count(message_list)}")
         if 'content' not in response_dict:
             logger.error(f"No content in response: {json.dumps(response_dict, indent=2)}")
-            return
+            if 'error' in response_dict:
+                response_dict['content'] = [{"type": "text", "text": response_dict["error"]["message"]}]
+            else:
+                return
         message_list.append({"role": "assistant", "content": response_dict['content']})
         for content in response_dict['content']:
             if content['type'] == 'text':
@@ -104,7 +106,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 tool_result = await tool_processor(tool_parameters)
                 if self.tools[tool_name].iterative:
                     message_list.append({"role": "user", "content": [
-                        {'type': 'tool_result',  'content': tool_result, "tool_use_id": tool_use_id}]})
+                        {'type': 'tool_result', 'content': tool_result, "tool_use_id": tool_use_id}]})
                     async for response in self.get_response_async(message_list):
                         yield response
 
@@ -146,7 +148,7 @@ async def loop():
     #         messages.append({"role": "assistant", "content": response_part})
     #         print(response_part, flush=True)
 
-        pass
+    pass
 
 
 if __name__ == "__main__":

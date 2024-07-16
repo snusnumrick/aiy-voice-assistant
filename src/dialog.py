@@ -90,8 +90,6 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
     async with aiohttp.ClientSession() as session:
         while True:
             try:
-                # cleanup
-
                 # for viz purposes
                 conversation_manager.save_dialog()
 
