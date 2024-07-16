@@ -246,7 +246,7 @@ class YandexTTSEngine(TTSEngine):
             filename (str): The path to save the synthesized audio file.
             tone (tone): The tone to use.
         """
-        model = self.model_happy if tone == Tone.PLAIN else self.model_plain
+        model = self.model_happy if tone == Tone.HAPPY else self.model_plain
         try:
             logger.debug(f"Synthesizing text: {text[:50]}...")
             result = model.synthesize(text, raw_format=False)
@@ -271,7 +271,7 @@ class YandexTTSEngine(TTSEngine):
             )
 
         loop = asyncio.get_event_loop()
-        model = self.model_plain if tone == Tone.HAPPY else self.model_plain
+        model = self.model_happy if tone == Tone.HAPPY else self.model_plain
         result = await loop.run_in_executor(None, synthesize_wrapper, {"model": model, "text":text})
 
         async with aiofiles.open(filename, "wb") as out:
