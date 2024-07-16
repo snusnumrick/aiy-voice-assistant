@@ -231,7 +231,7 @@ def indent_content(content, max_width=120):
     current_line = []
     current_length = 0
     for sentence in sentences:
-        words = sentence.split(sep=' ')
+        words = sentence.split()
 
         for word in words:
             if word.startswith('{') and word.endswith('}'):
