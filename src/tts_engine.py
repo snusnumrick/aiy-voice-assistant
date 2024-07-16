@@ -235,7 +235,7 @@ class YandexTTSEngine(TTSEngine):
         )
 
         logger.info(
-            f"Initialized Yandex TTS Engine with language {self.language_code}, voice {self.voice}, and role {self.role}")
+            f"Initialized Yandex TTS Engine with language {self.language_code}, voice {self.voice}")
 
     def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN) -> None:
         """
