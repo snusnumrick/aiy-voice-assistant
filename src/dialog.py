@@ -112,7 +112,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
                                 tone = Tone.PLAIN
                                 if 'voice' in emo and 'tone' in emo['voice'] and emo['voice']['tone'] == "happy":
                                     tone = Tone.HAPPY
-                                logger.info('Tone: %s', tone)
+                                logger.debug('Tone: %s', tone)
                                 task = asyncio.create_task(tts_engine.synthesize_async(session, response_text,
                                                                                        audio_file_name, tone))
                                 tasks.append((emo, audio_file_name, task))
