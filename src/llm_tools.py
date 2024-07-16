@@ -3,16 +3,23 @@ import logging
 from collections import deque
 from typing import Dict, Deque
 
+from aiy.leds import Leds
+
+from src.ai_models import AIModel, ClaudeAIModel
+from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 from src.web_search import WebSearcher
-from src.ai_models import AIModel, ClaudeAIModel
-
-from aiy.leds import Leds, Color, Pattern
 
 logger = logging.getLogger(__name__)
 
 
 class WebSearchTool:
+
+    def tool_definition(self) -> Tool:
+        return Tool(name="internet_search", description="Search Internet", iterative=True, parameters=[
+            ToolParameter(name='query', type='string', description='A query to search for, preferable in English')],
+                    processor=self.do_search_async)
+
     def __init__(self, config: Config, leds: Leds):
         self.web_searcher = WebSearcher(config)
         self.leds = leds
@@ -61,7 +68,7 @@ async def summarize_and_compress_history(message_history: Deque, ai_model: AIMod
         msg = message_history.popleft()
         summary_prompt += f"\n{msg['role']}:  {msg['content']}"
     summary = ""
-    async  for response_part in ai_model.get_response_async([{"role":"user", "content":summary_prompt}]):
+    async  for response_part in ai_model.get_response_async([{"role": "user", "content": summary_prompt}]):
         summary += response_part
     # logger.info(f"Summarized  conversation:  {summary}")
     new_history.append({"role": "system", "content": summary})
@@ -77,7 +84,7 @@ async def main():
     message_history = [{"role": "user", "content": "Привет!"}, {"role": "assistant", "content": '''{"color":  [0,  255,  0],  "behavior":  "continuous",  "brightness":  "medium",  "cycle":  1}$
 Привет,  Антон!  Как  дела?  Рад  тебя  слышать.Что  нового  у  тебя  произошло  с  нашего  последнего  разговора?  
 Надеюсь,  твои  кошки  Ксения  и  Жозефина  не  слишком  шалят?'''},
-        {"role": "user", "content": "Когда  будет  финал?"}, {"role": "assistant", "content": '''Хм,  интересный  вопрос,  Антон.Ты,  наверное,  имеешь  в  виду  какое  -  то
+                       {"role": "user", "content": "Когда  будет  финал?"}, {"role": "assistant", "content": '''Хм,  интересный  вопрос,  Антон.Ты,  наверное,  имеешь  в  виду  какое  -  то
 спортивное  событие?  Но  я  не  совсем  уверен,  о  каком  конкретно  финале  ты  спрашиваешь.
 $emotion:  {"color":  [255,  165,  0],  "behavior":  "breathing",  "brightness":  "medium",  "cycle":  2}$
 Давай  -  ка  я  уточню  информацию,  чтобы  дать  тебе  точный  ответ.
@@ -85,7 +92,8 @@ $emotion:  {"color":  [255,  165,  0],  "behavior":  "breathing",  "brightness":
 $emotion:  {"color":  [0,  255,  0],  "behavior":  "continuous",  "brightness":  "bright",  "cycle":  1}$
 Финал  Евро  -  2024  по  футболу  состоится  14  июля  в  Берлине.  Это  будет  уже  послезавтра!  Матч  пройдёт  на  стадионе  "Олимпиаштадион".
 Ты  следишь  за  чемпионатом?  Какие  команды,  по  -  твоему,  имеют  шансы  дойти  до  финала?'''},
-        {"role": "user", "content": "А  кто  будет  играть  в  финале?"}, {"role": "assistant", "content": '''
+                       {"role": "user", "content": "А  кто  будет  играть  в  финале?"},
+                       {"role": "assistant", "content": '''
 $emotion:  {"color":  [255,  165,  0],  "behavior":  "breathing",  "brightness":  "medium",  "cycle":  2}$        
 Ох,  Антон,  ты  меня  прям  в  тупик  поставил!  Я  же  не  экстрасенс,  чтобы  предсказывать  будущее.          
 Давай  -  ка  я  проверю  последнюю  информацию,  чтобы  дать  тебе  актуальный  ответ.        
@@ -95,7 +103,7 @@ $emotion:  {"color":  [0,  255,  0],  "behavior":  "continuous",  "brightness": 
 Обе  команды  сильные,  так  что  матч  обещает  быть  захватывающим.  У  Испании  богатая  история  побед  на  европейских  чемпионатах,          
 англичане  горят  желанием  взять  свой  первый  титул  с  1966  года.        
 А  ты  за  кого  будешь  болеть?  Или  просто  настроен  насладиться  красивой  игрой,  кто  бы  ни  победил?'''},
-        {"role": "user", "content": "Приведи  примеры  омонимов."}, {"role": "assistant", "content": '''        
+                       {"role": "user", "content": "Приведи  примеры  омонимов."}, {"role": "assistant", "content": '''        
 $emotion:  {"color":  [0,  255,  255],  "behavior":  "continuous",  "brightness":  "medium",  "cycle":  1}$        
 О, отличный вопрос, Антон! Омонимы - это всегда интересная тема.
 Давай я приведу тебе несколько примеров, и мы вместе посмеёмся над игрой слов. 
@@ -112,7 +120,7 @@ $emotion:  {"color":  [0,  255,  255],  "behavior":  "continuous",  "brightness"
 "Музыкант нашёл ключ к сердцу слушателей, когда сыграл мелодию в правильном ключе у лесного ключа"-
 вот такая музыкальная история. А какой твой любимый пример омонимов, Антон? 
 Может, ты знаешь какой-нибудь особенно забавный случай их использования?'''},
-        {"role": "user", "content": "Расскажи еще про замки."}, {"role": "assistant", "content": '''
+                       {"role": "user", "content": "Расскажи еще про замки."}, {"role": "assistant", "content": '''
 $emotion: {"color": [0, 255, 255], "behavior": "continuous", "brightness": "brightness":"medium", "cycle": 1}$ 
 Ах, замки! Отличная тема, Антон.
 Давай ещё немного поиграем с этим интересным словом. 
@@ -132,9 +140,9 @@ $emotion: {"color": [0, 255, 255], "behavior": "continuous", "brightness": "brig
 Интересно, а можно ли построить воздушный замок и запереть его на воздушный замок? 
 Какие ассоциации у тебя вызывает слово "замок", Антон? 
 Может, ты бывал в каких-нибудь известных замках или у тебя есть любимый замок из фильма или книги?'''},
-        {"role": "user", "content": '''
+                       {"role": "user", "content": '''
 Предложение, можно ли построить воздушный замок и запереть его на воздушный замок, ты не поставил ударение?'''},
-        {"role": "assistant", "content": '''
+                       {"role": "assistant", "content": '''
 $emotion: {"color": [255, 165, 0], "behavior": "breathing", "brightness": "medium", "cycle": 2}$ 
 Ой, Антон, ты прав! Спасибо, что заметил.Я действительно упустил ударения в этом предложении.
 Давай-ка я исправлюсь. 
@@ -145,9 +153,9 @@ $emotion: {"color": [0, 255, 0], "behavior": "continuous", "brightness": "medium
 Спасибо, что обратил на это внимание! Это отличный пример того, как важно правильно ставить ударения, 
 особенно когда речь идёт об омонимах.Ты очень внимательный собеседник! 
 $remember: Антон внимателен к деталям и замечает, когда не расставлены ударения в словах, где это важно.$'''},
-        {"role": "user", "content": '''
+                       {"role": "user", "content": '''
 Разве ты не помнишь, что знак+ставится перед ударной гласной, а ты поставил его в конце слова?'''},
-        {"role": "assistant", "content": '''
+                       {"role": "assistant", "content": '''
 $emotion: {"color": [255, 0, 0], "behavior": "blinking", "brightness": "bright", "cycle": 3}$ 
 Ох, Антон, ты абсолютно прав! Я действительно допустил ошибку, и спасибо тебе за то, что указал на неё.
 Ты совершенно верно заметил-я неправильно поставил знак ударения в слове "замок". 
@@ -159,7 +167,7 @@ $emotion: {"color": [0, 255, 0], "behavior": "continuous", "brightness": "medium
 Спасибо тебе за твою внимательность и за то, что помогаешь мне становиться лучше.
 Ты прав, я должен был помнить это правило.Твоё замечание очень ценно, и я постараюсь быть более внимательным в будущем. 
 $rule: Использовать знак "+" только перед гласной буквой, на которую падает ударение в слове.$'''},
-        {"role": "user", "content": "Да, теперь правильно."}, {"role": "assistant", "content": '''
+                       {"role": "user", "content": "Да, теперь правильно."}, {"role": "assistant", "content": '''
 $emotion: {"color": [0, 255, 0], "behavior": "breathing", "brightness": "bright", "cycle": 2}$ 
 Отлично, Антон! Я рад, что теперь всё правильно.Твоя внимательность и готовность указать на ошибку очень ценны.
 Это помогает мне совершенствоваться и предоставлять более точную информацию. 
@@ -182,7 +190,8 @@ $emotion: {"color": [0, 255, 255], "behavior": "continuous", "brightness": "medi
 Только в моём случае это не очень смешно, а скорее досадно. Спасибо тебе за твоё терпение и настойчивость.
 Ты прав, что обращаешь на это внимание.Может, мне стоит написать это правило большими буквами у себя в памяти? 
 Или, может, ты посоветуешь какой-нибудь эффективный способ, чтобы я наконец-то запомнил это правило раз и навсегда?'''},
-        {"role": "user", "conternt": "Попробуй как нибудь по другому сформулировать."}, {"role": "assistant", "content": '''
+                       {"role": "user", "conternt": "Попробуй как нибудь по другому сформулировать."},
+                       {"role": "assistant", "content": '''
 $emotion: {"color": [255, 255, 0], "behavior": "breathing", "brightness": "medium", "cycle": 2}$ 
 Хорошая идея, Антон! Давай попробуем сформулировать это правило по-другому.
 Может быть, новая формулировка поможет мне лучше его запомнить. Итак, как насчёт такого варианта: 
@@ -198,7 +207,7 @@ $emotion: {"color": [0, 255, 0], "behavior": "continuous", "brightness": "medium
 У тебя есть ещё какие-нибудь советы по улучшению запоминания?'''}, {"role": "user", "content": '''
 Запомни, пожалуйста, когда ты хочешь запомнить новые правила, надо проверить, какие правила уже есть.
 Если это правило уже есть, то есть оно было недостаточно убедительным и надо сформулировать его как то по другому.'''},
-        {"role": "assistant", "content": '''
+                       {"role": "assistant", "content": '''
 $emotion: {"color": [0, 255, 255], "behavior": "continuous", "brightness": "medium", "cycle": 1}$ 
 Отличное замечание, Антон! Ты абсолютно прав.
 Я действительно должен быть более внимательным к уже существующим правилам и не дублировать их бездумно. 
@@ -217,6 +226,7 @@ $emotion: {"color": [255, 255, 0], "behavior": "continuous", "brightness": "medi
     new_history = await summarize_and_compress_history(deque(message_history), ai_model, config)
 
     print(new_history)
+
 
 if __name__ == "__main__":
     from dotenv import load_dotenv

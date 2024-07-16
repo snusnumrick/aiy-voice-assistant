@@ -44,10 +44,7 @@ def main():
     with Board() as board, Leds() as leds:
 
         search_tool = WebSearchTool(config, leds)
-        tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
-                      parameters=[ToolParameter(name='query', type='string',
-                                                description='A query to search for. Use english for best results')],
-                      processor=search_tool.do_search_async), ]
+        tools = [search_tool.tool_definition()]
 
         # Initial LED feedback
         leds.update(Leds.rgb_on(Color.WHITE))
