@@ -265,7 +265,7 @@ def test():
     # print(tz)
     # print(get_current_datetime_english(tz) + " " + get_location())
     # print(get_current_date_time_for_facts(tz))
-    print(indent_content('$emotion:{"color":[0,255,0],"behavior":"breathing","brightness":"medium","cycle":1}$'
+    print(indent_content('$emotion:{"color":[0,255,0],"behavior":"breathing","brightness":"medium","period":1}$'
                          'Привет, Антон!   Рад тебя снова слышать. Как твои дела? Надеюсь, у тебя всё хорошо.'
                          ' Что нового произошло с нашей последней беседы? Может, Ксения и Жозефина наконец-то '
                          'позволили себя погладить? Или у тебя есть какие-нибудь интересные планы на сегодняшний день?',
