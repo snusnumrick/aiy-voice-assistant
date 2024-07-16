@@ -7,7 +7,7 @@ import aiohttp
 
 from src.ai_models import ClaudeAIModel
 from src.config import Config
-from src.llm_tools import WebSearchTool
+# from src.llm_tools import WebSearchTool
 from src.tools import get_token_count
 
 logger = logging.getLogger(__name__)
@@ -111,40 +111,41 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
 
 def main():
-    from aiy.leds import Leds
-
-    config = Config()
-    with Leds() as leds:
-        search_tool = WebSearchTool(config, leds)
-
-        tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
-                      parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
-                      processor=search_tool.do_search_async), ]
-        model = ClaudeAIModelWithTools(config, tools=tools)
-        messages = [{"role": "user", "content": "who will play at euro 2024 final?"}]
-        response = model.get_response(messages)
-        print(response)
+    # from aiy.leds import Leds
+    #
+    # config = Config()
+    # with Leds() as leds:
+    #     search_tool = WebSearchTool(config, leds)
+    #
+    #     tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
+    #                   parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
+    #                   processor=search_tool.do_search_async), ]
+    #     model = ClaudeAIModelWithTools(config, tools=tools)
+    #     messages = [{"role": "user", "content": "who will play at euro 2024 final?"}]
+    #     response = model.get_response(messages)
+    #     print(response)
+    pass
 
 
 async def loop():
-    from aiy.leds import Leds
-
-    config = Config()
-
-    with Leds() as leds:
-
-        search_tool = WebSearchTool(config, leds)
-
-        tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
-                      parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
-                      processor=search_tool.do_search_async), ]
-        model = ClaudeAIModelWithTools(config, tools=tools)
-        message = "Today is July 11, 2024. who will play at euro 2024 final?"
-        print(message)
-        messages = [{"role": "user", "content": message}]
-        async for response_part in model.get_response_async(messages):
-            messages.append({"role": "assistant", "content": response_part})
-            print(response_part, flush=True)
+    # from aiy.leds import Leds
+    #
+    # config = Config()
+    #
+    # with Leds() as leds:
+    #
+    #     search_tool = WebSearchTool(config, leds)
+    #
+    #     tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
+    #                   parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
+    #                   processor=search_tool.do_search_async), ]
+    #     model = ClaudeAIModelWithTools(config, tools=tools)
+    #     message = "Today is July 11, 2024. who will play at euro 2024 final?"
+    #     print(message)
+    #     messages = [{"role": "user", "content": message}]
+    #     async for response_part in model.get_response_async(messages):
+    #         messages.append({"role": "assistant", "content": response_part})
+    #         print(response_part, flush=True)
 
         pass
 
