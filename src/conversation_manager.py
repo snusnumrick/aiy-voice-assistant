@@ -11,16 +11,16 @@ import os
 import re
 import sys
 from collections import deque
-from typing import List, Dict, Tuple, AsyncGenerator, Deque
+from typing import List, Tuple, AsyncGenerator, Deque
 
-from src.tools import indent_content, format_message_history
 from src.responce_player import extract_emotions
+from src.tools import format_message_history
+from src.llm_tools import optimize_rules
 
 if __name__ == "__main__":
     # add current directory to python path
     sys.path.append(os.getcwd())
 
-from src.ai_models import AIModel
 from src.config import Config
 from src.web_search import WebSearcher
 from src.llm_tools import summarize_and_compress_history
@@ -68,13 +68,13 @@ def extract_facts(text: str, timezone: str) -> Tuple[str, List[str]]:
 
 def extract_rules(text: str, current_timezone: str) -> Tuple[str, List[str]]:
     """
-    Extract rules from the input text and return the modified text and a list of extracted facts.
+    Extract rules from the input text and return the modified text and a list of extracted rules.
 
     Args:
         text (str): The input text to extract facts from.
 
     Returns:
-        Tuple[str, List[str]]: A tuple containing the modified text and a list of extracted facts.
+        Tuple[str, List[str]]: A tuple containing the modified text and a list of extracted rules.
     """
     # Regular expression to match {remember: xxx} pattern
     pattern = r'\$rule:(.*?)\$'
@@ -88,7 +88,8 @@ def extract_rules(text: str, current_timezone: str) -> Tuple[str, List[str]]:
     # Process each match
     for match in matches:
         logger.debug(f"Extracted rule: {match}")
-        rule = get_current_date_time_for_facts(current_timezone) + " : " + match
+        # rule = get_current_date_time_for_facts(current_timezone) + " : " + match
+        rule = match
         extracted_rules.append(rule)
 
     # Remove all {remember: xxx} substrings from the input string
@@ -140,16 +141,16 @@ class ConversationManager:
                                    "Например, $remember: <первый текст, который тебе нужно запомнить>$ "
                                    "{remember: $второрй текст, который тебе нужно запомнить>$. "
                                    "Когда не совсем понятно, какое ударение надо ставить в слове, "
-                                   "используй знак "+" перед предполагаемой ударной гласной. "
-                                   "Знак ударения "+" всегда ставится непосредственно перед "
-                                   "ударной гласной буквой в слове. "
-                                   "Например: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
-                                   "Этот знак никогда не ставится в конце слова или перед согласными. "
-                                   "Его единственная функция - указать на ударный гласный звук."
-                                   "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
-                                   "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
-                                   "$rule: <текст нового правила>$. "
-                                   "Таких запросов в твоем сообщении тоже может быть несколько. ")
+                                   "используй знак " + " перед предполагаемой ударной гласной. "
+                                                       "Знак ударения " + " всегда ставится непосредственно перед "
+                                                                          "ударной гласной буквой в слове. "
+                                                                          "Например: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
+                                                                          "Этот знак никогда не ставится в конце слова или перед согласными. "
+                                                                          "Его единственная функция - указать на ударный гласный звук."
+                                                                          "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
+                                                                          "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
+                                                                          "$rule: <текст нового правила>$. "
+                                                                          "Таких запросов в твоем сообщении тоже может быть несколько. ")
         self.hard_rules_english = ("For web searches: $internet query:<query in English>$. "
                                    "To remember: $remember:<text>$. For new rules: $rule:<text>$ "
                                    "When it's not entirely clear where to place the stress in a word, "
@@ -158,8 +159,7 @@ class ConversationManager:
                                    "the stressed vowel letter in the word. "
                                    "For example: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
                                    "This sign is never placed at the end of a word or before consonants. "
-                                   "Its sole function is to indicate the stressed vowel sound."
-                                   )
+                                   "Its sole function is to indicate the stressed vowel sound.")
         self.hard_rules = self.hard_rules_russian
         self.default_system_prompt_russian = (
             "Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
@@ -263,25 +263,29 @@ class ConversationManager:
         with open(dialog_file_name, "w") as dialog_file:
             dialog_file.write("\n\n" + self.formatted_message_history(150) + "\n\n")
 
-    def load_facts(self):
+    @staticmethod
+    def load_facts():
         try:
             with open('facts.json', 'r') as f:
                 return json.load(f)
         except FileNotFoundError:
             return []
 
-    def save_facts(self, facts):
+    @staticmethod
+    def save_facts(facts):
         with open('facts.json', 'w', encoding='utf8') as f:
             json.dump(facts, f, ensure_ascii=False, indent=4)
 
-    def load_rules(self):
+    @staticmethod
+    def load_rules():
         try:
             with open('rules.json', 'r') as f:
                 return json.load(f)
         except FileNotFoundError:
             return []
 
-    def save_rules(self, rules):
+    @staticmethod
+    def save_rules(rules):
         with open('rules.json', 'w', encoding='utf8') as f:
             json.dump(rules, f, ensure_ascii=False, indent=4)
 
