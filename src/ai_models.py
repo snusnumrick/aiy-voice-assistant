@@ -90,7 +90,11 @@ class ClaudeAIModel(AIModel):
                         "anthropic-version": "2023-06-01"}
 
     def _get_response(self, messages: List[Dict[str, str]]) -> dict:
-        data = {"model": self.model, "max_tokens": self.max_tokens, "messages": messages}
+        system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
+        non_system_message = [m for m in messages if m["role"] != 'system']
+        data = {"model": self.model, "max_tokens": self.max_tokens, "messages": non_system_message}
+        if system_message_combined:
+            data["system"] = system_message_combined
 
         response = requests.post(self.url, headers=self.headers, json=data)
         return json.loads(response.content.decode('utf-8'))
@@ -136,6 +140,8 @@ class ClaudeAIModel(AIModel):
             str: The generated response.
         """
         response_dict = await self._get_response_async(messages)
+        if 'error' in response_dict:
+            raise Exception(response_dict['error'])
         for content in response_dict['content']:
             if content['type'] == 'text':
                 yield content['text']
