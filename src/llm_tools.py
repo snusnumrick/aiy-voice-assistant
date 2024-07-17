@@ -12,18 +12,26 @@ from src.tools import format_message_history
 logger = logging.getLogger(__name__)
 
 
-async def summarize_and_compress_history(message_history: Deque, ai_model: AIModel, config: Config):
+async def summarize_and_compress_history(message_history: Deque, ai_model: AIModel, config: Config) -> Deque:
     """
-    Summarize  and  compress  the  conversation  history  to  reduce  token  count.
+    Summarizes and compresses a history of messages.
+
+    :param message_history: A deque containing the message history.
+    :param ai_model: An instance of the AIModel class.
+    :param config: A dictionary containing configuration settings.
+    :return: A deque containing the summarized and compressed message history.
     """
+    min_number_of_messages_to_symmarize = config.get('min_number_of_messages_to_symmarize', 20)
+    if len(message_history) - 1 < min_number_of_messages_to_symmarize:
+        return message_history
     summary_prompt = config.get('summary_prompt', '''
         Обобщите основные моменты разговора, сосредоточившись на наиболее важных фактах и контексте. 
         Будьте лаконичны. Начните ответ с "Ранее мы говорили о "''')
-    min_number_of_messages = config.get('min_number_of_messages', 10)
+    min_number_of_messages_to_keep = config.get('min_number_of_messages_to_keep', 10)
     new_history = []
     if message_history[0]["role"] == "system":
         new_history.append(message_history.popleft())
-    while len(message_history) > min_number_of_messages:
+    while len(message_history) > min_number_of_messages_to_keep:
         msg = message_history.popleft()
         summary_prompt += f"\n{msg['role']}:  {msg['content']}"
     summary = ""
