@@ -217,8 +217,8 @@ class ConversationManager:
         self.message_history.append({"role": "user", "content": text})
 
         if get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
-            self.message_history = await summarize_and_compress_history(self.message_history, self.summarize_model,
-                                                                        self.config)
+            self.message_history = \
+                await summarize_and_compress_history(self.message_history, self.summarize_model, self.config)
             newline_str = "\n\n"
             logger.info(f'Compressed  conversation:  {(newline_str + self.formatted_message_history(150) + newline_str)}')
 
