@@ -35,6 +35,7 @@ async def summarize_and_compress_history(message_history: Deque, ai_model: AIMod
     while len(message_history) > min_number_of_messages_to_keep:
         msg = message_history.popleft()
         summary_prompt += f"\n{msg['role']}:  {msg['content']}"
+    logger.info(f'Summarizing {len(message_history)} messages. Prompt:\n {summary_prompt}')
     summary = ""
     async  for response_part in ai_model.get_response_async([{"role": "user", "content": summary_prompt}]):
         summary += response_part
