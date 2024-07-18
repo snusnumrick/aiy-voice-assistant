@@ -108,6 +108,7 @@ class SendEmailTool:
                     processor=self.do_send_email)
 
     async def do_send_email(self, parameters: Dict[str, any]):
+        logger.info(f"Sending email {parameters}")
         subject = parameters.get("subject", "")
         body = parameters.get("body", "")
         await send_email_async(subject, body, self.config)
