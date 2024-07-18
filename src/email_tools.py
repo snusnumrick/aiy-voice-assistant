@@ -113,9 +113,9 @@ class SendEmailTool:
         await send_email_async(subject, body, self.config)
 
 
-def main():
+async def main():
     config = Config()
-    send_email("hello", "123", config)
+    await send_email_async("hello", "4", config)
 
 
 if __name__ == "__main__":
@@ -125,4 +125,5 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     load_dotenv()
-    main()
+    asyncio.run(main())
+

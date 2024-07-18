@@ -27,6 +27,7 @@ def emotions_prompt() -> str:
     return ('Express emotions with light and tone of voice (always place before relevant text): '
             '$emotion:{"light":{"color":[R,G,B] (0-255),"behavior":"continuous/blinking/breathing",'
             '"brightness":"dark/medium/bright","period":X (sec)}}, {"voice":{"tone":"plain/happy"}}}$. '
+            'All fields are mandatory. '
             'Empty emotion or emotion with empty light turns off light. '
             'Empty emotion or emotion with empty voice reset tone to plain.')
 
