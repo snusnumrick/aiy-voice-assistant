@@ -21,8 +21,9 @@ async def summarize_and_compress_history(message_history: Deque, ai_model: AIMod
     :param config: A dictionary containing configuration settings.
     :return: A deque containing the summarized and compressed message history.
     """
-    min_number_of_messages_to_symmarize = config.get('min_number_of_messages_to_symmarize', 20)
-    if len(message_history) - 1 < min_number_of_messages_to_symmarize:
+    min_number_of_messages_to_summarize = config.get('min_number_of_messages_to_summarize', 20)
+    if len(message_history) - 1 < min_number_of_messages_to_summarize:
+        logger.warning('Message history is shorter than min_number_of_messages_to_summarize')
         return message_history
     summary_prompt = config.get('summary_prompt', '''
         Обобщите основные моменты разговора, сосредоточившись на наиболее важных фактах и контексте. 
@@ -37,7 +38,7 @@ async def summarize_and_compress_history(message_history: Deque, ai_model: AIMod
     summary = ""
     async  for response_part in ai_model.get_response_async([{"role": "user", "content": summary_prompt}]):
         summary += response_part
-    # logger.info(f"Summarized  conversation:  {summary}")
+    logger.info(f"Summarized  conversation:  {summary}")
     # should be only one (first) system message and user and assistant should follow each other
     if not message_history or message_history[0]["role"] != "user":
         new_history.append({"role": "user", "content": summary})
