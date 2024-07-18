@@ -17,7 +17,7 @@ duckduckgo_search==3.8.5
 chardet
 lxml
 cssselect
-
+aiosmtplib
 
 
 aiohttp~=3.9.5

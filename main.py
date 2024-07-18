@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from src.ai_models import OpenRouterModel
 from src.ai_models_with_tools import ClaudeAIModelWithTools, Tool, ToolParameter
 from src.web_search_tool import WebSearchTool
+from src.email_tools import SendEmailTool
 from src.config import Config
 from src.conversation_manager import ConversationManager
 from src.dialog import main_loop_async
@@ -44,7 +45,8 @@ def main():
     with Board() as board, Leds() as leds:
 
         search_tool = WebSearchTool(config, leds)
-        tools = [search_tool.tool_definition()]
+        send_email_tool = SendEmailTool(config)
+        tools = [search_tool.tool_definition(), send_email_tool.tool_definition()]
 
         # Initial LED feedback
         leds.update(Leds.rgb_on(Color.WHITE))
