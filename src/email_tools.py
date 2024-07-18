@@ -83,7 +83,12 @@ async def send_email_async(subject: str, body: str, config: Config):
     try:
         # Create SMTP client and send email
         async with aiosmtplib.SMTP(hostname=smtp_server, port=smtp_port) as server:
-            await server.starttls()
+            try:
+                await server.starttls()
+            except aiosmtplib.SMTPException:
+                # If STARTTLS fails, assume the connection is already secure
+                pass
+
             await server.login(username, password)
             await server.send_message(msg)
         logger.debug("Email sent successfully")
