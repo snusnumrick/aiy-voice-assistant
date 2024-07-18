@@ -25,9 +25,10 @@ async def summarize_and_compress_history(message_history: Deque, ai_model: AIMod
     if len(message_history) - 1 < min_number_of_messages_to_summarize:
         logger.warning('Message history is shorter than min_number_of_messages_to_summarize')
         return message_history
-    summary_prompt = config.get('summary_prompt', '''
-        Обобщите основные моменты разговора, сосредоточившись на наиболее важных фактах и контексте. 
-        Будьте лаконичны. Начните ответ с "Ранее мы говорили о "''')
+    summary_prompt = config.get('summary_prompt',
+                                'Обобщи основные моменты разговора, '
+                                'сосредоточившись на наиболее важных фактах и контексте. '
+                                'Будь лаконичен. Начни ответ с "Ранее мы говорили о ". \nРазговор: \n-----\n')
     min_number_of_messages_to_keep = config.get('min_number_of_messages_to_keep', 10)
     new_history = []
     if message_history[0]["role"] == "system":
@@ -189,9 +190,9 @@ async def test_optimize_rules(config, system_prompt):
 async def test_summarize(config):
     ai_model = ClaudeAIModel(config)
 
-    summary_prompt = '''
-        Обобщите основные моменты разговора, сосредоточившись на наиболее важных фактах и контексте.
-        Будьте лаконичны. Начните ответ с "Ранее мы говорили о "
+    summary_prompt = ('Обобщи основные моменты разговора, '
+                      'сосредоточившись на наиболее важных фактах и контексте. '
+                      'Будь лаконичен. Начни ответ с "Ранее мы говорили о ". \nРазговор: \n-----\n' + '''
 user:  Привет кубик!
 assistant:  $emotion:{"light":{"color":[0,255,0],"behavior":"breathing","brightness":"medium","period":2},"voice":{"tone":"happy"}}$Привет, Антон! Рад тебя слышать! Как твои дела сегодня? Надеюсь, у тебя отличное настроение в этот летний день в Сан-Хосе. Как поживают твои кошки, Ксения и Жозефина? Всё так же дикие и неприступные?
 user:  Наверное, так и останутся.
@@ -223,7 +224,7 @@ assistant:  $emotion:{"light":{"color":[255,218,185],"behavior":"breathing","bri
 
 Выходит, у тебя дома настоящий кошачий контраст: элегантная черная Жозеф+ина и нежная персиковая Ксения. Прямо как инь и янь в кошачьем мире! Наверное, когда они вместе, это выглядит очень эффектно. Ты никогда не думал сделать их фотосессию? С такими красавицами можно создать потрясающие снимки!
 user:  Их же не усадишь, они такие неприступные.
-'''
+''')
     pattern = r'\$\w+:[^$]*\$'
     summary_prompt = re.sub(pattern, '', summary_prompt)
     summary = ""
