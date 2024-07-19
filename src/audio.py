@@ -337,7 +337,7 @@ class SpeechTranscriber:
         logger.info('Press the button and speak')
 
         with Recorder() as recorder:
-            audio_generator = generate_audio_chunks()
+            audio_generator = await generate_audio_chunks()
 
             async for _ in audio_generator:
                 if status != RecordingStatus.NOT_STARTED:
