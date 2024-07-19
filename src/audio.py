@@ -202,6 +202,8 @@ class SpeechTranscriber:
         cleaning_time_start = time(hour=3)  # 3 AM
         cleaning_time_stop = time(hour=23)  # 4 AM
 
+        logger.info(cleaning_time_start, now.time(), cleaning_time_stop)
+
         if cleaning_time_start <= now.time() < cleaning_time_stop:
             if self.last_clean_date != now.date():
                 if self.cleaning_task is None or self.cleaning_task.done():
@@ -288,6 +290,7 @@ class SpeechTranscriber:
             time_breathing_started = time.time()
             for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
 
+                logger.info(f"cleaning routine: {self.cleaning_routine}")
                 if self.cleaning_routine:
                     await self.check_and_schedule_cleaning()
 
