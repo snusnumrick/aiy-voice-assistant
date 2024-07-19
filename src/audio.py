@@ -233,7 +233,7 @@ class SpeechTranscriber:
         chunks_deque = deque()
         status = RecordingStatus.NOT_STARTED
 
-        def generate_audio_chunks():
+        async def generate_audio_chunks():
             nonlocal status, chunks_deque, player_process
 
             audio_format = AudioFormat(sample_rate_hz=self.audio_sample_rate, num_channels=1, bytes_per_sample=2)
@@ -287,6 +287,10 @@ class SpeechTranscriber:
             recoding_started_at = time.time()
             time_breathing_started = time.time()
             for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
+
+                if self.cleaning_routine:
+                    await self.check_and_schedule_cleaning()
+
                 if (time.time() - time_breathing_started > self.led_breathing_duration) and breathing_on:
                     stop_breathing()
 
@@ -332,12 +336,9 @@ class SpeechTranscriber:
         with Recorder() as recorder:
             audio_generator = generate_audio_chunks()
 
-            for _ in audio_generator:
+            async for _ in audio_generator:
                 if status != RecordingStatus.NOT_STARTED:
                     break
-
-                if self.cleaning_routine:
-                    await self.check_and_schedule_cleaning()
 
             logger.debug('Processing audio...')
 
