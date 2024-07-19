@@ -288,8 +288,9 @@ class SpeechTranscriber:
 
             recoding_started_at = time.time()
             time_breathing_started = time.time()
+            logger.info("generate_audio_chunks")
             for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
-
+                logger.info("got new chunk")
                 logger.info(f"cleaning routine: {self.cleaning_routine}")
                 if self.cleaning_routine:
                     await self.check_and_schedule_cleaning()
@@ -337,9 +338,9 @@ class SpeechTranscriber:
         logger.info('Press the button and speak')
 
         with Recorder() as recorder:
-            audio_generator = await generate_audio_chunks()
 
-            async for _ in audio_generator:
+            async for _ in generate_audio_chunks():
+                logger.info(".")
                 if status != RecordingStatus.NOT_STARTED:
                     break
 
