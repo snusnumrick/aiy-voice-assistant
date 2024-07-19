@@ -83,7 +83,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
     """
 
     # Initialize components
-    transcriber = SpeechTranscriber(button, leds, config)
+    transcriber = SpeechTranscriber(button, leds, config, conversation_manager.process_and_clean)
     response_player = None
     original_audio_file_name = config.get('audio_file_name', 'speech.wav')
 
@@ -94,7 +94,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
                 conversation_manager.save_dialog()
 
                 # Step 1: Listen and transcribe user speech
-                text = transcriber.transcribe_speech(response_player)
+                text = await transcriber.transcribe_speech(response_player)
                 logger.info('You said: %s', text)
 
                 if text:

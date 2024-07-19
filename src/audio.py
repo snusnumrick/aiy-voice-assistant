@@ -5,6 +5,7 @@ This module provides functionality for speech transcription and synthesis,
 interfacing with the Google Cloud Speech-to-Text API and various TTS engines.
 """
 
+import asyncio
 import logging
 import os
 import re
@@ -13,11 +14,11 @@ import tempfile
 import time
 from abc import ABC, abstractmethod
 from collections import deque
+from datetime import datetime, time, date
 from enum import Enum
-from typing import Optional, List, Iterator
-import asyncio
-import aiohttp
+from typing import Optional, List, Iterator, Callable
 
+import aiohttp
 import grpc
 from aiy.board import Button
 from aiy.leds import Leds, Pattern
@@ -26,8 +27,8 @@ from google.cloud import speech
 from pydub import AudioSegment
 
 from src.config import Config
-from src.tts_engine import TTSEngine
 from src.responce_player import ResponsePlayer
+from src.tts_engine import TTSEngine
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,7 @@ class SpeechTranscriber:
         streaming_config (speech.StreamingRecognitionConfig): Configuration for streaming recognition.
     """
 
-    def __init__(self, button: Button, leds: Leds, config):
+    def __init__(self, button: Button, leds: Leds, config, cleaning: Optional[Callable] = None):
         """
         Initialize the SpeechTranscriber.
 
@@ -192,6 +193,21 @@ class SpeechTranscriber:
         self.max_number_of_chunks = self.config.get('max_number_of_chunks', 5)
         self.number_of_chuncks_to_record_after_button_depressed = self.config.get(
             'number_of_chuncks_to_record_after_button_depressed', 3)
+        self.cleaning_routine: Callable = cleaning
+        self.cleaning_task = None
+        self.last_clean_date: Optional[date] = None
+
+    async def check_and_schedule_cleaning(self) -> None:
+        now = datetime.now()
+        cleaning_time_start = time(hour=3)  # 3 AM
+        cleaning_time_stop = time(hour=23)  # 4 AM
+
+        if cleaning_time_start <= now.time() < cleaning_time_stop:
+            if self.last_clean_date != now.date():
+                if self.cleaning_task is None or self.cleaning_task.done():
+                    logger.info(f"Scheduling cleaning task at {now}")
+                    self.cleaning_task = asyncio.create_task(self.cleaning_routine())
+                    self.last_clean_date = now.date()
 
     def setup_speech_service(self):
         service_name = self.config.get('speech_recognition_service', 'yandex').lower()
@@ -203,7 +219,7 @@ class SpeechTranscriber:
             raise ValueError(f"Unsupported speech recognition service: {service_name}")
         self.speech_service.setup_client(self.config)
 
-    def transcribe_speech(self, player_process: Optional[ResponsePlayer] = None) -> str:
+    async def transcribe_speech(self, player_process: Optional[ResponsePlayer] = None) -> str:
         """
         Transcribe speech from the microphone input, including pre and post buffering.
 
@@ -310,7 +326,6 @@ class SpeechTranscriber:
                     start_processing()
                     status = RecordingStatus.FINISHED
 
-
         self.setup_button_callbacks()
         logger.info('Press the button and speak')
 
@@ -320,6 +335,9 @@ class SpeechTranscriber:
             for _ in audio_generator:
                 if status != RecordingStatus.NOT_STARTED:
                     break
+
+                if self.cleaning_routine:
+                    await self.check_and_schedule_cleaning()
 
             logger.debug('Processing audio...')
 
@@ -494,4 +512,3 @@ async def synthesize_speech_async(engine: TTSEngine, text: str, filename: str, c
 
     logger.debug(f"Final synthesized speech saved at {filename}")
     return result
-

@@ -10,12 +10,13 @@ import logging
 import os
 import re
 import sys
+import asyncio
 from collections import deque
 from typing import List, Tuple, AsyncGenerator, Deque
 
 from src.responce_player import extract_emotions
 from src.tools import format_message_history
-from src.llm_tools import optimize_rules
+from src.llm_tools import optimize_rules, optimize_facts
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -264,6 +265,69 @@ class ConversationManager:
         dialog_file_name = "dialog.txt"
         with open(dialog_file_name, "w") as dialog_file:
             dialog_file.write("\n\n" + self.formatted_message_history(150) + "\n\n")
+
+    async def _process_facts(self):
+        # backup existing facts.json, rename it facts_prev.json
+        os.rename("facts.json", "facts_prev.json")
+
+        # Asynchronously optimize facts
+        optimized_facts = await optimize_facts(self.get_system_prompt(), self.facts, self.config)
+
+        # Save facts using a separate thread to avoid blocking the event loop
+        await asyncio.to_thread(self.save_facts, optimized_facts)
+
+        return optimized_facts
+
+    async def _process_rules(self):
+        # backup existing rules
+        os.rename("rules.json", "rules_prev.json")
+
+        # Asynchronously optimize rules
+        optimized_rules = await optimize_rules(self.get_system_prompt(), self.rules, self.config)
+
+        # Save rules using a separate thread to avoid blocking the event loop
+        await asyncio.to_thread(self.save_rules, optimized_rules)
+
+        return optimized_rules
+
+    async def process_and_clean(self):
+        # form new memories, clean message deque, process existing facts and rules
+        # to be used in night time
+
+        # form new memories
+        if len(self.message_history) > 1:
+            prompt = "Do you want to remember anything from today conversation?"
+            logger.info(f"form new memory by asking {prompt}")
+            num_facts_begore = len(self.facts)
+            async for ai_response in self.get_response(prompt):
+                logger.info('AI response: %s', ai_response)
+            num_facts_after_clean = len(self.facts)
+            if num_facts_after_clean == num_facts_begore:
+                logger.info("no new memories formed")
+            else:
+                logger.info(f"new memories formed:\n{'\n'.join(self.facts[num_facts_begore:])}")
+
+            # cleanup conversation
+            self.message_history: Deque[dict] = deque([{"role": "system", "content": self.get_system_prompt()}])
+
+        # process existing facts and rules (run both operations concurrently)
+        existing_facts = set(self.facts)
+        existing_rules = set(self.rules)
+        facts_task = asyncio.create_task(self._process_facts())
+        rules_task = asyncio.create_task(self._process_rules())
+        # Wait for both tasks to complete and get their results
+        # asyncio.gather allows us to wait for multiple coroutines concurrently
+        self.facts, self.rules = await asyncio.gather(facts_task, rules_task)
+        new_facts = set(self.facts) - existing_facts
+        if new_facts:
+            logger.info(f"new facts:\n{'\n'.join(list(self.new_facts))}")
+        else:
+            logger.info(f"no new facts")
+        new_rules = set(self.rules) - existing_rules
+        if new_rules:
+            logger.info(f"new rules:\n{'\n'.join(list(new_rules))}")
+        else:
+            logger.info(f"no new rules")
 
     @staticmethod
     def load_facts():
