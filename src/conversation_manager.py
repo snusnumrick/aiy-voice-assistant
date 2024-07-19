@@ -293,6 +293,7 @@ class ConversationManager:
     async def process_and_clean(self):
         # form new memories, clean message deque, process existing facts and rules
         # to be used in night time
+        new_line_str = "\m"
 
         # form new memories
         if len(self.message_history) > 1:
@@ -305,7 +306,6 @@ class ConversationManager:
             if num_facts_after_clean == num_facts_begore:
                 logger.info("no new memories formed")
             else:
-                new_line_str = "\m"
                 logger.info(f"new memories formed:\n{new_line_str.join(self.facts[num_facts_begore:])}")
 
             # cleanup conversation
@@ -321,12 +321,11 @@ class ConversationManager:
         self.facts, self.rules = await asyncio.gather(facts_task, rules_task)
         new_facts = set(self.facts) - existing_facts
         if new_facts:
-            logger.info(f"new facts:\n{'\n'.join(list(self.new_facts))}")
+            logger.info(f"new facts:\n{new_line_str.join(list(self.new_facts))}")
         else:
             logger.info(f"no new facts")
         new_rules = set(self.rules) - existing_rules
         if new_rules:
-            new_line_str = "\m"
             logger.info(f"new rules:\n{new_line_str.join(list(new_rules))}")
         else:
             logger.info(f"no new rules")
