@@ -305,7 +305,8 @@ class ConversationManager:
             if num_facts_after_clean == num_facts_begore:
                 logger.info("no new memories formed")
             else:
-                logger.info(f"new memories formed:\n{'\n'.join(self.facts[num_facts_begore:])}")
+                new_line_str = "\m"
+                logger.info(f"new memories formed:\n{new_line_str.join(self.facts[num_facts_begore:])}")
 
             # cleanup conversation
             self.message_history: Deque[dict] = deque([{"role": "system", "content": self.get_system_prompt()}])
@@ -325,7 +326,8 @@ class ConversationManager:
             logger.info(f"no new facts")
         new_rules = set(self.rules) - existing_rules
         if new_rules:
-            logger.info(f"new rules:\n{'\n'.join(list(new_rules))}")
+            new_line_str = "\m"
+            logger.info(f"new rules:\n{new_line_str.join(list(new_rules))}")
         else:
             logger.info(f"no new rules")
 
