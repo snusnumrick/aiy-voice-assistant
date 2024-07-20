@@ -273,6 +273,7 @@ class ConversationManager:
 
     async def _process_facts(self):
         # backup existing facts.json, rename it facts_prev.json
+        logger.info(f"backup existing facts.json")
         os.rename("facts.json", "facts_prev.json")
 
         # Asynchronously optimize facts
@@ -285,6 +286,7 @@ class ConversationManager:
 
     async def _process_rules(self):
         # backup existing rules
+        logger.info(f"backup existing rules.json")
         os.rename("rules.json", "rules_prev.json")
 
         # Asynchronously optimize rules
@@ -342,6 +344,8 @@ class ConversationManager:
                 return json.load(f)
         except FileNotFoundError:
             return []
+        except json.decoder.JSONDecodeError as e:
+            logger.error(f"couldn't load facts file: {e}")
 
     @staticmethod
     def save_facts(facts):
@@ -355,6 +359,8 @@ class ConversationManager:
                 return json.load(f)
         except FileNotFoundError:
             return []
+        except json.decoder.JSONDecodeError as e:
+            logger.error(f"couldn't load rules file: {e}")
 
     @staticmethod
     def save_rules(rules):
