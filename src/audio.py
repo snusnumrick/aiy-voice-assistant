@@ -16,7 +16,7 @@ from abc import ABC, abstractmethod
 from collections import deque
 import datetime
 from enum import Enum
-from typing import Optional, List, Iterator, Callable
+from typing import Optional, List, Iterator, Callable, AsyncGenerator
 
 import aiohttp
 import grpc
@@ -39,7 +39,7 @@ class SpeechRecognitionService(ABC):
         pass
 
     @abstractmethod
-    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(self, audio_generator: AsyncGenerator[bytes, None], config) -> str:
         pass
 
 
@@ -54,7 +54,7 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
         credentials = service_account.Credentials.from_service_account_file(service_account_file)
         self.client = speech.SpeechClient(credentials=credentials)
 
-    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(self, audio_generator: AsyncGenerator[bytes, None], config) -> str:
         from google.cloud import speech
 
         logger.debug("Transcribing audio stream (google)")
@@ -63,7 +63,9 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
                                                   sample_rate_hertz=config.get("sample_rate_hertz", 16000),
                                                   language_code=config.get("language_code", "ru-RU"),
                                                   enable_automatic_punctuation=True), interim_results=True)
-        requests = (speech.types.StreamingRecognizeRequest(audio_content=chunk) for chunk in audio_generator)
+        requests = []
+        async for chunk in audio_generator:
+            requests.append(speech.types.StreamingRecognizeRequest(audio_content=chunk))
         responses = self.client.streaming_recognize(streaming_config, requests)
 
         text = ""
@@ -102,13 +104,13 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                 language_code=[config.get("language_code", "ru-RU")]),
             audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME))
 
-    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(self, audio_generator: AsyncGenerator[bytes, None], config) -> str:
         def request_generator():
             import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 
             yield stt_pb2.StreamingRequest(session_options=self.recognize_options)
 
-            for chunk in audio_generator:
+            async for chunk in audio_generator:
                 yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=chunk))
 
         metadata = [('authorization', f'Api-Key {self.api_key}')]
@@ -233,7 +235,7 @@ class SpeechTranscriber:
         chunks_deque = deque()
         status = RecordingStatus.NOT_STARTED
 
-        async def generate_audio_chunks():
+        async def generate_audio_chunks() -> AsyncGenerator[bytes, None]:
             nonlocal status, chunks_deque, player_process
 
             audio_format = AudioFormat(sample_rate_hz=self.audio_sample_rate, num_channels=1, bytes_per_sample=2)
@@ -343,7 +345,7 @@ class SpeechTranscriber:
             logger.debug('Processing audio...')
 
             try:
-                text = self.speech_service.transcribe_stream(audio_generator, self.config)
+                text = await self.speech_service.transcribe_stream(audio_generator, self.config)
             except Exception as e:
                 logger.error(f"Error transcribing speech: {str(e)}")
                 text = ""
