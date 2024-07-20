@@ -293,7 +293,6 @@ class ConversationManager:
         if p.exists():
             logger.info(f"backup existing rules.json")
             p.rename("rules_prev.json")
-        os.rename("rules.json", "rules_prev.json")
 
         # Asynchronously optimize rules
         optimized_rules = await optimize_rules(self.get_system_prompt(), self.rules, self.config)
