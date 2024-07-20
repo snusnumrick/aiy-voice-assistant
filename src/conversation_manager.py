@@ -5,20 +5,20 @@ This module provides the ConversationManager class for managing the flow of conv
 including message history, token counting, and interaction with AI models.
 """
 
+import asyncio
+import functools
 import json
 import logging
 import os
 import re
 import sys
-import asyncio
 from collections import deque
-from typing import List, Tuple, AsyncGenerator, Deque
-import functools
 from pathlib import Path
+from typing import List, Tuple, AsyncGenerator, Deque
 
+from src.llm_tools import optimize_rules, optimize_facts
 from src.responce_player import extract_emotions
 from src.tools import format_message_history
-from src.llm_tools import optimize_rules, optimize_facts
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -131,29 +131,24 @@ class ConversationManager:
         self.location = get_location()
         self.timezone = get_timezone()
         self.hard_rules_russian = (""
-                                   # "Если чтобы ответить на мой вопрос, тебе нужно поискать в интернете, не отвечай сразу, "
-                                   # "а пошли мне сообщение в таком формате: "
-                                   # "$internet query:<что ты хочешь поискать на английском языке>$. "
-                                   # "Таких запросов в твоем сообщении может быть несколько. "
                                    "Если в ответе на твой запрос указано время без указания часового пояса, "
                                    "считай что это Восточное стандартное время."
-                                   # "Если по этому запросу не нашел нужной информации, попробуй переформулировать запрос. "
                                    "Если тебе надо что-то запомнить, "
                                    "пошли мне сообщение в таком формате: $remember: <текст, который тебе нужно запомнить>$. "
                                    "Таких фактов в твоем сообщении тоже может быть несколько. "
                                    "Например, $remember: <первый текст, который тебе нужно запомнить>$ "
                                    "{remember: $второрй текст, который тебе нужно запомнить>$. "
                                    "Когда не совсем понятно, какое ударение надо ставить в слове, "
-                                   "используй знак " + " перед предполагаемой ударной гласной. "
-                                                       "Знак ударения " + " всегда ставится непосредственно перед "
-                                                                          "ударной гласной буквой в слове. "
-                                                                          "Например: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
-                                                                          "Этот знак никогда не ставится в конце слова или перед согласными. "
-                                                                          "Его единственная функция - указать на ударный гласный звук."
-                                                                          "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
-                                                                          "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
-                                                                          "$rule: <текст нового правила>$. "
-                                                                          "Таких запросов в твоем сообщении тоже может быть несколько. ")
+                                   "используй знак + перед предполагаемой ударной гласной. "
+                                   "Знак ударения + всегда ставится непосредственно перед "
+                                   "ударной гласной буквой в слове. "
+                                   "Например: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
+                                   "Этот знак никогда не ставится в конце слова или перед согласными. "
+                                   "Его единственная функция - указать на ударный гласный звук."
+                                   "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
+                                   "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
+                                   "$rule: <текст нового правила>$. "
+                                   "Таких запросов в твоем сообщении тоже может быть несколько. ")
         self.hard_rules_english = ("For web searches: $internet query:<query in English>$. "
                                    "To remember: $remember:<text>$. For new rules: $rule:<text>$ "
                                    "When it's not entirely clear where to place the stress in a word, "
@@ -220,10 +215,11 @@ class ConversationManager:
         self.message_history.append({"role": "user", "content": text})
 
         if get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
-            self.message_history = \
-                await summarize_and_compress_history(self.message_history, self.summarize_model, self.config)
+            self.message_history = await summarize_and_compress_history(self.message_history, self.summarize_model,
+                                                                        self.config)
             newline_str = "\n\n"
-            logger.info(f'Compressed  conversation:  {(newline_str + self.formatted_message_history(150) + newline_str)}')
+            logger.info(
+                f'Compressed  conversation:  {(newline_str + self.formatted_message_history(150) + newline_str)}')
 
         logger.debug(f"Message history: \n{self.formatted_message_history()}")
 

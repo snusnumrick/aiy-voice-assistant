@@ -84,7 +84,9 @@ async def optimize_rules(system_prompt: str, soft_rules: List[str], config: Conf
     Удали любые дублирующиеся или устаревшие правила из мягкого набора. 
     Если мягкое правило лишь частично дополняет фиксированное, оставь только новую информацию. 
     Предложи оптимизированный список мягких правил, который не противоречит фиксированным правилам и не повторяет их. 
-    Результат сообщи в том же JSON формате. Return only JSON without explnation.
+    Особое внимание удели сохранению правил, касающихся процесса управления и обновления самих правил.
+    Результат сообщи в том же JSON формате. Use the same JSON structure as the original rules. 
+    Return only JSON without explanation.
 
     list of soft rules in json:
     '''
@@ -96,6 +98,14 @@ async def optimize_rules(system_prompt: str, soft_rules: List[str], config: Conf
     responses = ""
     async for response in model.get_response_async(messages):
         responses += response
+
+    second_prompt = ("Double check the result to make sure no information is lost and return corrected json. "
+                     "Верни только JSON без дополнительных пояснений.")
+    messages += [{"role": "assistant", "content": responses}, {"role": "user", "content": second_prompt}]
+    responses = ""
+    async for response in model.get_response_async(messages):
+        responses += response
+
     logger.info(f"optimize_rules responces: {responses}")
     new_rules = json.loads(responses)
     return new_rules
@@ -182,6 +192,14 @@ async def test_optimize_rules(config, system_prompt):
         "При перечислении чисел через запятую всегда ставить пробел после запятой для улучшения читаемости.",
         "При указании ударения в слове ставить знак \"+\" ТОЛЬКО перед ударной гласной буквой. Никогда не ставить \"+\" перед согласными."
     ]
+    rules = [
+    "Всегда внимательно анализировать всю доступную информацию о собеседнике, включая имя, если оно упоминается в контексте",
+    "Не предполагать, что новая информация относится к предыдущим разговорам, если это явно не указано",
+    "Перед добавлением нового правила проверять существующие. Если похожее правило уже есть, но оказалось недостаточно эффективным, нужно переформулировать его более убедительно, а не добавлять дубликат.",
+    "При перечислении чисел через запятую всегда ставить пробел после запятой для улучшения читаемости.",
+    "Избегать использования тире для обозначения диапазонов или промежутков в речи, заменяя их на более естественные разговорные выражения.",
+    " Избегать использования нумерованных списков в речи, так как это не подходит для естественной устной коммуникации."
+]
     new_rules = await optimize_rules(system_prompt, rules, config)
     print("[")
     for i, rule in enumerate(new_rules):
@@ -405,8 +423,8 @@ async def main():
     . Таких запросов в твоем сообщении тоже может быть несколько."""
 
     # await test_optimize_facts(config, system_prompt)
-    # await test_optimize_rules(config, system_prompt)
-    await test_summarize(config)
+    await test_optimize_rules(config, system_prompt)
+    # await test_summarize(config)
 
 
 
