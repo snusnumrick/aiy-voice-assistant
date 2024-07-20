@@ -105,7 +105,7 @@ class YandexSpeechRecognition(SpeechRecognitionService):
             audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME))
 
     async def transcribe_stream(self, audio_generator: AsyncGenerator[bytes, None], config) -> str:
-        def request_generator():
+        async def request_generator():
             import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 
             yield stt_pb2.StreamingRequest(session_options=self.recognize_options)
@@ -114,7 +114,7 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                 yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=chunk))
 
         metadata = [('authorization', f'Api-Key {self.api_key}')]
-        responses = self.stub.RecognizeStreaming(request_generator(), metadata=metadata)
+        responses = self.stub.RecognizeStreaming(await request_generator(), metadata=metadata)
 
         full_text = ""
         current_segment = ""
