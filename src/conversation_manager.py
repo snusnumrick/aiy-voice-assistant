@@ -150,8 +150,9 @@ class ConversationManager:
                                    "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
                                    "$rule: <текст нового правила>$. "
                                    "Таких запросов в твоем сообщении тоже может быть несколько. "
-                                   "If you reply or part of it uses different langiuage tnan before, "
-                                   "use $language: russian/english/german$.")
+                                   "If you reply or part of it uses different language than before, "
+                                   "use $language: russian/english/german$. "
+                                   "Use it even for single words if surrounded by other language. ")
         self.hard_rules_english = ("For web searches: $internet query:<query in English>$. "
                                    "To remember: $remember:<text>$. For new rules: $rule:<text>$ "
                                    "When it's not entirely clear where to place the stress in a word, "
