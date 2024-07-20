@@ -275,25 +275,29 @@ def format_message_history(message_history: deque, max_width=120) -> str:
 
 
 def extract_json(text):
-    # Pattern to match JSON content within triple backticks
-    pattern = r'```json\s*([\s\S]*?)\s*```'
-
-    # Find all matches
-    matches = re.findall(pattern, text)
-
-    if not matches:
-        return None
-
-    # Get the first match (assuming there's only one JSON block)
-    json_str = matches[0]
-
+    # Try to parse the entire text as JSON first
     try:
-        # Parse the JSON string
-        json_data = json.loads(json_str)
-        return json_data
-    except json.JSONDecodeError as e:
-        logger.error(f"Error: Invalid JSON format: {e}")
-        return None
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass  # If it fails, continue to other methods
+
+    # Patterns to match JSON content within triple backticks
+    patterns = [
+        r'```json\s*([\s\S]*?)\s*```',  # For ```json
+        r'```\s*([\s\S]*?)\s*```'  # For ```
+    ]
+
+    for pattern in patterns:
+        matches = re.findall(pattern, text)
+        if matches:
+            for match in matches:
+                try:
+                    return json.loads(match)
+                except json.JSONDecodeError:
+                    continue  # Try next match if this one fails
+
+    logger.error("Error: No valid JSON found")
+    raise Exception("No valid JSON found")
 
 
 def test():
