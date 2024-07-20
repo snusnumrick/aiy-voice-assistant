@@ -207,6 +207,7 @@ class SpeechTranscriber:
             if self.last_clean_date != now.date():
                 logger.info(f"Cleaning date: {now.date()}")
                 await self.cleaning_routine()
+                self.last_clean_date = now.date()
 
     def setup_speech_service(self):
         service_name = self.config.get('speech_recognition_service', 'yandex').lower()

@@ -83,7 +83,6 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
     """
 
     async def cleaning_routine():
-        logger.info('Cleaning up...')
         await conversation_manager.process_and_clean()
 
     # Initialize components
