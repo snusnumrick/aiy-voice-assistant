@@ -6,6 +6,7 @@ including message history, token counting, and interaction with AI models.
 """
 
 import asyncio
+import datetime
 import functools
 import json
 import logging
@@ -15,11 +16,10 @@ import sys
 from collections import deque
 from pathlib import Path
 from typing import List, Tuple, AsyncGenerator, Deque
-import datetime
 
 from src.llm_tools import optimize_rules, optimize_facts
 from src.responce_player import extract_emotions
-from src.tools import format_message_history, extract_json
+from src.tools import format_message_history
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -269,59 +269,58 @@ class ConversationManager:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, functools.partial(func, *args))
 
-    async def _process_facts(self):
+    async def _process_facts(self) -> None:
         p = Path("facts.json")
 
         # sanity check
         if not p.exists():
-            return self.facts
+            return
 
         cleaning_time_stop = datetime.time(hour=self.config.get("cleaning_time_stop_hour", 4))  # 4 AM
         mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(p))
 
         # if there were no modifications today
         if mod_time.time() <= cleaning_time_stop:
-            return self.facts
-
-        # backup existing facts.json, rename it facts_prev.json
-        if p.exists():
-            logger.info(f"backup existing facts.json")
-            p.rename("facts_prev.json")
+            return
 
         # Asynchronously optimize facts
         optimized_facts = await optimize_facts(self.get_system_prompt(), self.facts, self.config)
 
-        # Save facts using a separate thread to avoid blocking the event loop
-        await self._run_sync_in_thread(self.save_facts, optimized_facts)
+        if set(optimized_facts) != set(self.facts):
+            self.facts = optimized_facts
 
-        return optimized_facts
+            # backup existing facts.json, rename it facts_prev.json
+            if p.exists():
+                logger.info(f"backup existing facts.json")
+                p.rename("facts_prev.json")
 
-    async def _process_rules(self):
+            self.save_facts(self.facts)
+
+    async def _process_rules(self) -> None:
         p = Path("rules.json")
 
         # sanity check
         if not p.exists():
-            return self.facts
+            return
 
         cleaning_time_stop = datetime.time(hour=self.config.get("cleaning_time_stop_hour", 4))  # 4 AM
         mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(p))
 
         # if there were no modifications today
         if mod_time.time() <= cleaning_time_stop:
-            return self.facts
-
-        # backup existing rules
-        if p.exists():
-            logger.info(f"backup existing rules.json")
-            p.rename("rules_prev.json")
+            return
 
         # Asynchronously optimize rules
         optimized_rules = await optimize_rules(self.get_system_prompt(), self.rules, self.config)
 
         # Save rules using a separate thread to avoid blocking the event loop
-        await self._run_sync_in_thread(self.save_rules, optimized_rules)
-
-        return optimized_rules
+        if set(optimized_rules) != set(self.rules):
+            self.rules = optimized_rules
+            # backup existing rules
+            if p.exists():
+                logger.info(f"backup existing rules.json")
+                p.rename("rules_prev.json")
+            self.save_rules(self.rules)
 
     async def process_and_clean(self):
         # form new memories, clean message deque, process existing facts and rules
@@ -348,11 +347,8 @@ class ConversationManager:
         existing_facts = set(self.facts)
         existing_rules = set(self.rules)
         loop = asyncio.get_event_loop()
-        facts_task = loop.create_task(self._process_facts())
-        rules_task = loop.create_task(self._process_rules())
-        # Wait for both tasks to complete and get their results
         # asyncio.gather allows us to wait for multiple coroutines concurrently
-        self.facts, self.rules = await asyncio.gather(facts_task, rules_task)
+        await asyncio.gather(loop.create_task(self._process_facts()), loop.create_task(self._process_rules()))
 
         removed_facts = list(existing_facts - set(self.facts))
         if removed_facts:
@@ -369,7 +365,6 @@ class ConversationManager:
         new_rules = list(set(self.rules) - existing_rules)
         if new_rules:
             logger.info(f"new rules: \n{newline.join(new_rules)}")
-
 
     @staticmethod
     def load_facts():

@@ -422,8 +422,8 @@ async def main():
     $rule: <текст нового правила>$
     . Таких запросов в твоем сообщении тоже может быть несколько."""
 
-    # await test_optimize_facts(config, system_prompt)
-    await test_optimize_rules(config, system_prompt)
+    await test_optimize_facts(config, system_prompt)
+    # await test_optimize_rules(config, system_prompt)
     # await test_summarize(config)
 
 
