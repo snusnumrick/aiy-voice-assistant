@@ -334,7 +334,7 @@ class ConversationManager:
         self.facts, self.rules = await asyncio.gather(facts_task, rules_task)
         new_facts = set(self.facts) - existing_facts
         if new_facts:
-            logger.info(f"new facts:\n{new_line_str.join(list(self.new_facts))}")
+            logger.info(f"new facts:\n{new_line_str.join(list(new_facts))}")
         else:
             logger.info(f"no new facts")
         new_rules = set(self.rules) - existing_rules
