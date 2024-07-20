@@ -202,11 +202,6 @@ class SpeechTranscriber:
         cleaning_time_start = datetime.time(hour=3)  # 3 AM
         cleaning_time_stop = datetime.time(hour=23)  # 4 AM
 
-        logger.info(cleaning_time_start)
-        logger.info(now)
-        logger.info(cleaning_time_stop)
-        logger.info(cleaning_time_start, now, cleaning_time_stop)
-
         if cleaning_time_start <= now.time() < cleaning_time_stop:
             if self.last_clean_date != now.date():
                 if self.cleaning_task is None or self.cleaning_task.done():
