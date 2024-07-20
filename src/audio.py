@@ -199,8 +199,8 @@ class SpeechTranscriber:
 
     async def check_and_schedule_cleaning(self) -> None:
         now: datetime.datetime = datetime.datetime.now()
-        cleaning_time_start = datetime.time(hour=3)  # 3 AM
-        cleaning_time_stop = datetime.time(hour=23)  # 4 AM
+        cleaning_time_start = datetime.time(hour=self.config.get("cleaning_tine_start_hour", 3))  # 3 AM
+        cleaning_time_stop = datetime.time(hour=self.config.get("cleaning_time_stop_hour", 4))  # 4 AM
 
         if cleaning_time_start <= now.time() < cleaning_time_stop:
             logger.debug(f"Cleaning time: {now.time()}")

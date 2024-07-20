@@ -15,6 +15,7 @@ import sys
 from collections import deque
 from pathlib import Path
 from typing import List, Tuple, AsyncGenerator, Deque
+import datetime
 
 from src.llm_tools import optimize_rules, optimize_facts
 from src.responce_player import extract_emotions
@@ -269,8 +270,20 @@ class ConversationManager:
         return await loop.run_in_executor(None, functools.partial(func, *args))
 
     async def _process_facts(self):
-        # backup existing facts.json, rename it facts_prev.json
         p = Path("facts.json")
+
+        # sanity check
+        if not p.exists():
+            return self.facts
+
+        cleaning_time_stop = datetime.time(hour=self.config.get("cleaning_time_stop_hour", 4))  # 4 AM
+        mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(p))
+
+        # if there were no modifications today
+        if mod_time.time() <= cleaning_time_stop:
+            return self.facts
+
+        # backup existing facts.json, rename it facts_prev.json
         if p.exists():
             logger.info(f"backup existing facts.json")
             p.rename("facts_prev.json")
@@ -284,8 +297,20 @@ class ConversationManager:
         return optimized_facts
 
     async def _process_rules(self):
-        # backup existing rules
         p = Path("rules.json")
+
+        # sanity check
+        if not p.exists():
+            return self.facts
+
+        cleaning_time_stop = datetime.time(hour=self.config.get("cleaning_time_stop_hour", 4))  # 4 AM
+        mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(p))
+
+        # if there were no modifications today
+        if mod_time.time() <= cleaning_time_stop:
+            return self.facts
+
+        # backup existing rules
         if p.exists():
             logger.info(f"backup existing rules.json")
             p.rename("rules_prev.json")
@@ -301,7 +326,7 @@ class ConversationManager:
     async def process_and_clean(self):
         # form new memories, clean message deque, process existing facts and rules
         # to be used in night time
-        new_line_str = "\m"
+        newline = "\n"
 
         # form new memories
         if len(self.message_history) > 1:
@@ -314,7 +339,7 @@ class ConversationManager:
             if num_facts_after_clean == num_facts_begore:
                 logger.info("no new memories formed")
             else:
-                logger.info(f"new memories formed:\n{new_line_str.join(self.facts[num_facts_begore:])}")
+                logger.info(f"new memories formed:\n{newline.join(self.facts[num_facts_begore:])}")
 
             # cleanup conversation
             self.message_history: Deque[dict] = deque([{"role": "system", "content": self.get_system_prompt()}])
@@ -331,19 +356,19 @@ class ConversationManager:
 
         removed_facts = list(existing_facts - set(self.facts))
         if removed_facts:
-            logger.info(f"removed facts: \n{new_line_str.join(removed_facts)}")
+            logger.info(f"removed facts: \n{newline.join(removed_facts)}")
 
         new_facts = list(set(self.facts) - existing_facts)
         if new_facts:
-            logger.info(f"new facts: \n{new_line_str.join(new_facts)}")
+            logger.info(f"new facts: \n{newline.join(new_facts)}")
 
         removed_rules = list(existing_rules - set(self.rules))
         if removed_rules:
-            logger.info(f"removed rules: \n{new_line_str.join(removed_rules)}")
+            logger.info(f"removed rules: \n{newline.join(removed_rules)}")
 
         new_rules = list(set(self.rules) - existing_rules)
         if new_rules:
-            logger.info(f"new rules: \n{new_line_str.join(new_rules)}")
+            logger.info(f"new rules: \n{newline.join(new_rules)}")
 
 
     @staticmethod
