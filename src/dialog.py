@@ -82,8 +82,11 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
         config (Config): The application configuration object.
     """
 
+    async def cleaning_routine():
+        await conversation_manager.process_and_clean()
+
     # Initialize components
-    transcriber = SpeechTranscriber(button, leds, config, conversation_manager.process_and_clean)
+    transcriber = SpeechTranscriber(button, leds, config, cleaning=cleaning_routine)
     response_player = None
     original_audio_file_name = config.get('audio_file_name', 'speech.wav')
 
