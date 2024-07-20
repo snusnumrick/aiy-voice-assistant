@@ -321,8 +321,8 @@ class ConversationManager:
         # process existing facts and rules (run both operations concurrently)
         existing_facts = set(self.facts)
         existing_rules = set(self.rules)
-        facts_task = asyncio.create_task(self._process_facts())
-        rules_task = asyncio.create_task(self._process_rules())
+        facts_task = self.loop.create_task(self._process_facts())
+        rules_task = self.loop.create_task(self._process_rules())
         # Wait for both tasks to complete and get their results
         # asyncio.gather allows us to wait for multiple coroutines concurrently
         self.facts, self.rules = await asyncio.gather(facts_task, rules_task)
