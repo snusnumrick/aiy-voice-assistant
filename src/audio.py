@@ -6,6 +6,7 @@ interfacing with the Google Cloud Speech-to-Text API and various TTS engines.
 """
 
 import asyncio
+import queue
 import logging
 import os
 import re
@@ -343,23 +344,33 @@ class SpeechTranscriber:
             logger.debug('Processing audio...')
 
             try:
-                # create sync generator from async
+                audio_queue = queue.Queue()
+
+                async def fill_queue():
+                    async for chunk in audio_generator:
+                        audio_queue.put(chunk)
+                    audio_queue.put(None)  # Сигнал окончания
+
                 def sync_audio_generator():
                     while True:
-                        try:
-                            chunk = asyncio.get_event_loop().run_until_complete(audio_generator.__anext__())
-                            yield chunk
-                        except StopAsyncIteration:
+                        chunk = audio_queue.get()
+                        if chunk is None:
                             break
+                        yield chunk
 
-                # run sync generator in separate thread
+                # fill queue in background
+                fill_queue_task = asyncio.create_task(fill_queue())
+
                 loop = asyncio.get_event_loop()
-                text = await loop.run_in_executor(None, self.speech_service.transcribe_stream,
-                                                  sync_audio_generator(), self.config)
+                text = await loop.run_in_executor(None, self.speech_service.transcribe_stream, sync_audio_generator(),
+                                                  self.config)
+
+                # wait queue
+                await fill_queue_task
+
             except Exception as e:
                 logger.error(f"Error transcribing speech: {str(e)}")
                 text = ""
-
         return text
 
     def setup_button_callbacks(self):
