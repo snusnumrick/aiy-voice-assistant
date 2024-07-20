@@ -208,7 +208,7 @@ class SpeechTranscriber:
                 logger.info(f"Cleaning date: {now.date()}")
                 if self.cleaning_task is None or self.cleaning_task.done():
                     logger.info(f"Scheduling cleaning task at {now}")
-                    self.cleaning_task = asyncio.create_task(self.cleaning_routine())
+                    self.cleaning_task = asyncio.create_task(self.cleaning_routine)
                     self.last_clean_date = now.date()
                 else:
                     logger.info(f"Cleaning task is in progress")
