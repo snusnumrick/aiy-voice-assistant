@@ -328,16 +328,20 @@ class ConversationManager:
         # Wait for both tasks to complete and get their results
         # asyncio.gather allows us to wait for multiple coroutines concurrently
         self.facts, self.rules = await asyncio.gather(facts_task, rules_task)
+
+        removed_facts = existing_facts - set(self.facts)
+        if removed_facts:
+            logger.info(f"removed facts: {removed_facts}")
         new_facts = set(self.facts) - existing_facts
         if new_facts:
             logger.info(f"new facts:\n{new_line_str.join(list(new_facts))}")
-        else:
-            logger.info(f"no new facts")
+
+        removed_rules = existing_rules - set(self.rules)
+        if removed_rules:
+            logger.info(f"removed rules:\n{removed_rules}")
         new_rules = set(self.rules) - existing_rules
         if new_rules:
             logger.info(f"new rules:\n{new_line_str.join(list(new_rules))}")
-        else:
-            logger.info(f"no new rules")
 
     @staticmethod
     def load_facts():
