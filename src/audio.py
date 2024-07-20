@@ -14,7 +14,7 @@ import tempfile
 import time
 from abc import ABC, abstractmethod
 from collections import deque
-from datetime import datetime, time, date
+import datetime
 from enum import Enum
 from typing import Optional, List, Iterator, Callable
 
@@ -195,12 +195,12 @@ class SpeechTranscriber:
             'number_of_chuncks_to_record_after_button_depressed', 3)
         self.cleaning_routine: Callable = cleaning
         self.cleaning_task = None
-        self.last_clean_date: Optional[date] = None
+        self.last_clean_date: Optional[datetime.date] = None
 
     async def check_and_schedule_cleaning(self) -> None:
-        now = datetime.now()
-        cleaning_time_start = time(hour=3)  # 3 AM
-        cleaning_time_stop = time(hour=23)  # 4 AM
+        now = datetime.datetime.now()
+        cleaning_time_start = datetime.time(hour=3)  # 3 AM
+        cleaning_time_stop = datetime.time(hour=23)  # 4 AM
 
         logger.info(cleaning_time_start, now.time(), cleaning_time_stop)
 
