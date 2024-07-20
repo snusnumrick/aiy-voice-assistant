@@ -18,7 +18,7 @@ from typing import List, Tuple, AsyncGenerator, Deque
 
 from src.llm_tools import optimize_rules, optimize_facts
 from src.responce_player import extract_emotions
-from src.tools import format_message_history
+from src.tools import format_message_history, extract_json
 
 if __name__ == "__main__":
     # add current directory to python path

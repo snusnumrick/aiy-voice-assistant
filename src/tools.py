@@ -6,6 +6,7 @@ import pytz
 import os
 from typing import List, Dict, Union
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +272,28 @@ def format_message_history(message_history: deque, max_width=120) -> str:
 
     """
     return "\n\n".join([f'{msg["role"]}:\n{indent_content(msg["content"], max_width)}' for msg in message_history])
+
+
+def extract_json(text):
+    # Pattern to match JSON content within triple backticks
+    pattern = r'```json\s*([\s\S]*?)\s*```'
+
+    # Find all matches
+    matches = re.findall(pattern, text)
+
+    if not matches:
+        return None
+
+    # Get the first match (assuming there's only one JSON block)
+    json_str = matches[0]
+
+    try:
+        # Parse the JSON string
+        json_data = json.loads(json_str)
+        return json_data
+    except json.JSONDecodeError as e:
+        logger.error(f"Error: Invalid JSON format: {e}")
+        return None
 
 
 def test():
