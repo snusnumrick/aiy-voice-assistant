@@ -179,6 +179,7 @@ class ConversationManager:
                                               "Assume EST if timezone unspecified. Treat responses as spoken.")
         self.default_system_prompt = self.default_system_prompt_russian
         self.message_history: Deque[dict] = deque([{"role": "system", "content": self.get_system_prompt()}])
+        self.loop = asyncio.get_event_loop()
 
     def get_system_prompt(self):
         from src.responce_player import emotions_prompt
@@ -266,6 +267,9 @@ class ConversationManager:
         with open(dialog_file_name, "w") as dialog_file:
             dialog_file.write("\n\n" + self.formatted_message_history(150) + "\n\n")
 
+    async def _run_sync_in_thread(self, func, *args):
+        return await self.loop.run_in_executor(None, functools.partial(func, *args))
+
     async def _process_facts(self):
         # backup existing facts.json, rename it facts_prev.json
         os.rename("facts.json", "facts_prev.json")
@@ -274,7 +278,7 @@ class ConversationManager:
         optimized_facts = await optimize_facts(self.get_system_prompt(), self.facts, self.config)
 
         # Save facts using a separate thread to avoid blocking the event loop
-        await asyncio.to_thread(self.save_facts, optimized_facts)
+        await self._run_sync_in_thread(self.save_facts, optimized_facts)
 
         return optimized_facts
 
@@ -286,7 +290,7 @@ class ConversationManager:
         optimized_rules = await optimize_rules(self.get_system_prompt(), self.rules, self.config)
 
         # Save rules using a separate thread to avoid blocking the event loop
-        await asyncio.to_thread(self.save_rules, optimized_rules)
+        await self._run_sync_in_thread(self.save_rules, optimized_rules)
 
         return optimized_rules
 
