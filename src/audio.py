@@ -198,11 +198,14 @@ class SpeechTranscriber:
         self.last_clean_date: Optional[datetime.date] = None
 
     async def check_and_schedule_cleaning(self) -> None:
-        now = datetime.datetime.now()
+        now: datetime.datetime = datetime.datetime.now()
         cleaning_time_start = datetime.time(hour=3)  # 3 AM
         cleaning_time_stop = datetime.time(hour=23)  # 4 AM
 
-        logger.info(cleaning_time_start, now.time(), cleaning_time_stop)
+        logger.info(cleaning_time_start)
+        logger.info(now)
+        logger.info(cleaning_time_stop)
+        logger.info(cleaning_time_start, now, cleaning_time_stop)
 
         if cleaning_time_start <= now.time() < cleaning_time_stop:
             if self.last_clean_date != now.date():
