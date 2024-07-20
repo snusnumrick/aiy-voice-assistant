@@ -343,7 +343,19 @@ class SpeechTranscriber:
             logger.debug('Processing audio...')
 
             try:
-                text = self.speech_service.transcribe_stream(audio_generator, self.config)
+                # create sync generator from async
+                def sync_audio_generator():
+                    while True:
+                        try:
+                            chunk = asyncio.get_event_loop().run_until_complete(audio_generator.__anext__())
+                            yield chunk
+                        except StopAsyncIteration:
+                            break
+
+                # run sync generator in separate thread
+                loop = asyncio.get_event_loop()
+                text = await loop.run_in_executor(None, self.speech_service.transcribe_stream,
+                                                  sync_audio_generator(), self.config)
             except Exception as e:
                 logger.error(f"Error transcribing speech: {str(e)}")
                 text = ""
