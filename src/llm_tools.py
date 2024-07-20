@@ -107,7 +107,7 @@ async def optimize_rules(system_prompt: str, soft_rules: List[str], config: Conf
         responses += response
 
     logger.debug(f"optimize_rules responces: {responses}")
-    new_rules = json.loads(extract_json(responses))
+    new_rules = extract_json(responses)
     return new_rules
 
 
@@ -148,7 +148,7 @@ async def optimize_facts(system_prompt: str, facts: List[str], config: Config) -
     match = re.search(r'\[[\s\S]*\]', responses)
     responses = match.group(0)
     logger.debug(f"optimize_facts responces: {responses}")
-    new_rules = json.loads(extract_json(responses))
+    new_rules = extract_json(responses)
     return new_rules
 
 
