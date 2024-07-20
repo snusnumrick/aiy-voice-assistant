@@ -203,12 +203,12 @@ class SpeechTranscriber:
         cleaning_time_stop = datetime.time(hour=23)  # 4 AM
 
         if cleaning_time_start <= now.time() < cleaning_time_stop:
-            logger.info(f"Cleaning time: {now.time()}")
+            logger.debug(f"Cleaning time: {now.time()}")
             if self.last_clean_date != now.date():
                 logger.info(f"Cleaning date: {now.date()}")
                 if self.cleaning_task is None or self.cleaning_task.done():
                     logger.info(f"Scheduling cleaning task at {now}")
-                    self.cleaning_task = asyncio.create_task(self.cleaning_routine)
+                    self.cleaning_task = asyncio.create_task(self.cleaning_routine())
                     self.last_clean_date = now.date()
                 else:
                     logger.info(f"Cleaning task is in progress")
@@ -292,7 +292,6 @@ class SpeechTranscriber:
             time_breathing_started = time.time()
             for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
 
-                logger.info(f"cleaning routine: {self.cleaning_routine}")
                 if self.cleaning_routine:
                     await self.check_and_schedule_cleaning()
 
