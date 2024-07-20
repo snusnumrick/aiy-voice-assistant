@@ -14,6 +14,7 @@ import asyncio
 from collections import deque
 from typing import List, Tuple, AsyncGenerator, Deque
 import functools
+from pathlib import Path
 
 from src.responce_player import extract_emotions
 from src.tools import format_message_history
@@ -273,8 +274,10 @@ class ConversationManager:
 
     async def _process_facts(self):
         # backup existing facts.json, rename it facts_prev.json
-        logger.info(f"backup existing facts.json")
-        os.rename("facts.json", "facts_prev.json")
+        p = Path("facts.json")
+        if p.exists():
+            logger.info(f"backup existing facts.json")
+            p.rename("facts_prev.json")
 
         # Asynchronously optimize facts
         optimized_facts = await optimize_facts(self.get_system_prompt(), self.facts, self.config)
@@ -286,7 +289,10 @@ class ConversationManager:
 
     async def _process_rules(self):
         # backup existing rules
-        logger.info(f"backup existing rules.json")
+        p = Path("rules.json")
+        if p.exists():
+            logger.info(f"backup existing rules.json")
+            p.rename("rules_prev.json")
         os.rename("rules.json", "rules_prev.json")
 
         # Asynchronously optimize rules
