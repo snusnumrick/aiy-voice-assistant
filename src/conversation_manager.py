@@ -291,6 +291,8 @@ class ConversationManager:
         return optimized_rules
 
     async def process_and_clean(self):
+        logger.info("process_and_clean")
+        return
         # form new memories, clean message deque, process existing facts and rules
         # to be used in night time
         new_line_str = "\m"
