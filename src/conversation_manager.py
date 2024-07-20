@@ -13,6 +13,7 @@ import sys
 import asyncio
 from collections import deque
 from typing import List, Tuple, AsyncGenerator, Deque
+import functools
 
 from src.responce_player import extract_emotions
 from src.tools import format_message_history
