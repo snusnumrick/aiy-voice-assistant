@@ -180,7 +180,6 @@ class ConversationManager:
                                               "Assume EST if timezone unspecified. Treat responses as spoken.")
         self.default_system_prompt = self.default_system_prompt_russian
         self.message_history: Deque[dict] = deque([{"role": "system", "content": self.get_system_prompt()}])
-        self.loop = asyncio.get_event_loop()
 
     def get_system_prompt(self):
         from src.responce_player import emotions_prompt
@@ -269,7 +268,8 @@ class ConversationManager:
             dialog_file.write("\n\n" + self.formatted_message_history(150) + "\n\n")
 
     async def _run_sync_in_thread(self, func, *args):
-        return await self.loop.run_in_executor(None, functools.partial(func, *args))
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, functools.partial(func, *args))
 
     async def _process_facts(self):
         # backup existing facts.json, rename it facts_prev.json
@@ -321,8 +321,9 @@ class ConversationManager:
         # process existing facts and rules (run both operations concurrently)
         existing_facts = set(self.facts)
         existing_rules = set(self.rules)
-        facts_task = self.loop.create_task(self._process_facts())
-        rules_task = self.loop.create_task(self._process_rules())
+        loop = asyncio.get_event_loop()
+        facts_task = loop.create_task(self._process_facts())
+        rules_task = loop.create_task(self._process_rules())
         # Wait for both tasks to complete and get their results
         # asyncio.gather allows us to wait for multiple coroutines concurrently
         self.facts, self.rules = await asyncio.gather(facts_task, rules_task)
