@@ -89,7 +89,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
     response_player = None
     original_audio_file_name = config.get('audio_file_name', 'speech.wav')
 
-    async with (aiohttp.ClientSession() as session):
+    async with aiohttp.ClientSession() as session:
         while True:
             try:
                 # for viz purposes
