@@ -131,6 +131,7 @@ class ConversationManager:
         self.rules = self.load_rules()
         self.location = get_location()
         self.timezone = get_timezone()
+        self.current_language_code = "ru"
         self.hard_rules_russian = (""
                                    "Если в ответе на твой запрос указано время без указания часового пояса, "
                                    "считай что это Восточное стандартное время."
@@ -253,8 +254,9 @@ class ConversationManager:
             result = []
             for emo, t in extract_emotions(response_text):
                 logger.info(f"Emotion: {emo} -> {t}")
-                for lang, text in extract_language(t):
+                for lang, text in extract_language(t, default_lang=self.current_language_code):
                     logger.info(f"Language: {lang} -> {text}")
+                    self.current_language_code = lang
                     result.append({"emotion": emo, "language": lang, "text": text})
             logger.debug(f"yielding {result}")
             yield result

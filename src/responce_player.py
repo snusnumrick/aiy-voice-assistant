@@ -73,15 +73,20 @@ def extract_emotions(text: str) -> List[Tuple[dict, str]]:
     return results
 
 
-def extract_language(text: str) -> List[Tuple[str, str]]:
+def extract_language(text: str, default_lang="ru") -> List[Tuple[str, str]]:
     # Regular expression to match language codes and subsequent text
-    pattern = r'\$lang:\s*(\w+)\$(.*?)(?=\$lang:|$)'
+    pattern = r'(?:^(.*?))?(?:\$lang:\s*(\w+)\$(.*?))?(?=\$lang:|$)'
 
     # Find all matches in the text
     matches = re.findall(pattern, text, re.DOTALL)
 
     # Process matches into the desired format
-    result = [(lang, segment.strip()) for lang, segment in matches]
+    result = []
+    for default, lang, segment in matches:
+        if default.strip():
+            result.append((default_lang, default.strip()))
+        if lang:
+            result.append((lang, segment.strip()))
 
     return result
 
