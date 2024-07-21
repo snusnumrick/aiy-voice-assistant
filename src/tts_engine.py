@@ -235,7 +235,8 @@ class YandexTTSEngine(TTSEngine):
     def voice_model(self, tone=Tone.PLAIN, lang=Language.RUSSIAN):
         model = model_repository.synthesis_model()
         model.voice = self.lang_voices[lang]
-        model.role = self.roles[tone]
+        if lang == Language.RUSSIAN:
+            model.role = self.roles[tone]
         model.language = self.langs[lang]
         model.speed = self.speed
         return model
