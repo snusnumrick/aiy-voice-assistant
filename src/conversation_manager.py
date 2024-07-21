@@ -197,7 +197,7 @@ class ConversationManager:
 
         return prompt
 
-    async def get_response(self, text: str) -> AsyncGenerator[List[Dict[str,any]], None]:
+    async def get_response(self, text: str) -> AsyncGenerator[List[Dict[str, any]], None]:
         """
         Get an AI response based on the current conversation state and new input.
 
@@ -251,8 +251,10 @@ class ConversationManager:
                 logger.info(f"Extracted rules: {rules}")
 
             result = []
-            for emo, t in  extract_emotions(response_text):
+            for emo, t in extract_emotions(response_text):
+                logger.info(f"Emotion: {emo} -> {t}")
                 for lang, text in extract_language(t):
+                    logger.info(f"Language: {lang} -> {text}")
                     result.append({"emotion": emo, "language": lang, "text": text})
             logger.debug(f"yielding {result}")
             yield result
@@ -350,8 +352,8 @@ class ConversationManager:
                     logger.info(f"new memories formed:\n{newline.join(self.facts[num_facts_begore:])}")
 
         if self.config.get("clean_message_history_at_night", False):
-                # cleanup conversation
-                self.message_history: Deque[dict] = deque([{"role": "system", "content": self.get_system_prompt()}])
+            # cleanup conversation
+            self.message_history: Deque[dict] = deque([{"role": "system", "content": self.get_system_prompt()}])
 
         # process existing facts and rules (run both operations concurrently)
         existing_facts = set(self.facts)
