@@ -15,10 +15,10 @@ import re
 import sys
 from collections import deque
 from pathlib import Path
-from typing import List, Tuple, AsyncGenerator, Deque
+from typing import List, Tuple, AsyncGenerator, Deque, Dict
 
 from src.llm_tools import optimize_rules, optimize_facts
-from src.responce_player import extract_emotions
+from src.responce_player import extract_emotions, extract_language
 from src.tools import format_message_history
 
 if __name__ == "__main__":
@@ -151,7 +151,7 @@ class ConversationManager:
                                    "$rule: <текст нового правила>$. "
                                    "Таких запросов в твоем сообщении тоже может быть несколько. "
                                    "If you reply or part of it uses different language than before, "
-                                   "use $language: russian/english/german$. "
+                                   "use $lang: ru/en/de$. "
                                    "Use it even for single words if surrounded by other language. ")
         self.hard_rules_english = ("For web searches: $internet query:<query in English>$. "
                                    "To remember: $remember:<text>$. For new rules: $rule:<text>$ "
@@ -197,7 +197,7 @@ class ConversationManager:
 
         return prompt
 
-    async def get_response(self, text: str) -> AsyncGenerator[List[Tuple[dict, str]], None]:
+    async def get_response(self, text: str) -> AsyncGenerator[List[Dict[str,any]], None]:
         """
         Get an AI response based on the current conversation state and new input.
 
@@ -205,7 +205,8 @@ class ConversationManager:
             text (str): The new input text to respond to.
 
         Returns:
-            List[Tuple[dict, str]]: The AI-generated response, marked with emotion response
+            AsyncGenerator[List[Dict[str,any]]: The AI-generated response,
+            marked with emotion response and language code
         """
 
         # update system message
@@ -249,9 +250,12 @@ class ConversationManager:
             if rules:
                 logger.info(f"Extracted rules: {rules}")
 
-            text_with_emotions = extract_emotions(response_text)
-            logger.debug(f"yielding {text_with_emotions}")
-            yield text_with_emotions
+            result = []
+            for emo, t in  extract_emotions(response_text):
+                for lang, text in extract_language(t):
+                    result.append({"emotion": emo, "language": lang, "text": text})
+            logger.debug(f"yielding {result}")
+            yield result
 
     def formatted_message_history(self, max_width=120) -> str:
         """

@@ -5,10 +5,10 @@ patterns, and managing a playlist of audio files with corresponding LED behavior
 """
 import json
 import logging
-import threading
-from subprocess import Popen
 import re
+import threading
 import time
+from subprocess import Popen
 from typing import List, Tuple, Dict, Optional
 
 from aiy.leds import Leds, Pattern
@@ -71,6 +71,19 @@ def extract_emotions(text: str) -> List[Tuple[dict, str]]:
         pos = match.end()
 
     return results
+
+
+def extract_language(text: str) -> List[Tuple[str, str]]:
+    # Regular expression to match language codes and subsequent text
+    pattern = r'\$lang:\s*(\w+)\$(.*?)(?=\$lang:|$)'
+
+    # Find all matches in the text
+    matches = re.findall(pattern, text, re.DOTALL)
+
+    # Process matches into the desired format
+    result = [(lang, segment.strip()) for lang, segment in matches]
+
+    return result
 
 
 def adjust_rgb_brightness(rgb: List[int], brightness: str) -> Tuple[int, int, int]:

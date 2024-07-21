@@ -13,6 +13,7 @@ from enum import Enum
 
 import aiofiles
 import aiohttp
+from speechkit import model_repository
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -23,13 +24,19 @@ class Tone(Enum):
     HAPPY = 1
 
 
+class Language(Enum):
+    RUSSIAN = 0
+    ENGLISH = 1
+    GERMAN = 2
+
+
 class TTSEngine(ABC):
     """
     Abstract base class for Text-to-Speech engines.
     """
 
     @abstractmethod
-    def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN) -> None:
+    def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> None:
         """
         Synthesize speech from text and save it to a file.
 
@@ -37,6 +44,7 @@ class TTSEngine(ABC):
             text (str): The text to synthesize into speech.
             filename (str): The path to save the synthesized audio file.
             tone (Tone): The tone to use.
+            lang (Language): The language to use.
         """
         pass
 
@@ -46,7 +54,7 @@ class TTSEngine(ABC):
 
     @abstractmethod
     async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
-                               tone: Tone = Tone.PLAIN) -> bool:
+                               tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
         """
         Asynchronously synthesize speech from text and save it to a file.
 
@@ -55,6 +63,7 @@ class TTSEngine(ABC):
             text (str): The text to synthesize into speech.
             filename (str): The path to save the synthesized audio file.
             tone (Tone): The tone to use.
+            lang (str): The language to use.
 
         Returns:
             bool: True if synthesis was successful, False otherwise.
@@ -82,7 +91,7 @@ class OpenAITTSEngine(TTSEngine):
     def max_text_length(self) -> int:
         return 4096
 
-    def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN) -> None:
+    def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> None:
         """
         Synthesize speech using OpenAI's TTS model and save it to a file.
 
@@ -90,13 +99,14 @@ class OpenAITTSEngine(TTSEngine):
             text (str): The text to synthesize into speech.
             filename (str): The path to save the synthesized audio file.
             tone (Tone): The tone to use.
+            lang (Language): The language to use.
         """
         response = self.client.with_streaming_response.audio.speech.create(model=self.model, voice=self.voice,
                                                                            response_format="wav", input=text)
         response.stream_to_file(filename)
 
     async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
-                               tone: Tone = Tone.PLAIN) -> bool:
+                               tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
         url = "https://api.openai.com/v1/audio/speech"
         headers = {"Authorization": f"Bearer {self.client.api_key}", "Content-Type": "application/json"}
         data = {"model": self.model, "input": text, "voice": self.voice, "response_format": "wav"}
@@ -141,7 +151,8 @@ class GoogleTTSEngine(TTSEngine):
         self.voice = config.get('google_tts_voice', 'ru-RU-Wavenet-A')
         self.audio_encoding = texttospeech.AudioEncoding.LINEAR16
 
-    def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN) -> None:
+    def synthesize(self, text: str, filename: str,
+                   tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> None:
         """
         Synthesize speech using Google's Text-to-Speech and save it to a file.
 
@@ -149,6 +160,7 @@ class GoogleTTSEngine(TTSEngine):
             text (str): The text to synthesize into speech.
             filename (str): The path to save the synthesized audio file.
             tone (Tone): The tone to use.
+            lang (Language): The language to use.
         """
         from google.cloud import texttospeech
 
@@ -169,7 +181,7 @@ class GoogleTTSEngine(TTSEngine):
         return -1
 
     async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
-                               tone: Tone = Tone.PLAIN) -> bool:
+                               tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
         from google.cloud import texttospeech
 
         # Google Cloud TTS doesn't have an async API, so we'll run it in an executor
@@ -210,34 +222,25 @@ class YandexTTSEngine(TTSEngine):
         # Configure credentials
         configure_credentials(yandex_credentials=creds.YandexCredentials(api_key=self.api_key))
 
-        self.voice = config.get('yandex_tts_voice', 'ermil')
+        self.langs = {Language.RUSSIAN: "ru-RU", Language.ENGLISH: "en-GB", Language.GERMAN: "de-DE"}
+        self.lang_voices = {Language.RUSSIAN: config.get('yandex_tts_voice_russian', 'ermil'),
+                            Language.ENGLISH: config.get('yandex_tts_voice_english', 'john'),
+                            Language.GERMAN: config.get('yandex_tts_voice_german', 'lea')}
+        self.roles = {Tone.PLAIN: config.get('yandex_tts_role_plain', 'neutral'),
+                      Tone.HAPPY: config.get('yandex_tts_role_happy', 'good')}
         self.role_plain = config.get('yandex_tts_role_plain', 'neutral')
         self.role_happy = config.get('yandex_tts_role_happy', 'good')
-        self.language_code = config.get('yandex_tts_language', 'ru-RU')
         self.speed = config.get('yandex_tts_speed', 1.0)
 
-        # Initialize the synthesis model
-        self.model_plain = model_repository.synthesis_model()
-        self.model_plain.voice = self.voice
-        self.model_plain.role = self.role_plain
-        self.model_plain.language = self.language_code
-        self.model_plain.speed = self.speed
+    def voice_model(self, tone=Tone.PLAIN, lang=Language.RUSSIAN):
+        model = model_repository.synthesis_model()
+        model.voice = self.lang_voices[lang]
+        model.role = self.roles[tone]
+        model.language = self.langs[lang]
+        model.speed = self.speed
+        return model
 
-        self.model_happy = model_repository.synthesis_model()
-        self.model_happy.voice = self.voice
-        self.model_happy.role = self.role_happy
-        self.model_happy.language = self.language_code
-        self.model_happy.speed = self.speed
-
-        self.synthesis_config = SynthesisConfig(
-            audio_encoding=AudioEncoding.WAV,
-            voice=self.voice
-        )
-
-        logger.info(
-            f"Initialized Yandex TTS Engine with language {self.language_code}, voice {self.voice}")
-
-    def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN) -> None:
+    def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> None:
         """
         Synthesize speech using Yandex SpeechKit and save it to a file.
 
@@ -245,8 +248,9 @@ class YandexTTSEngine(TTSEngine):
             text (str): The text to synthesize into speech.
             filename (str): The path to save the synthesized audio file.
             tone (tone): The tone to use.
+            lang (Language): The language to use.
         """
-        model = self.model_happy if tone == Tone.HAPPY else self.model_plain
+        model = self.voice_model(tone=tone, lang=lang)
         try:
             logger.debug(f"Synthesizing text: {text[:50]}...")
             result = model.synthesize(text, raw_format=False)
@@ -260,19 +264,16 @@ class YandexTTSEngine(TTSEngine):
         return -1
 
     async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
-                               tone: Tone = Tone.PLAIN) -> bool:
+                               tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
         # Yandex SpeechKit doesn't have an async API, so we'll run it in an executor
 
         def synthesize_wrapper(par: dict) -> bytes:
             """Wrapper method to call synthesize with the correct parameters."""
-            return par["model"].synthesize(
-                par["text"],
-                raw_format=True
-            )
+            return par["model"].synthesize(par["text"], raw_format=True)
 
         loop = asyncio.get_event_loop()
-        model = self.model_happy if tone == Tone.HAPPY else self.model_plain
-        result = await loop.run_in_executor(None, synthesize_wrapper, {"model": model, "text":text})
+        args = {"model": self.voice_model(tone=tone, lang=lang), "text": text}
+        result = await loop.run_in_executor(None, synthesize_wrapper, args)
 
         async with aiofiles.open(filename, "wb") as out:
             await out.write(result)

@@ -12,15 +12,14 @@ import time
 import traceback
 
 import aiohttp
-
 from aiy.board import Button
 from aiy.leds import Leds, Color
 
-from .audio import SpeechTranscriber, synthesize_speech, synthesize_speech_async
+from .audio import SpeechTranscriber
 from .config import Config
 from .conversation_manager import ConversationManager
 from .responce_player import ResponsePlayer
-from .tts_engine import TTSEngine, Tone
+from .tts_engine import TTSEngine, Tone, Language
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,7 @@ def append_suffix(file_name: str, suffix: str) -> str:
 
 
 async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_manager: ConversationManager,
-              config: Config) -> None:
+                          config: Config) -> None:
     """
     The main conversation loop of the AI assistant.
 
@@ -90,7 +89,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
     response_player = None
     original_audio_file_name = config.get('audio_file_name', 'speech.wav')
 
-    async with aiohttp.ClientSession() as session:
+    async with (aiohttp.ClientSession() as session):
         while True:
             try:
                 # for viz purposes
@@ -104,20 +103,24 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
                     # Step 2: Generate AI response
                     async for ai_response in conversation_manager.get_response(text):
 
-                        logger.debug('AI response: %s', ai_response)
-                        logger.info('AI says: %s', " ".join([t for e, t in ai_response]))
+                        logger.info('AI says: %s', " ".join([r["text"] for r in ai_response]))
 
                         if ai_response:
                             # Step 3: Asynchronously synthesize speech for each response
                             tasks = []
-                            for n, (emo, response_text) in enumerate(ai_response):
-                                audio_file_name = append_suffix(original_audio_file_name, str(n+1))
+                            for n, response in enumerate(ai_response):
+                                emo = response["emotion"]
+                                response_text = response["text"]
+                                lang_code = response["language"]
+                                audio_file_name = append_suffix(original_audio_file_name, str(n + 1))
                                 tone = Tone.PLAIN
                                 if 'voice' in emo and 'tone' in emo['voice'] and emo['voice']['tone'] == "happy":
                                     tone = Tone.HAPPY
-                                logger.debug('Tone: %s', tone)
-                                task = asyncio.create_task(tts_engine.synthesize_async(session, response_text,
-                                                                                       audio_file_name, tone))
+                                lang = {"ru": Language.RUSSIAN, "en": Language.ENGLISH, "de": Language.GERMAN
+                                        }.get(lang_code, Language.RUSSIAN)
+                                logger.debug(f"Tone: {tone}, language = {lang}")
+                                task = asyncio.create_task(
+                                    tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang))
                                 tasks.append((emo, audio_file_name, task))
 
                             # Step 4: Wait for all synthesis tasks to complete and build playlist
