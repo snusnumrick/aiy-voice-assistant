@@ -230,7 +230,7 @@ class ConversationManager:
 
         async for response_text in self.ai_model.get_response_async(list(self.message_history)):
 
-            logger.debug(f"AI response: {text} -> {response_text}")
+            logger.info(f"AI response: {text} -> {response_text}")
             if self.message_history[-1]["role"] != "assistant":
                 self.message_history.append({"role": "assistant", "content": response_text})
             else:
