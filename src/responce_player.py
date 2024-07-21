@@ -73,6 +73,10 @@ def extract_emotions(text: str) -> List[Tuple[dict, str]]:
     return results
 
 
+def language_prompt() -> str:
+    return "If you reply or part of it uses different language than before, use $lang: ru/en/de$. "
+
+
 def extract_language(text: str, default_lang="ru") -> List[Tuple[str, str]]:
     # Regular expression to match language codes and subsequent text
     pattern = r'(?:^(.*?))?(?:\$lang:\s*(\w+)\$(.*?))?(?=\$lang:|$)'

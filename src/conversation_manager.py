@@ -150,10 +150,7 @@ class ConversationManager:
                                    "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
                                    "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
                                    "$rule: <текст нового правила>$. "
-                                   "Таких запросов в твоем сообщении тоже может быть несколько. "
-                                   "If you reply or part of it uses different language than before, "
-                                   "use $lang: ru/en/de$. "
-                                   "Use it even for single words if surrounded by other language. ")
+                                   "Таких запросов в твоем сообщении тоже может быть несколько. ")
         self.hard_rules_english = ("For web searches: $internet query:<query in English>$. "
                                    "To remember: $remember:<text>$. For new rules: $rule:<text>$ "
                                    "When it's not entirely clear where to place the stress in a word, "
@@ -183,12 +180,13 @@ class ConversationManager:
         self.message_history: Deque[dict] = deque([{"role": "system", "content": self.get_system_prompt()}])
 
     def get_system_prompt(self):
-        from src.responce_player import emotions_prompt
+        from src.responce_player import emotions_prompt, language_prompt
 
         prompt = f"{get_current_datetime_english(self.timezone)} {self.location} "
         prompt += self.config.get('system_prompt', self.default_system_prompt)
         prompt += self.hard_rules
         prompt += emotions_prompt()
+        prompt += language_prompt()
 
         if self.facts:
             prompt += " Ты уже знаешь факты:" + " ".join(self.facts)
