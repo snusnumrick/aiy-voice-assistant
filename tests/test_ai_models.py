@@ -1,26 +1,39 @@
 import unittest
-from unittest.mock import Mock, patch
-from src.ai_models import OpenAIModel, ClaudeAIModel
+import asyncio
+from unittest.mock import patch, MagicMock
+from src.ai_models import ClaudeAIModel
+from src.config import Config
 
-
-class TestAIModels(unittest.TestCase):
+class TestClaudeAIModel(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.mock_config = Mock()
+        self.config = Config()
+        self.model = ClaudeAIModel(self.config)
 
-    @patch('src.ai_models.OpenAI')
-    def test_openai_model(self, mock_openai):
-        model = OpenAIModel(self.mock_config)
-        mock_openai.return_value.chat.completions.create.return_value.choices[0].message.content = "Hello, world!"
-        response = model.get_response([{"role": "user", "content": "Hi"}])
-        self.assertEqual(response, "Hello, world!")
+    @patch('requests.post')
+    def test_get_response(self, mock_post):
+        # Mock the API response
+        mock_response = MagicMock()
+        mock_response.content.decode.return_value = '{"content": [{"type": "text", "text": "Test response"}]}'
+        mock_post.return_value = mock_response
 
-    @patch('src.ai_models.anthropic.Anthropic')
-    def test_claude_model(self, mock_anthropic):
-        model = ClaudeAIModel(self.mock_config)
-        mock_anthropic.return_value.completions.create.return_value.completion = "Hello, world!"
-        response = model.get_response([{"role": "user", "content": "Hi"}])
-        self.assertEqual(response, "Hello, world!")
+        messages = [{"role": "user", "content": "Hello"}]
+        response = self.model.get_response(messages)
 
+        self.assertEqual(response, "Test response")
+        mock_post.assert_called_once()
+
+    @patch('aiohttp.ClientSession.post')
+    async def test_get_response_async(self, mock_post):
+        # Mock the API response
+        mock_response = MagicMock()
+        mock_response.text = asyncio.coroutine(lambda: '{"content": [{"type": "text", "text": "Test async response"}]}')
+        mock_post.return_value.__aenter__.return_value = mock_response
+
+        messages = [{"role": "user", "content": "Hello"}]
+        async for response in self.model.get_response_async(messages):
+            self.assertEqual(response, "Test async response")
+
+        mock_post.assert_called_once()
 
 if __name__ == '__main__':
-    unittest.main()
+    asyncio.run(unittest.main())

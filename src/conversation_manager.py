@@ -388,6 +388,7 @@ class ConversationManager:
             return []
         except json.decoder.JSONDecodeError as e:
             logger.error(f"couldn't load facts file: {e}")
+            return []
 
     @staticmethod
     def save_facts(facts):
@@ -403,6 +404,8 @@ class ConversationManager:
             return []
         except json.decoder.JSONDecodeError as e:
             logger.error(f"couldn't load rules file: {e}")
+            return []
+
 
     @staticmethod
     def save_rules(rules):
