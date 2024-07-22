@@ -119,7 +119,6 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                                     tone = Tone.HAPPY
                                 lang = {"ru": Language.RUSSIAN, "en": Language.ENGLISH, "de": Language.GERMAN
                                         }.get(lang_code, Language.RUSSIAN)
-                                logger.debug(f"Tone: {tone}, language = {lang}")
 
                                 # Select the appropriate TTS engine based on language
                                 tts_engine = tts_engines.get(lang, tts_engines[Language.RUSSIAN])

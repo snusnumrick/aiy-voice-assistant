@@ -289,7 +289,7 @@ class ElevenLabsTTSEngine(TTSEngine):
         if not self.api_key:
             raise ValueError("Eleven Labs API key is not provided in environment variables or configuration")
 
-        self.voice_id = config.get('elevenlabs_voice', 'Callum')
+        self.voice_id = config.get('elevenlabs_voice_id', 'N2lVS1w4EtoT3dr4eOWO')
         self.stability = config.get('elevenlabs_stability', 0.5)
         self.similarity_boost = config.get('elevenlabs_similarity_boost', 0.75)
         self.style = config.get('elevenlabs_style', 0.0)
