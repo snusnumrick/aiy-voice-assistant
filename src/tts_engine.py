@@ -15,6 +15,7 @@ import aiofiles
 import aiohttp
 from speechkit import model_repository
 import requests
+from pydub import AudioSegment
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -350,8 +351,11 @@ class ElevenLabsTTSEngine(TTSEngine):
             async with session.post(url, json=data, headers=headers) as response:
                 if response.status == 200:
                     audio_content = await response.read()
-                    async with aiofiles.open(filename + ".mp3", mode='wb') as f:
+                    mp3_filename = filename + ".mp3"
+                    async with aiofiles.open(mp3_filename, mode='wb') as f:
                         await f.write(audio_content)
+                    audio = AudioSegment.from_mp3(mp3_filename)
+                    audio.export(filename, format="wav")
                     logger.info(f"Audio content written to file {filename}")
                     return True
                 else:
