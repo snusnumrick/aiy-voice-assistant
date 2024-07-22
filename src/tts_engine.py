@@ -19,6 +19,8 @@ import requests
 # Set up logging
 logger = logging.getLogger(__name__)
 
+from src.config import Config
+
 
 class Tone(Enum):
     PLAIN = 0
@@ -351,6 +353,7 @@ class ElevenLabsTTSEngine(TTSEngine):
                     audio_content = await response.read()
                     async with aiofiles.open(filename, mode='wb') as f:
                         await f.write(audio_content)
+                    logger.info(f"Audio content written to file {filename}")
                     return True
                 else:
                     logging.error(f"Error from ElevenLabs API: {response.status} - {await response.text()}")
@@ -358,4 +361,20 @@ class ElevenLabsTTSEngine(TTSEngine):
         except Exception as e:
             logging.error(f"An error occurred: {str(e)}")
             return False
+
+
+async def main():
+    config = Config()
+    engine = ElevenLabsTTSEngine(config)
+    async with aiohttp.ClientSession() as session:
+        await engine.synthesize_async(session, "to be or not to be", "test.wav")
+
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    load_dotenv()
+    asyncio.run(main())
 
