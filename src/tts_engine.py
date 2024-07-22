@@ -326,7 +326,11 @@ class ElevenLabsTTSEngine(TTSEngine):
         if not self.api_key:
             raise ValueError("Eleven Labs API key is not provided in environment variables or configuration")
 
-        self.voice_id = config.get('elevenlabs_voice_id', 'N2lVS1w4EtoT3dr4eOWO')
+        self.voice_ids = {Language.ENGLISH: config.get('elevenlabs_voice_id_en', 'cjVigY5qzO86Huf0OWal'), # Eric
+                          Language.GERMAN: config.get('elevenlabs_voice_id_de', 'Ay1WwRHxUsu3hEeAp8JZ'), # Anton
+                          Language.RUSSIAN: config.get('elevenlabs_voice_id_ru', 'N2lVS1w4EtoT3dr4eOWO'), # Callum
+                          }
+
         self.stability = config.get('elevenlabs_stability', 0.5)
         self.similarity_boost = config.get('elevenlabs_similarity_boost', 0.75)
         self.style = config.get('elevenlabs_style', 0.0)
@@ -334,11 +338,13 @@ class ElevenLabsTTSEngine(TTSEngine):
         self.max_retries = config.get('max_retries', 5)
         self.initial_retry_delay = config.get('initial_retry_delay', 1)
         self.jitter_factor = config.get('jitter_factor', 0.1)
+        self.query = {"output_format": "mp3_22050_32"}
 
         self.model_id = config.get('elevenlabs_model', "eleven_multilingual_v2")
 
     def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> None:
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.voice_id}"
+        voice_id = self.voice_ids[lang]
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 
         headers = {
             "Content-Type": "application/json",
@@ -354,7 +360,7 @@ class ElevenLabsTTSEngine(TTSEngine):
             }
         }
 
-        response = requests.post(url, json=data, headers=headers)
+        response = requests.post(url, json=data, headers=headers, query=self.auery)
 
         mp3_filename = filename + ".mp3"
         if response.status_code == 200:
@@ -379,7 +385,8 @@ class ElevenLabsTTSEngine(TTSEngine):
 
     async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
                                tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.voice_id}"
+        voice_id = self.voice_ids[lang]
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
         audio_format = AudioFormat.WAV if filename.lower().endswith(".wav") else AudioFormat.MP3
 
         headers = {
@@ -399,7 +406,7 @@ class ElevenLabsTTSEngine(TTSEngine):
         # this loop is for dealing with limitation of max num of concurent requests
         for attempt in range(self.max_retries):
             try:
-                async with session.post(url, json=data, headers=headers) as response:
+                async with session.post(url, json=data, headers=headers, query=self.auery) as response:
                     if response.status == HTTPStatus.OK:
                         mp3_filename = _ensure_correct_extension(filename, AudioFormat.MP3)
                         audio_content = await response.read()
@@ -447,5 +454,6 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     load_dotenv()
+
     asyncio.run(main())
 
