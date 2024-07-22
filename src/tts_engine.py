@@ -48,11 +48,6 @@ class HTTPStatus(IntEnum):
     TOO_MANY_REQUESTS = 429
 
 
-def convert_mp3_to_wav(mp3_file: str, wav_file: str) -> None:
-    audio = AudioSegment.from_mp3(mp3_file)
-    audio.export(wav_file, format="wav")
-
-
 class TTSEngine(ABC):
     """
     Abstract base class for Text-to-Speech engines.
@@ -343,8 +338,24 @@ class ElevenLabsTTSEngine(TTSEngine):
         self.model_id = config.get('elevenlabs_model', "eleven_multilingual_v2")
         self.base_url = "https://api.elevenlabs.io/v1"
 
-    def _generate_history_item_id(self, text: str, voice_id: str) -> str:
-        return hashlib.md5(f"{text}{voice_id}".encode()).hexdigest()
+    def _get_history_items(self, voice_id: str) -> List[Dict]:
+        url = f"{self.base_url}/history"
+        headers = {"xi-api-key": self.api_key}
+        params = {"voice_id": voice_id}
+
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code == HTTPStatus.OK.value:
+            return response.json().get("history", [])
+        else:
+            logger.error(f"Failed to get history items: {response.status_code} - {response.text}")
+            return []
+
+    def _find_matching_history_item(self, text: str, voice_id: str) -> Optional[str]:
+        history_items = self._get_history_items(voice_id)
+        for item in history_items:
+            if item.get("text") == text and item.get("voice_id") == voice_id:
+                return item.get("history_item_id")
+        return None
 
     def _check_history(self, text: str, lang: Language) -> Optional[str]:
         voice_id = self.voice_ids[lang]
@@ -369,8 +380,10 @@ class ElevenLabsTTSEngine(TTSEngine):
             raise Exception(f"Failed to download audio: {response.status_code} - {response.text}")
 
     def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> None:
+        voice_id = self.voice_ids[lang]
+
         # Check history first
-        history_item_id = self._check_history(text, lang)
+        history_item_id = self._find_matching_history_item(text, voice_id)
         if history_item_id:
             logger.info(f"Found existing audio for text: {text[:30]}...")
             self._download_audio(history_item_id, filename + ".mp3")
@@ -379,7 +392,6 @@ class ElevenLabsTTSEngine(TTSEngine):
             os.remove(filename + ".mp3")
             return
 
-        voice_id = self.voice_ids[lang]
         url = f"{self.base_url}/text-to-speech/{voice_id}"
 
         headers = {
@@ -420,15 +432,25 @@ class ElevenLabsTTSEngine(TTSEngine):
         jitter = random.uniform(0, self.jitter_factor * base_delay)
         return base_delay + jitter
 
-    async def _check_history_async(self, session: aiohttp.ClientSession, text: str, lang: Language) -> Optional[str]:
-        voice_id = self.voice_ids[lang]
-        history_item_id = self._generate_history_item_id(text, voice_id)
-        url = f"{self.base_url}/history/{history_item_id}"
+    async def _get_history_items_async(self, session: aiohttp.ClientSession, voice_id: str) -> List[Dict]:
+        url = f"{self.base_url}/history"
         headers = {"xi-api-key": self.api_key}
+        params = {"voice_id": voice_id}
 
-        async with session.get(url, headers=headers) as response:
+        async with session.get(url, headers=headers, params=params) as response:
             if response.status == HTTPStatus.OK.value:
-                return history_item_id
+                data = await response.json()
+                return data.get("history", [])
+            else:
+                logger.error(f"Failed to get history items: {response.status} - {await response.text()}")
+                return []
+
+    async def _find_matching_history_item_async(self, session: aiohttp.ClientSession, text: str, voice_id: str) \
+            -> Optional[str]:
+        history_items = await self._get_history_items_async(session, voice_id)
+        for item in history_items:
+            if item.get("text") == text and item.get("voice_id") == voice_id:
+                return item.get("history_item_id")
         return None
 
     async def _download_audio_async(self, session: aiohttp.ClientSession, history_item_id: str, filename: str) -> None:
@@ -445,19 +467,20 @@ class ElevenLabsTTSEngine(TTSEngine):
 
     async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
                                tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
+        voice_id = self.voice_ids[lang]
+
         # Check history first
-        history_item_id = await self._check_history_async(session, text, lang)
+        history_item_id = await self._find_matching_history_item_async(session, text, voice_id)
         if history_item_id:
             logger.info(f"Found existing audio for text: {text[:30]}...")
             mp3_filename = filename + ".mp3"
             await self._download_audio_async(session, history_item_id, mp3_filename)
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, convert_mp3_to_wav, mp3_filename, filename)
+            await loop.run_in_executor(None, self._convert_mp3_to_wav, mp3_filename, filename)
             os.remove(mp3_filename)
             return True
 
-        voice_id = self.voice_ids[lang]
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        url = f"{self.base_url}/text-to-speech/{voice_id}"
 
         headers = {
             "Content-Type": "application/json",
@@ -483,7 +506,7 @@ class ElevenLabsTTSEngine(TTSEngine):
                             await f.write(audio_content)
 
                         loop = asyncio.get_event_loop()
-                        await loop.run_in_executor(None, convert_mp3_to_wav, mp3_filename, filename)
+                        await loop.run_in_executor(None, self._convert_mp3_to_wav, mp3_filename, filename)
                         os.remove(mp3_filename)
 
                         return True
@@ -503,6 +526,11 @@ class ElevenLabsTTSEngine(TTSEngine):
                 await asyncio.sleep(self.initial_retry_delay * (2 ** attempt))
 
         return False
+
+    @staticmethod
+    def _convert_mp3_to_wav(mp3_file: str, wav_file: str) -> None:
+        audio = AudioSegment.from_mp3(mp3_file)
+        audio.export(wav_file, format="wav")
 
 
 async def main():
