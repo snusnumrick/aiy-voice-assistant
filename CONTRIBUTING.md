@@ -1,59 +1,48 @@
-# Contributing to AIY Voice Assistant
+readme# Contributing to AIY Voice Assistant for Children
 
-We love your input! We want to make contributing to this project as easy and transparent as possible, whether it's:
+[Previous sections remain unchanged]
 
-- Reporting a bug
-- Discussing the current state of the code
-- Submitting a fix
-- Proposing new features
-- Becoming a maintainer
+## Development Environment
 
-## We Develop with Github
+This project uses a virtual environment to manage dependencies. Before starting development:
 
-We use GitHub to host code, to track issues and feature requests, as well as accept pull requests.
+1. Ensure you have Python 3.7+ installed on your system.
 
-## We Use [Github Flow](https://guides.github.com/introduction/flow/index.html), So All Code Changes Happen Through Pull Requests
+2. Set up a virtual environment in the project directory:
+   ```
+   python3 -m venv venv
+   ```
 
-Pull requests are the best way to propose changes to the codebase. We actively welcome your pull requests:
+3. Activate the virtual environment:
+   - On Unix or MacOS:
+     ```
+     source venv/bin/activate
+     ```
+   - On Windows:
+     ```
+     venv\Scripts\activate
+     ```
 
-1. Fork the repo and create your branch from `main`.
-2. If you've added code that should be tested, add tests.
-3. If you've changed APIs, update the documentation.
-4. Ensure the test suite passes.
-5. Make sure your code lints.
-6. Issue that pull request!
+4. Install the project dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
 
-## Any contributions you make will be under the MIT Software License
+5. Always ensure your virtual environment is activated when working on the project.
 
-In short, when you submit code changes, your submissions are understood to be under the same [MIT License](http://choosealicense.com/licenses/mit/) that covers the project. Feel free to contact the maintainers if that's a concern.
+## Pull Request Process
 
-## Report bugs using Github's [issues](https://github.com/yourusername/project-name/issues)
+[Update the first step of the existing Pull Request Process]
 
-We use GitHub issues to track public bugs. Report a bug by [opening a new issue](https://github.com/yourusername/project-name/issues/new); it's that easy!
+1. Fork the repo and create your branch from `main`. Ensure you're working within the virtual environment.
 
-## Write bug reports with detail, background, and sample code
+[Rest of the Pull Request Process and other sections remain unchanged]
 
-**Great Bug Reports** tend to have:
+## Testing
 
-- A quick summary and/or background
-- Steps to reproduce
-  - Be specific!
-  - Give sample code if you can.
-- What you expected would happen
-- What actually happens
-- Notes (possibly including why you think this might be happening, or stuff you tried that didn't work)
+- Add tests for new features, especially those involving language processing or child interactions
+- Ensure all tests pass before submitting a pull request
+- For hardware-related changes, test thoroughly with the Google Voice Kit V2
+- Always run tests within the project's virtual environment to ensure consistent results
 
-People *love* thorough bug reports. I'm not even kidding.
-
-## Use a Consistent Coding Style
-
-* 4 spaces for indentation rather than tabs
-* You can try running `pylint` for style unification
-
-## License
-
-By contributing, you agree that your contributions will be licensed under its MIT License.
-
-## References
-
-This document was adapted from the open-source contribution guidelines for [Facebook's Draft](https://github.com/facebook/draft-js/blob/master/CONTRIBUTING.md)
+[Rest of the document remains unchanged]

@@ -100,7 +100,7 @@ class YandexSpeechRecognition(SpeechRecognitionService):
                 literature_text=config.get("literature_text", True)),
             language_restriction=stt_pb2.LanguageRestrictionOptions(
                 restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
-                language_code=[config.get("language_code", "auto")]),
+                language_code=[config.get("language_code", "ru-RU")]),
             audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME))
 
     def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
