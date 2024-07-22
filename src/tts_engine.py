@@ -483,7 +483,7 @@ class ElevenLabsTTSEngine(TTSEngine):
                             await f.write(audio_content)
 
                         loop = asyncio.get_event_loop()
-                        await loop.run_in_executor(None, self._convert_mp3_to_wav, mp3_filename, filename)
+                        await loop.run_in_executor(None, convert_mp3_to_wav, mp3_filename, filename)
                         os.remove(mp3_filename)
 
                         return True
