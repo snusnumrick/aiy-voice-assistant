@@ -333,7 +333,6 @@ class ElevenLabsTTSEngine(TTSEngine):
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.voice_id}"
 
         headers = {
-            "Accept": "audio/wav",
             "Content-Type": "application/json",
             "xi-api-key": self.api_key
         }
@@ -351,7 +350,7 @@ class ElevenLabsTTSEngine(TTSEngine):
             async with session.post(url, json=data, headers=headers) as response:
                 if response.status == 200:
                     audio_content = await response.read()
-                    async with aiofiles.open(filename, mode='wb') as f:
+                    async with aiofiles.open(filename + ".mp3", mode='wb') as f:
                         await f.write(audio_content)
                     logger.info(f"Audio content written to file {filename}")
                     return True
