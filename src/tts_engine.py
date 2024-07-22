@@ -338,7 +338,7 @@ class ElevenLabsTTSEngine(TTSEngine):
         self.max_retries = config.get('max_retries', 5)
         self.initial_retry_delay = config.get('initial_retry_delay', 1)
         self.jitter_factor = config.get('jitter_factor', 0.1)
-        self.query = {"output_format": "mp3_22050_32"}
+        self.query = '{"output_format":"mp3_22050_32"}'
 
         self.model_id = config.get('elevenlabs_model', "eleven_multilingual_v2")
 
@@ -360,7 +360,7 @@ class ElevenLabsTTSEngine(TTSEngine):
             }
         }
 
-        response = requests.post(url, json=data, headers=headers, query=self.auery)
+        response = requests.post(url, json=data, headers=headers, params=self.auery)
 
         mp3_filename = filename + ".mp3"
         if response.status_code == 200:
@@ -406,7 +406,7 @@ class ElevenLabsTTSEngine(TTSEngine):
         # this loop is for dealing with limitation of max num of concurent requests
         for attempt in range(self.max_retries):
             try:
-                async with session.post(url, json=data, headers=headers, query=self.auery) as response:
+                async with session.post(url, json=data, headers=headers, params=self.auery) as response:
                     if response.status == HTTPStatus.OK:
                         mp3_filename = _ensure_correct_extension(filename, AudioFormat.MP3)
                         audio_content = await response.read()
