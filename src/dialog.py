@@ -10,6 +10,7 @@ import logging
 import os
 import time
 import traceback
+from typing import Dict
 
 import aiohttp
 from aiy.board import Button
@@ -60,7 +61,7 @@ def append_suffix(file_name: str, suffix: str) -> str:
     return new_path
 
 
-async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, conversation_manager: ConversationManager,
+async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language, TTSEngine], conversation_manager: ConversationManager,
                           config: Config) -> None:
     """
     The main conversation loop of the AI assistant.
@@ -76,7 +77,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
         button (Button): The AIY Kit button object.
         leds (Leds): The AIY Kit LED object for visual feedback.
         stt_engine: The speech-to-text engine.
-        tts_engine (TTSEngine): The text-to-speech engine.
+        tts_engines (Dict[Language, TTSEngine]): Dictionary of TTS engines for each supported language.
         conversation_manager (ConversationManager): The conversation manager object.
         config (Config): The application configuration object.
     """
@@ -119,6 +120,10 @@ async def main_loop_async(button: Button, leds: Leds, tts_engine: TTSEngine, con
                                 lang = {"ru": Language.RUSSIAN, "en": Language.ENGLISH, "de": Language.GERMAN
                                         }.get(lang_code, Language.RUSSIAN)
                                 logger.debug(f"Tone: {tone}, language = {lang}")
+
+                                # Select the appropriate TTS engine based on language
+                                tts_engine = tts_engines.get(lang, tts_engines[Language.RUSSIAN])
+
                                 task = asyncio.create_task(
                                     tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang))
                                 tasks.append((emo, audio_file_name, task))

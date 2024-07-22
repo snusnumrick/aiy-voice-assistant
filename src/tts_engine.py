@@ -14,6 +14,8 @@ from enum import Enum
 import aiofiles
 import aiohttp
 from speechkit import model_repository
+from elevenlabs import save, Voice, VoiceSettings
+from elevenlabs.client import ElevenLabs, AsyncElevenLabs
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -280,3 +282,73 @@ class YandexTTSEngine(TTSEngine):
             await out.write(result)
 
         return True
+
+
+class ElevenLabsTTSEngine(TTSEngine):
+    def __init__(self, config):
+        self.api_key = os.getenv('ELEVENLABS_API_KEY')
+        if not self.api_key:
+            raise ValueError("Eleven Labs API key is not provided in environment variables or configuration")
+
+        self.client = ElevenLabs(api_key=self.api_key)
+        self.async_client = AsyncElevenLabs(api_key=self.api_key)
+
+        self.voice_id = config.get('elevenlabs_voice', 'Callum')
+        self.stability = config.get('elevenlabs_stability', 0.5)
+        self.similarity_boost = config.get('elevenlabs_similarity_boost', 0.75)
+        self.style = config.get('elevenlabs_style', 0.0)
+        self.use_speaker_boost = config.get('elevenlabs_use_speaker_boost', False)
+
+        self.model = config.get('elevenlabs_model', "eleven_multilingual_v2")
+
+    def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> None:
+
+        voice = Voice(
+            voice_id=self.voice_id,
+            settings=VoiceSettings(
+                stability=self.stability,
+                similarity_boost=self.similarity_boost,
+                style=self.style,
+                use_speaker_boost=self.use_speaker_boost
+            )
+        )
+
+        audio = self.client.generate(
+            text=text,
+            voice=voice,
+            model=self.model
+        )
+
+        save(audio, filename)
+
+    def max_text_length(self) -> int:
+        return 2500  # Eleven Labs has a limit of 2500 characters per request
+
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
+                               tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
+        voice = Voice(
+            voice_id=self.voice_id,
+            settings=VoiceSettings(
+                stability=self.stability,
+                similarity_boost=self.similarity_boost,
+                style=self.style,
+                use_speaker_boost=self.use_speaker_boost
+            )
+        )
+
+        try:
+            audio_stream = await self.async_client.generate(
+                text=text,
+                voice=voice,
+                model=self.model,
+                stream=True
+            )
+
+            async with aiofiles.open(filename, mode='wb') as f:
+                async for chunk in audio_stream:
+                    await f.write(chunk)
+            return True
+        except Exception as e:
+            logging.error(f"An error occurred: {str(e)}")
+            return False
+

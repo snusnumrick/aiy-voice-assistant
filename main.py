@@ -23,7 +23,7 @@ from src.email_tools import SendEmailTool
 from src.config import Config
 from src.conversation_manager import ConversationManager
 from src.dialog import main_loop_async
-from src.tts_engine import YandexTTSEngine
+from src.tts_engine import YandexTTSEngine, Language, ElevenLabsTTSEngine
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -54,14 +54,16 @@ def main():
         leds.update(Leds.rgb_off())
 
         # Initialize components
-        tts_engine = YandexTTSEngine(config)
+        tts_engines = {Language.RUSSIAN: YandexTTSEngine(config),
+                       Language.ENGLISH: ElevenLabsTTSEngine(config),
+                       Language.GERMAN: ElevenLabsTTSEngine(config)}
         # ai_model = OpenRouterModel(config)
         ai_model = ClaudeAIModelWithTools(config, tools)
         conversation_manager = ConversationManager(config, ai_model)
 
         # Start the main conversation loop
         # main_loop(board.button, leds, tts_engine, conversation_manager, config)
-        asyncio.run(main_loop_async(board.button, leds, tts_engine, conversation_manager, config))
+        asyncio.run(main_loop_async(board.button, leds, tts_engines, conversation_manager, config))
 
 
 if __name__ == '__main__':
