@@ -13,7 +13,7 @@ import random
 from abc import ABC, abstractmethod
 from enum import Enum
 from enum import IntEnum
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 import aiofiles
 import aiohttp
