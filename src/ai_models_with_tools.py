@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import random
 from dataclasses import dataclass
 from typing import List, Dict, Callable, AsyncGenerator, Awaitable
 
@@ -42,6 +43,14 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                                   for t in tools]
         self.tools_processors = {t.name: t.processor for t in tools}
         self.tools = {t.name: t for t in tools}
+        self.max_retries = config.get('max_retries', 5)
+        self.initial_retry_delay = config.get('initial_retry_delay', 1)
+        self.jitter_factor = config.get('jitter_factor', 0.1)
+
+    def _get_retry_time(self, attempt: int) -> float:
+        base_delay = self.initial_retry_delay * (2 ** attempt)
+        jitter = random.uniform(0, self.jitter_factor * base_delay)
+        return base_delay + jitter
 
     def get_response(self, messages: List[Dict[str, str]]) -> str:
         response_dict = self._get_response(messages)
@@ -74,10 +83,33 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         if system_message_combined:
             data["system"] = system_message_combined
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.url, headers=self.headers, json=data) as response:
-                res = await response.text()
-                return json.loads(res)
+        for attempt in range(self.max_retries):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(self.url, headers=self.headers, json=data) as response:
+                        res = await response.text()
+                        response_dict = json.loads(res)
+
+                        if 'error' in response_dict:
+                            error_type = response_dict.get('error', {}).get('type')
+                            if error_type == 'overloaded_error':
+                                retry_time = self._get_retry_time(attempt)
+                                logger.warning(f"API overloaded, retrying after {retry_time:.2f} seconds...")
+                                await asyncio.sleep(retry_time)
+                                continue
+                            else:
+                                raise Exception(f"API error: {response_dict['error']}")
+
+                        return response_dict
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    logger.error(f"Failed after {self.max_retries} attempts: {str(e)}")
+                    raise
+                retry_time = self._get_retry_time(attempt)
+                logger.warning(f"An error occurred: {str(e)}. Retrying in {retry_time:.2f} seconds...")
+                await asyncio.sleep(retry_time)
+
+        raise Exception(f"Failed to get response after {self.max_retries} attempts")
 
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
         logger.debug(f"get_response_async: {messages}")
