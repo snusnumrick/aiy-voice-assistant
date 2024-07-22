@@ -10,12 +10,15 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from enum import Enum, IntEnum
+from typing import Optional
+import time
 
 import aiofiles
 import aiohttp
 from speechkit import model_repository
 import requests
 from pydub import AudioSegment
+import random
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -329,7 +332,8 @@ class ElevenLabsTTSEngine(TTSEngine):
         self.style = config.get('elevenlabs_style', 0.0)
         self.use_speaker_boost = config.get('elevenlabs_use_speaker_boost', False)
         self.max_retries = config.get('max_retries', 5)
-        self.initial_retry_delay = config.get('initial_retry_delay', 0.3)
+        self.initial_retry_delay = config.get('initial_retry_delay', 1)
+        self.jitter_factor = config.get('jitter_factor', 0.1)
 
         self.model_id = config.get('elevenlabs_model', "eleven_multilingual_v2")
 
@@ -363,6 +367,15 @@ class ElevenLabsTTSEngine(TTSEngine):
 
     def max_text_length(self) -> int:
         return 2500  # Eleven Labs has a limit of 2500 characters per request
+
+    def _get_retry_time(self, attempt: int, retry_after: Optional[int] = None) -> float:
+        if retry_after is not None:
+            base_delay = retry_after
+        else:
+            base_delay = self.initial_retry_delay * (2 ** attempt)
+
+        jitter = random.uniform(0, self.jitter_factor * base_delay)
+        return base_delay + jitter
 
     async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
                                tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
@@ -406,8 +419,9 @@ class ElevenLabsTTSEngine(TTSEngine):
                     elif response.status == HTTPStatus.TOO_MANY_REQUESTS:
                         retry_after = int(
                             response.headers.get('Retry-After', self.initial_retry_delay * (2 ** attempt)))
-                        logger.warning(f"Too many requests, retrying after {retry_after} seconds...")
-                        await asyncio.sleep(retry_after)
+                        retry_time = self._get_retry_time(attempt, int(retry_after) if retry_after else None)
+                        logger.warning(f"Too many requests, retrying after {retry_time:.2f} seconds...")
+                        time.sleep(retry_time)
                     else:
                         raise Exception(f"Error from ElevenLabs API: {response.status} - {await response.text()}")
             except Exception as e:
