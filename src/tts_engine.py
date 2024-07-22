@@ -9,7 +9,7 @@ import asyncio
 import logging
 import os
 from abc import ABC, abstractmethod
-from enum import Enum
+from enum import Enum, IntEnum
 
 import aiofiles
 import aiohttp
@@ -32,6 +32,21 @@ class Language(Enum):
     RUSSIAN = 0
     ENGLISH = 1
     GERMAN = 2
+
+
+class AudioFormat(Enum):
+    WAV = "audio/wav"
+    MP3 = "audio/mpeg"
+
+
+class HTTPStatus(IntEnum):
+    OK = 200
+    TOO_MANY_REQUESTS = 429
+
+
+def convert_mp3_to_wav(mp3_file: str, wav_file: str) -> None:
+    audio = AudioSegment.from_mp3(mp3_file)
+    audio.export(wav_file, format="wav")
 
 
 class TTSEngine(ABC):
@@ -286,6 +301,22 @@ class YandexTTSEngine(TTSEngine):
         return True
 
 
+def _ensure_correct_extension(filename: str, audio_format: AudioFormat) -> str:
+    """
+    return original filename if it is consistent with audio format.
+    Otherwise, return filename with added suffix, corresponding to audio_format
+
+    :param filename: The name of the file to ensure correct extension.
+    :param audio_format: The desired audio format (enum).
+
+    :return: The filename with the correct extension.
+    """
+    extension = ".wav" if audio_format == AudioFormat.WAV else ".mp3"
+    if not filename.lower().endswith(extension):
+        filename += extension
+    return filename
+
+
 class ElevenLabsTTSEngine(TTSEngine):
     def __init__(self, config):
         self.api_key = os.getenv('ELEVENLABS_API_KEY')
@@ -297,6 +328,8 @@ class ElevenLabsTTSEngine(TTSEngine):
         self.similarity_boost = config.get('elevenlabs_similarity_boost', 0.75)
         self.style = config.get('elevenlabs_style', 0.0)
         self.use_speaker_boost = config.get('elevenlabs_use_speaker_boost', False)
+        self.max_retries = config.get('max_retries', 5)
+        self.initial_retry_delay = config.get('initial_retry_delay', 0.3)
 
         self.model_id = config.get('elevenlabs_model', "eleven_multilingual_v2")
 
@@ -334,6 +367,7 @@ class ElevenLabsTTSEngine(TTSEngine):
     async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
                                tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.voice_id}"
+        audio_format = AudioFormat.WAV if filename.lower().endswith(".wav") else AudioFormat.MP3
 
         headers = {
             "Content-Type": "application/json",
@@ -349,23 +383,41 @@ class ElevenLabsTTSEngine(TTSEngine):
             }
         }
 
-        try:
-            async with session.post(url, json=data, headers=headers) as response:
-                if response.status == 200:
-                    audio_content = await response.read()
-                    mp3_filename = filename + ".mp3"
-                    async with aiofiles.open(mp3_filename, mode='wb') as f:
-                        await f.write(audio_content)
-                    audio = AudioSegment.from_mp3(mp3_filename)
-                    audio.export(filename, format="wav")
-                    logger.info(f"Audio content written to file {filename}")
-                    return True
-                else:
-                    logging.error(f"Error from ElevenLabs API: {response.status} - {await response.text()}")
+        # this loop is for dealing with limitation of max num of concurent requests
+        for attempt in range(self.max_retries):
+            try:
+                async with session.post(url, json=data, headers=headers) as response:
+                    if response.status == HTTPStatus.OK:
+                        mp3_filename = _ensure_correct_extension(filename, AudioFormat.MP3)
+                        audio_content = await response.read()
+                        async with aiofiles.open(mp3_filename, mode='wb') as f:
+                            await f.write(audio_content)
+
+                        # convert to wav if nessesary
+                        if audio_format == AudioFormat.WAV:
+                            wav_filename = _ensure_correct_extension(filename, AudioFormat.WAV)
+                            loop = asyncio.get_event_loop()
+                            await loop.run_in_executor(None, convert_mp3_to_wav, mp3_filename, wav_filename)
+                            os.remove(mp3_filename)
+
+                        return True
+
+                    # retry of server overloaded
+                    elif response.status == HTTPStatus.TOO_MANY_REQUESTS:
+                        retry_after = int(
+                            response.headers.get('Retry-After', self.initial_retry_delay * (2 ** attempt)))
+                        logger.warning(f"Too many requests, retrying after {retry_after} seconds...")
+                        await asyncio.sleep(retry_after)
+                    else:
+                        raise Exception(f"Error from ElevenLabs API: {response.status} - {await response.text()}")
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    logger.error(f"Failed after {self.max_retries} attempts: {str(e)}")
                     return False
-        except Exception as e:
-            logging.error(f"An error occurred: {str(e)}")
-            return False
+                logger.warning(f"An error occurred: {str(e)}. Retrying...")
+                await asyncio.sleep(self.initial_retry_delay * (2 ** attempt))
+
+        return False
 
 
 async def main():
