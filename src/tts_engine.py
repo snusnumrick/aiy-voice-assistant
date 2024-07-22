@@ -304,7 +304,6 @@ class ElevenLabsTTSEngine(TTSEngine):
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.voice_id}"
 
         headers = {
-            "Accept": "audio/wav",
             "Content-Type": "application/json",
             "xi-api-key": self.api_key
         }
@@ -320,9 +319,12 @@ class ElevenLabsTTSEngine(TTSEngine):
 
         response = requests.post(url, json=data, headers=headers)
 
+        mp3_filename = filename + ".mp3"
         if response.status_code == 200:
-            with open(filename, "wb") as f:
+            with open(mp3_filename, "wb") as f:
                 f.write(response.content)
+            audio = AudioSegment.from_mp3(mp3_filename)
+            audio.export(filename, format="wav")
         else:
             raise Exception(f"Error from ElevenLabs API: {response.status_code} - {response.text}")
 
