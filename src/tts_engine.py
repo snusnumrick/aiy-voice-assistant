@@ -321,9 +321,9 @@ class ElevenLabsTTSEngine(TTSEngine):
         if not self.api_key:
             raise ValueError("Eleven Labs API key is not provided in environment variables or configuration")
 
-        self.voice_ids = {Language.ENGLISH: config.get('elevenlabs_voice_id_en', 'cjVigY5qzO86Huf0OWal'),
+        self.voice_ids = {Language.ENGLISH: config.get('elevenlabs_voice_id_en', 'N2lVS1w4EtoT3dr4eOWO'),
                           Language.GERMAN: config.get('elevenlabs_voice_id_de', 'Ay1WwRHxUsu3hEeAp8JZ'),
-                          Language.RUSSIAN: config.get('elevenlabs_voice_id_ru', 'N2lVS1w4EtoT3dr4eOWO'),
+                          Language.RUSSIAN: config.get('elevenlabs_voice_id_ru', 'cjVigY5qzO86Huf0OWal'),
                           }
 
         self.stability = config.get('elevenlabs_stability', 0.5)

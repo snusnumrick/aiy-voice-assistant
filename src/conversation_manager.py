@@ -219,17 +219,19 @@ class ConversationManager:
         self.message_history.append({"role": "user", "content": text})
 
         if get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
-            self.message_history = await summarize_and_compress_history(self.message_history, self.summarize_model,
-                                                                        self.config)
-            newline_str = "\n\n"
-            logger.info(
-                f'Compressed  conversation:  {(newline_str + self.formatted_message_history(150) + newline_str)}')
+            new_message_history = await summarize_and_compress_history(self.message_history, self.summarize_model,
+                                                                       self.config)
+            if new_message_history != self.message_history:
+                newline_str = "\n\n"
+                logger.info(
+                    f'Compressed  conversation:  {(newline_str + self.formatted_message_history(150) + newline_str)}')
+                self.message_history = new_message_history
 
         logger.debug(f"Message history: \n{self.formatted_message_history()}")
 
         async for response_text in self.ai_model.get_response_async(list(self.message_history)):
 
-            logger.info(f"AI response: {text} -> {response_text}")
+            logger.debug(f"AI response: {text} -> {response_text}")
             if self.message_history[-1]["role"] != "assistant":
                 self.message_history.append({"role": "assistant", "content": response_text})
             else:
@@ -251,9 +253,9 @@ class ConversationManager:
 
             result = []
             for emo, t in extract_emotions(response_text):
-                logger.info(f"Emotion: {emo} -> {t}")
+                logger.debug(f"Emotion: {emo} -> {t}")
                 for lang, text in extract_language(t, default_lang=self.current_language_code):
-                    logger.info(f"Language: {lang} -> {text}")
+                    logger.debug(f"Language: {lang} -> {text}")
                     self.current_language_code = lang
                     if text:
                         result.append({"emotion": emo, "language": lang, "text": text})
@@ -341,7 +343,7 @@ class ConversationManager:
         # form new memories
         if self.config.get("form_new_memories_at_night", False):
             if len(self.message_history) > 1:
-                prompt = "Do you want to remember anything from today conversation?"
+                prompt = self.config.get("form_new_memories_prompt", "Хочешь еще что-нибудь звпомнить из нашего разговора?")
                 logger.info(f"form new memory by asking {prompt}")
                 num_facts_begore = len(self.facts)
                 async for ai_response in self.get_response(prompt):
@@ -405,7 +407,6 @@ class ConversationManager:
         except json.decoder.JSONDecodeError as e:
             logger.error(f"couldn't load rules file: {e}")
             return []
-
 
     @staticmethod
     def save_rules(rules):

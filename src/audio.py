@@ -206,7 +206,7 @@ class SpeechTranscriber:
         if cleaning_time_start <= now.time() < cleaning_time_stop:
             logger.debug(f"Cleaning time: {now.time()}")
             if self.last_clean_date != now.date():
-                logger.info(f"Cleaning date: {now.date()}")
+                logger.debug(f"Cleaning date: {now.date()}")
                 await self.cleaning_routine()
                 self.last_clean_date = now.date()
 
