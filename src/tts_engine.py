@@ -24,8 +24,8 @@ Enums:
 import asyncio
 import logging
 import os
-import time
 import random
+import time
 from abc import ABC, abstractmethod
 from enum import Enum, IntEnum
 from typing import Optional, List, Dict, Any
@@ -123,6 +123,7 @@ class TTSEngine(ABC):
             NotImplementedError: If the method is not implemented by the subclass.
         """
         pass
+
 
 class OpenAITTSEngine(TTSEngine):
     """
@@ -386,11 +387,9 @@ class ElevenLabsTTSEngine(TTSEngine):
             raise ValueError("ElevenLabs API key is not provided in environment variables or configuration")
 
         # Initialize voice IDs for different languages
-        self.voice_ids = {
-            Language.ENGLISH: config.get('elevenlabs_voice_id_en'),
-            Language.GERMAN: config.get('elevenlabs_voice_id_de'),
-            Language.RUSSIAN: config.get('elevenlabs_voice_id_ru'),
-        }
+        self.voice_ids = {Language.ENGLISH: config.get('elevenlabs_voice_id_en', 'N2lVS1w4EtoT3dr4eOWO'),
+                          Language.GERMAN: config.get('elevenlabs_voice_id_de', 'Ay1WwRHxUsu3hEeAp8JZ'),
+                          Language.RUSSIAN: config.get('elevenlabs_voice_id_ru', 'cjVigY5qzO86Huf0OWal'), }
         if not all(self.voice_ids.values()):
             raise ValueError("Voice IDs for all languages must be provided in the configuration")
 
@@ -443,6 +442,7 @@ class ElevenLabsTTSEngine(TTSEngine):
             async with session.get(url, headers=headers) as response:
                 if response.status != 200:
                     raise ValueError("Invalid API key or unable to connect to ElevenLabs API")
+
     @retry_async()
     async def _get_history_items_async(self, session: aiohttp.ClientSession, voice_id: str) -> List[Dict[str, Any]]:
         """
@@ -581,8 +581,8 @@ class ElevenLabsTTSEngine(TTSEngine):
             raise ElevenLabsAPIError(f"Failed to download audio: {str(e)}")
 
     @retry_async()
-    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
-                               tone: Tone = Tone.PLAIN, lang: Language = Language.RUSSIAN) -> bool:
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str, tone: Tone = Tone.PLAIN,
+                               lang: Language = Language.RUSSIAN) -> bool:
         """
         Asynchronously synthesize speech using ElevenLabs API and save it to a file.
 
@@ -623,22 +623,14 @@ class ElevenLabsTTSEngine(TTSEngine):
                 await self._convert_mp3_to_wav_async(mp3_filename, filename)
                 return True
         except Exception as e:
-            logger.warning(f"Failed to check history or download existing audio: {str(e)}. Proceeding with new synthesis.")
+            logger.warning(
+                f"Failed to check history or download existing audio: {str(e)}. Proceeding with new synthesis.")
 
         # If no existing audio found or history check failed, proceed with synthesis
         url = f"{self.base_url}/text-to-speech/{voice_id}"
-        headers = {
-            "Content-Type": "application/json",
-            "xi-api-key": self.api_key
-        }
-        data = {
-            "text": text,
-            "model_id": self.model_id,
-            "voice_settings": {
-                "stability": self.stability,
-                "similarity_boost": self.similarity_boost
-            }
-        }
+        headers = {"Content-Type": "application/json", "xi-api-key": self.api_key}
+        data = {"text": text, "model_id": self.model_id,
+            "voice_settings": {"stability": self.stability, "similarity_boost": self.similarity_boost}}
 
         for attempt in range(self.max_retries):
             try:
@@ -651,12 +643,14 @@ class ElevenLabsTTSEngine(TTSEngine):
                         await self._convert_mp3_to_wav_async(mp3_filename, filename)
                         return True
                     elif response.status == HTTPStatus.TOO_MANY_REQUESTS.value:
-                        retry_after = int(response.headers.get('Retry-After', self.initial_retry_delay * (2 ** attempt)))
+                        retry_after = int(
+                            response.headers.get('Retry-After', self.initial_retry_delay * (2 ** attempt)))
                         retry_time = self._get_retry_time(attempt, retry_after)
                         logger.warning(f"Too many requests, retrying after {retry_time:.2f} seconds...")
                         await asyncio.sleep(retry_time)
                     else:
-                        raise ElevenLabsAPIError(f"Error from ElevenLabs API: {response.status} - {await response.text()}")
+                        raise ElevenLabsAPIError(
+                            f"Error from ElevenLabs API: {response.status} - {await response.text()}")
             except Exception as e:
                 if attempt == self.max_retries - 1:
                     logger.error(f"Failed after {self.max_retries} attempts: {str(e)}")
@@ -713,22 +707,14 @@ class ElevenLabsTTSEngine(TTSEngine):
                 os.remove(filename + ".mp3")
                 return
         except Exception as e:
-            logger.warning(f"Failed to check history or download existing audio: {str(e)}. Proceeding with new synthesis.")
+            logger.warning(
+                f"Failed to check history or download existing audio: {str(e)}. Proceeding with new synthesis.")
 
         # If no existing audio found or history check failed, proceed with synthesis
         url = f"{self.base_url}/text-to-speech/{voice_id}"
-        headers = {
-            "Content-Type": "application/json",
-            "xi-api-key": self.api_key
-        }
-        data = {
-            "text": text,
-            "model_id": self.model_id,
-            "voice_settings": {
-                "stability": self.stability,
-                "similarity_boost": self.similarity_boost
-            }
-        }
+        headers = {"Content-Type": "application/json", "xi-api-key": self.api_key}
+        data = {"text": text, "model_id": self.model_id,
+            "voice_settings": {"stability": self.stability, "similarity_boost": self.similarity_boost}}
 
         for attempt in range(self.max_retries):
             try:
@@ -745,8 +731,7 @@ class ElevenLabsTTSEngine(TTSEngine):
 
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
-                    retry_after = int(
-                        e.response.headers.get('Retry-After', self.initial_retry_delay * (2 ** attempt)))
+                    retry_after = int(e.response.headers.get('Retry-After', self.initial_retry_delay * (2 ** attempt)))
                     retry_time = self._get_retry_time(attempt, retry_after)
                     logger.warning(f"Too many requests, retrying after {retry_time:.2f} seconds...")
                     time.sleep(retry_time)
