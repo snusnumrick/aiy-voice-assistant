@@ -2,11 +2,12 @@
 Text-to-Speech (TTS) Engine module.
 
 This module provides abstract and concrete implementations of TTS engines,
-including OpenAI's TTS model and Google's Text-to-Speech.
+including OpenAI's TTS model, Google's Text-to-Speech, Yandex SpeechKit, and ElevenLabs.
+It defines a common interface for TTS engines and implements various concrete classes
+that interact with different TTS services.
 """
 
 import asyncio
-import hashlib
 import logging
 import os
 import random
@@ -21,29 +22,33 @@ import requests
 from pydub import AudioSegment
 from speechkit import model_repository
 
+from src.config import Config
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
-from src.config import Config
-
 
 class Tone(Enum):
+    """Enumeration of speech tones."""
     PLAIN = 0
     HAPPY = 1
 
 
 class Language(Enum):
+    """Enumeration of supported languages."""
     RUSSIAN = 0
     ENGLISH = 1
     GERMAN = 2
 
 
 class AudioFormat(Enum):
+    """Enumeration of supported audio formats."""
     WAV = "audio/wav"
     MP3 = "audio/mpeg"
 
 
 class HTTPStatus(IntEnum):
+    """Enumeration of relevant HTTP status codes."""
     OK = 200
     TOO_MANY_REQUESTS = 429
 
@@ -51,6 +56,7 @@ class HTTPStatus(IntEnum):
 class TTSEngine(ABC):
     """
     Abstract base class for Text-to-Speech engines.
+    Defines the interface that all concrete TTS engine implementations must follow.
     """
 
     @abstractmethod
@@ -61,13 +67,19 @@ class TTSEngine(ABC):
         Args:
             text (str): The text to synthesize into speech.
             filename (str): The path to save the synthesized audio file.
-            tone (Tone): The tone to use.
-            lang (Language): The language to use.
+            tone (Tone): The tone to use for speech synthesis.
+            lang (Language): The language to use for speech synthesis.
         """
         pass
 
     @abstractmethod
     def max_text_length(self) -> int:
+        """
+        Get the maximum allowed text length for synthesis.
+
+        Returns:
+            int: The maximum number of characters allowed, or -1 if there's no limit.
+        """
         return -1
 
     @abstractmethod
@@ -80,8 +92,8 @@ class TTSEngine(ABC):
             session (aiohttp.ClientSession): An aiohttp client session for making HTTP requests.
             text (str): The text to synthesize into speech.
             filename (str): The path to save the synthesized audio file.
-            tone (Tone): The tone to use.
-            lang (str): The language to use.
+            tone (Tone): The tone to use for speech synthesis.
+            lang (Language): The language to use for speech synthesis.
 
         Returns:
             bool: True if synthesis was successful, False otherwise.
@@ -299,46 +311,56 @@ class YandexTTSEngine(TTSEngine):
         return True
 
 
-def _ensure_correct_extension(filename: str, audio_format: AudioFormat) -> str:
-    """
-    return original filename if it is consistent with audio format.
-    Otherwise, return filename with added suffix, corresponding to audio_format
-
-    :param filename: The name of the file to ensure correct extension.
-    :param audio_format: The desired audio format (enum).
-
-    :return: The filename with the correct extension.
-    """
-    extension = ".wav" if audio_format == AudioFormat.WAV else ".mp3"
-    if not filename.lower().endswith(extension):
-        filename += extension
-    return filename
-
-
 class ElevenLabsTTSEngine(TTSEngine):
+    """
+    Implementation of TTSEngine using ElevenLabs API.
+    This class provides methods for text-to-speech synthesis using ElevenLabs,
+    including support for multiple languages and voice settings.
+    """
+
     def __init__(self, config):
+        """
+        Initialize the ElevenLabs TTS engine.
+
+        Args:
+            config (Config): Configuration object containing ElevenLabs-specific settings.
+        """
         self.api_key = os.getenv('ELEVENLABS_API_KEY')
         if not self.api_key:
-            raise ValueError("Eleven Labs API key is not provided in environment variables or configuration")
+            raise ValueError("ElevenLabs API key is not provided in environment variables or configuration")
 
+        # Initialize voice IDs for different languages
         self.voice_ids = {Language.ENGLISH: config.get('elevenlabs_voice_id_en', 'N2lVS1w4EtoT3dr4eOWO'),
                           Language.GERMAN: config.get('elevenlabs_voice_id_de', 'Ay1WwRHxUsu3hEeAp8JZ'),
                           Language.RUSSIAN: config.get('elevenlabs_voice_id_ru', 'cjVigY5qzO86Huf0OWal'),
                           }
 
+        # Set up voice parameters
         self.stability = config.get('elevenlabs_stability', 0.5)
         self.similarity_boost = config.get('elevenlabs_similarity_boost', 0.75)
         self.style = config.get('elevenlabs_style', 0.0)
         self.use_speaker_boost = config.get('elevenlabs_use_speaker_boost', False)
-        self.max_retries = config.get('max_retries', 5)
-        self.initial_retry_delay = config.get('initial_retry_delay', 1)
-        self.jitter_factor = config.get('jitter_factor', 0.1)
-        self.query = '{"output_format":"mp3_22050_32"}'
 
+        # Configure retry mechanism
+        self.max_retries = config.get('elevenlabs_max_retries', 5)
+        self.initial_retry_delay = config.get('elevenlabs_initial_retry_delay', 1)
+        self.jitter_factor = config.get('elevenlabs_retry_jitter_factor', 0.1)
+
+        # Set up API-specific parameters
+        self.query = '{"output_format":config.get("elevenlabs_output_format", "mp3_22050_32")}'
         self.model_id = config.get('elevenlabs_model', "eleven_multilingual_v2")
         self.base_url = "https://api.elevenlabs.io/v1"
 
     def _get_history_items(self, voice_id: str) -> List[Dict]:
+        """
+        Retrieve history items for a specific voice from ElevenLabs API.
+
+        Args:
+            voice_id (str): The ID of the voice to retrieve history for.
+
+        Returns:
+            List[Dict]: A list of history items, each as a dictionary.
+        """
         url = f"{self.base_url}/history"
         headers = {"xi-api-key": self.api_key}
         params = {"voice_id": voice_id}
@@ -351,24 +373,36 @@ class ElevenLabsTTSEngine(TTSEngine):
             return []
 
     def _find_matching_history_item(self, text: str, voice_id: str) -> Optional[str]:
+        """
+        Find a matching history item for the given text and voice ID.
+
+        This method searches through the history items to find an exact match
+        for the text and voice ID combination.
+
+        Args:
+            text (str): The text to search for in the history.
+            voice_id (str): The voice ID to match in the history.
+
+        Returns:
+            Optional[str]: The history item ID if a match is found, None otherwise.
+        """
         history_items = self._get_history_items(voice_id)
         for item in history_items:
             if item.get("text") == text and item.get("voice_id") == voice_id:
                 return item.get("history_item_id")
         return None
 
-    def _check_history(self, text: str, lang: Language) -> Optional[str]:
-        voice_id = self.voice_ids[lang]
-        history_item_id = self._generate_history_item_id(text, voice_id)
-        url = f"{self.base_url}/history/{history_item_id}"
-        headers = {"xi-api-key": self.api_key}
-
-        response = requests.get(url, headers=headers)
-        if response.status_code == HTTPStatus.OK.value:
-            return history_item_id
-        return None
-
     def _download_audio(self, history_item_id: str, filename: str) -> None:
+        """
+        Download audio file for a specific history item.
+
+        Args:
+            history_item_id (str): The ID of the history item to download.
+            filename (str): The path to save the downloaded audio file.
+
+        Raises:
+            Exception: If the download fails.
+        """
         url = f"{self.base_url}/history/{history_item_id}/audio"
         headers = {"xi-api-key": self.api_key}
 
@@ -380,6 +414,21 @@ class ElevenLabsTTSEngine(TTSEngine):
             raise Exception(f"Failed to download audio: {response.status_code} - {response.text}")
 
     def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> None:
+        """
+        Synthesize speech using ElevenLabs API and save it to a file.
+
+        This method first checks if the audio already exists in the history.
+        If it does, it downloads the existing audio. Otherwise, it generates new audio.
+
+        Args:
+            text (str): The text to synthesize into speech.
+            filename (str): The path to save the synthesized audio file.
+            tone (Tone): The tone to use for speech synthesis (currently not used in API call).
+            lang (Language): The language to use for speech synthesis.
+
+        Raises:
+            Exception: If the API request fails.
+        """
         voice_id = self.voice_ids[lang]
 
         # Check history first
@@ -421,9 +470,25 @@ class ElevenLabsTTSEngine(TTSEngine):
             raise Exception(f"Error from ElevenLabs API: {response.status_code} - {response.text}")
 
     def max_text_length(self) -> int:
-        return 2500  # Eleven Labs has a limit of 2500 characters per request
+        """
+        Get the maximum allowed text length for ElevenLabs API.
+
+        Returns:
+            int: The maximum number of characters allowed (2500 for ElevenLabs).
+        """
+        return 2500  # ElevenLabs has a limit of 2500 characters per request
 
     def _get_retry_time(self, attempt: int, retry_after: Optional[int] = None) -> float:
+        """
+        Calculate the retry time with exponential backoff and jitter.
+
+        Args:
+            attempt (int): The current attempt number.
+            retry_after (Optional[int]): The 'Retry-After' time suggested by the server, if any.
+
+        Returns:
+            float: The calculated retry time in seconds.
+        """
         if retry_after is not None:
             base_delay = retry_after
         else:
@@ -433,6 +498,16 @@ class ElevenLabsTTSEngine(TTSEngine):
         return base_delay + jitter
 
     async def _get_history_items_async(self, session: aiohttp.ClientSession, voice_id: str) -> List[Dict]:
+        """
+        Asynchronously retrieve history items for a specific voice from ElevenLabs API.
+
+        Args:
+            session (aiohttp.ClientSession): The aiohttp client session to use for the request.
+            voice_id (str): The ID of the voice to retrieve history for.
+
+        Returns:
+            List[Dict]: A list of history items, each as a dictionary.
+        """
         url = f"{self.base_url}/history"
         headers = {"xi-api-key": self.api_key}
         params = {"voice_id": voice_id}
@@ -447,6 +522,17 @@ class ElevenLabsTTSEngine(TTSEngine):
 
     async def _find_matching_history_item_async(self, session: aiohttp.ClientSession, text: str, voice_id: str) \
             -> Optional[str]:
+        """
+        Asynchronously find a matching history item for the given text and voice ID.
+
+        Args:
+            session (aiohttp.ClientSession): The aiohttp client session to use for the request.
+            text (str): The text to search for in the history.
+            voice_id (str): The voice ID to match in the history.
+
+        Returns:
+            Optional[str]: The history item ID if a match is found, None otherwise.
+        """
         history_items = await self._get_history_items_async(session, voice_id)
         for item in history_items:
             if item.get("text") == text and item.get("voice_id") == voice_id:
@@ -454,6 +540,17 @@ class ElevenLabsTTSEngine(TTSEngine):
         return None
 
     async def _download_audio_async(self, session: aiohttp.ClientSession, history_item_id: str, filename: str) -> None:
+        """
+        Asynchronously download audio file for a specific history item.
+
+        Args:
+            session (aiohttp.ClientSession): The aiohttp client session to use for the request.
+            history_item_id (str): The ID of the history item to download.
+            filename (str): The path to save the downloaded audio file.
+
+        Raises:
+            Exception: If the download fails.
+        """
         url = f"{self.base_url}/history/{history_item_id}/audio"
         headers = {"xi-api-key": self.api_key}
 
@@ -465,8 +562,104 @@ class ElevenLabsTTSEngine(TTSEngine):
             else:
                 raise Exception(f"Failed to download audio: {response.status} - {await response.text()}")
 
+        async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
+                                   tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
+            """
+            Asynchronously synthesize speech using ElevenLabs API and save it to a file.
+
+            This method first checks if the audio already exists in the history.
+            If it does, it downloads the existing audio. Otherwise, it generates new audio.
+            It also implements a retry mechanism for handling rate limits.
+
+            Args:
+                session (aiohttp.ClientSession): The aiohttp client session to use for the request.
+                text (str): The text to synthesize into speech.
+                filename (str): The path to save the synthesized audio file.
+                tone (Tone): The tone to use for speech synthesis (currently not used in API call).
+                lang (Language): The language to use for speech synthesis.
+
+            Returns:
+                bool: True if synthesis was successful, False otherwise.
+            """
+            voice_id = self.voice_ids[lang]
+
+            # Check history first
+            history_item_id = await self._find_matching_history_item_async(session, text, voice_id)
+            if history_item_id:
+                logger.info(f"Found existing audio for text: {text[:30]}...")
+                mp3_filename = filename + ".mp3"
+                await self._download_audio_async(session, history_item_id, mp3_filename)
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, self._convert_mp3_to_wav, mp3_filename, filename)
+                os.remove(mp3_filename)
+                return True
+
+            url = f"{self.base_url}/text-to-speech/{voice_id}"
+
+            headers = {
+                "Content-Type": "application/json",
+                "xi-api-key": self.api_key
+            }
+
+            data = {
+                "text": text,
+                "model_id": self.model_id,
+                "voice_settings": {
+                    "stability": self.stability,
+                    "similarity_boost": self.similarity_boost
+                }
+            }
+
+            for attempt in range(self.max_retries):
+                try:
+                    async with session.post(url, json=data, headers=headers, params=self.query) as response:
+                        if response.status == HTTPStatus.OK.value:
+                            mp3_filename = filename + ".mp3"
+                            audio_content = await response.read()
+                            async with aiofiles.open(mp3_filename, mode='wb') as f:
+                                await f.write(audio_content)
+
+                            loop = asyncio.get_event_loop()
+                            await loop.run_in_executor(None, self._convert_mp3_to_wav, mp3_filename, filename)
+                            os.remove(mp3_filename)
+
+                            return True
+                        elif response.status == HTTPStatus.TOO_MANY_REQUESTS.value:
+                            retry_after = int(
+                                response.headers.get('Retry-After', self.initial_retry_delay * (2 ** attempt)))
+                            retry_time = self._get_retry_time(attempt, int(retry_after) if retry_after else None)
+                            logger.warning(f"Too many requests, retrying after {retry_time:.2f} seconds...")
+                            await asyncio.sleep(retry_time)
+                        else:
+                            raise Exception(f"Error from ElevenLabs API: {response.status} - {await response.text()}")
+                except Exception as e:
+                    if attempt == self.max_retries - 1:
+                        logger.error(f"Failed after {self.max_retries} attempts: {str(e)}")
+                        return False
+                    logger.warning(f"An error occurred: {str(e)}. Retrying...")
+                    await asyncio.sleep(self.initial_retry_delay * (2 ** attempt))
+
+            return False
+
     async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
                                tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
+        """
+        Asynchronously synthesize speech using ElevenLabs API and save it to a file.
+
+        This method first checks if the audio already exists in the history.
+        If it does, it downloads the existing audio. Otherwise, it generates new audio.
+        It also implements a retry mechanism for handling rate limits.
+
+        Args:
+            session (aiohttp.ClientSession): The aiohttp client session to use for the request.
+            text (str): The text to synthesize into speech.
+            filename (str): The path to save the synthesized audio file.
+            tone (Tone): The tone to use for speech synthesis (currently not used in API call).
+            lang (Language): The language to use for speech synthesis.
+
+        Returns:
+            bool: True if synthesis was successful, False otherwise.
+        """
         voice_id = self.voice_ids[lang]
 
         # Check history first
@@ -528,12 +721,22 @@ class ElevenLabsTTSEngine(TTSEngine):
         return False
 
     @staticmethod
-    def _convert_mp3_to_wav(mp3_file: str, wav_file: str) -> None:
+    def _convert_mp3_to_wav(self, mp3_file: str, wav_file: str) -> None:
+        """
+        Convert an MP3 file to WAV format.
+
+        Args:
+            mp3_file (str): Path to the input MP3 file.
+            wav_file (str): Path to save the output WAV file.
+        """
         audio = AudioSegment.from_mp3(mp3_file)
         audio.export(wav_file, format="wav")
 
 
 async def main():
+    """
+    Main function for testing the ElevenLabsTTSEngine.
+    """
     config = Config()
     engine = ElevenLabsTTSEngine(config)
     async with aiohttp.ClientSession() as session:
