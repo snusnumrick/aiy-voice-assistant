@@ -103,9 +103,12 @@ class SendEmailTool:
     def tool_definition(self) -> Tool:
         return Tool(name="send_email_to_user", description="Send an email with given subject and body to the user",
                     iterative=False,
-                    parameters=[ToolParameter(name='subject', type='string', description='Email subject'),
-                                ToolParameter(name='body', type='string', description='Email body')],
-                    processor=self.do_send_email)
+                    parameters=[ToolParameter(name='subject', type='string',
+                                              description='Email subject'),
+                                ToolParameter(name='body', type='string',
+                                              description='Email body. Detailed message to convey.')],
+                    processor=self.do_send_email,
+                    required=['subject', 'body'])
 
     async def do_send_email(self, parameters: Dict[str, any]):
         logger.info(f"Sending email {parameters}")

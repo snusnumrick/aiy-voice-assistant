@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Callable, AsyncGenerator, Awaitable
 
 import aiohttp
@@ -28,18 +28,30 @@ class Tool:
     iterative: bool
     parameters: List[ToolParameter]
     processor: Callable[[Dict[str, any]], Awaitable[str]]
+    required: List[str] = field(default_factory=list)
+
+    def __post_init__(self):
+        parameter_names = {p.name for p in self.parameters}
+        for required in self.required:
+            if required not in parameter_names:
+                raise ValueError(f'Required field "{required}" does not exist in parameters')
+
 
 
 class ClaudeAIModelWithTools(ClaudeAIModel):
     def __init__(self, config: Config, tools: List[Tool]) -> None:
         super().__init__(config)
-        self.tools_description = [{'name': t.name, 'description': t.description, 'input_schema': {'type': 'object',
-                                                                                                  'properties': {
-                                                                                                      p.name: {
-                                                                                                          'type': p.type,
-                                                                                                          'description': p.description}
-                                                                                                      for p in
-                                                                                                      t.parameters}}}
+        self.tools_description = [{'name': t.name,
+                                   'description': t.description,
+                                   'input_schema': {'type': 'object',
+                                                    'properties': {p.name: {'type': p.type,
+                                                                            'description': p.description
+                                                                            }
+                                                                   for p in t.parameters
+                                                                   },
+                                                    'required': t.required
+                                                    }
+                                   }
                                   for t in tools]
         self.tools_processors = {t.name: t.processor for t in tools}
         self.tools = {t.name: t for t in tools}
