@@ -1,12 +1,13 @@
-from datetime import datetime
-from collections import deque
+import json
+import logging
+import os
 import re
+from collections import deque
+from datetime import datetime
+from typing import List, Dict, Union
+
 import geocoder
 import pytz
-import os
-from typing import List, Dict, Union
-import logging
-import json
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +223,7 @@ def indent_content(content, max_width=120):
 
     def replace_special(match):
         special_parts.append(match.group(0))
-        return f'\n{{{len(special_parts)-1}}}\n'
+        return f'\n{{{len(special_parts) - 1}}}\n'
 
     content = re.sub(r'\$\w+:.+?\$', replace_special, content)
     # Split content into sentences
@@ -282,8 +283,7 @@ def extract_json(text):
         pass  # If it fails, continue to other methods
 
     # Patterns to match JSON content within triple backticks
-    patterns = [
-        r'```json\s*([\s\S]*?)\s*```',  # For ```json
+    patterns = [r'```json\s*([\s\S]*?)\s*```',  # For ```json
         r'```\s*([\s\S]*?)\s*```'  # For ```
     ]
 
@@ -298,6 +298,17 @@ def extract_json(text):
 
     logger.error("Error: No valid JSON found")
     raise Exception("No valid JSON found")
+
+
+def clean_response(response: str) -> str:
+    """
+    Clean the response by removing the meta tags $tagname: tagcontent$.
+
+    :param response: The response string with placeholders.
+    :return: The response string with placeholders removed.
+    """
+    pattern = r'\$\w+:[^$]*\$'
+    return re.sub(pattern, '', response)
 
 
 def test():

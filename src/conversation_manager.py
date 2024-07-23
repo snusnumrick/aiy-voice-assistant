@@ -19,7 +19,7 @@ from typing import List, Tuple, AsyncGenerator, Deque, Dict
 
 from src.llm_tools import optimize_rules, optimize_facts
 from src.responce_player import extract_emotions, extract_language
-from src.tools import format_message_history
+from src.tools import format_message_history, clean_response
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -230,12 +230,13 @@ class ConversationManager:
         logger.debug(f"Message history: \n{self.formatted_message_history()}")
 
         async for response_text in self.ai_model.get_response_async(list(self.message_history)):
+            crt = clean_response(response_text)
 
             logger.debug(f"AI response: {text} -> {response_text}")
             if self.message_history[-1]["role"] != "assistant":
-                self.message_history.append({"role": "assistant", "content": response_text})
+                self.message_history.append({"role": "assistant", "content": crt})
             else:
-                self.message_history[-1]["content"] += " " + response_text
+                self.message_history[-1]["content"] += " " + crt
 
             response_text, facts = extract_facts(response_text, self.timezone)
             self.facts += facts
