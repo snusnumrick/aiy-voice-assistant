@@ -1,9 +1,12 @@
+import asyncio
 import json
 import logging
 import os
+import random
 import re
 from collections import deque
 from datetime import datetime
+from functools import wraps
 from typing import List, Dict, Union
 
 import geocoder
@@ -284,8 +287,8 @@ def extract_json(text):
 
     # Patterns to match JSON content within triple backticks
     patterns = [r'```json\s*([\s\S]*?)\s*```',  # For ```json
-        r'```\s*([\s\S]*?)\s*```'  # For ```
-    ]
+                r'```\s*([\s\S]*?)\s*```'  # For ```
+                ]
 
     for pattern in patterns:
         matches = re.findall(pattern, text)
@@ -309,6 +312,33 @@ def clean_response(response: str) -> str:
     """
     pattern = r'\$\w+:[^$]*\$'
     return re.sub(pattern, '', response)
+
+
+def retry_async(max_retries: int = 1, initial_retry_delay: float = 1, backoff_factor: float = 2,
+                jitter_factor: float = 0.1):
+    """
+    A decorator for implementing retry logic with exponential backoff and jitter.
+    """
+
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        logger.error(f"Failed after {max_retries} attempts: {str(e)}")
+                        raise
+                    retry_time = initial_retry_delay * (backoff_factor ** attempt)
+                    jitter = random.uniform(0, jitter_factor * retry_time)
+                    total_delay = retry_time + jitter
+                    logger.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {total_delay:.2f} seconds...")
+                    await asyncio.sleep(total_delay)
+
+        return wrapper
+
+    return decorator
 
 
 def test():
