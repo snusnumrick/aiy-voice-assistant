@@ -54,9 +54,21 @@ def main():
         leds.update(Leds.rgb_off())
 
         # Initialize components
-        tts_engines = {Language.RUSSIAN: YandexTTSEngine(config),
-                       Language.ENGLISH: ElevenLabsTTSEngine(config),
-                       Language.GERMAN: ElevenLabsTTSEngine(config)}
+        elevenlabs_engine = None
+        try:
+            elevenlabs_engine=ElevenLabsTTSEngine(config)
+        except Exception as e:
+            logger.error(f"failed to initialize ElevenLabs: {e}")
+        yandex_engine = None
+        try:
+            yandex_engine = YandexTTSEngine(config)
+        except Exception as e:
+            logger.error(f"failed to initialize Yandex: {e}")
+        if not elevenlabs_engine and not yandex_engine:
+            return
+        tts_engines = {Language.RUSSIAN: yandex_engine if yandex_engine else elevenlabs_engine,
+                       Language.ENGLISH: elevenlabs_engine if elevenlabs_engine else yandex_engine,
+                       Language.GERMAN: elevenlabs_engine if elevenlabs_engine else yandex_engine}
         # ai_model = OpenRouterModel(config)
         ai_model = ClaudeAIModelWithTools(config, tools)
         conversation_manager = ConversationManager(config, ai_model)
