@@ -187,6 +187,7 @@ class ResponsePlayer:
         """Internal method to play the sequence of audio files and control LED behavior."""
 
         for emotion, audio_file in self.playlist:
+            logger.info(emotion)
             if not self._is_playing:
                 break
 
