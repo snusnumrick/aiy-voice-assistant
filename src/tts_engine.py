@@ -429,19 +429,19 @@ class ElevenLabsTTSEngine(TTSEngine):
         if not isinstance(self.style, float) or not 0 <= self.style <= 1:
             raise ValueError("style must be a float between 0 and 1")
 
-    async def _validate_api_key(self, session: aiohttp.ClientSession) -> None:
+    async def _validate_api_key(self) -> None:
         """
         Validate the API key by making a test request to the ElevenLabs API.
 
         Raises:
-            ValueError: If the API key is invalid or the connection to the API fails.
+            ElevenLabsAPIError: If the API key is invalid or the connection to the API fails.
         """
         url = f"{self.base_url}/user"
         headers = {"xi-api-key": self.api_key}
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
                 if response.status != 200:
-                    raise ValueError("Invalid API key or unable to connect to ElevenLabs API")
+                    raise ElevenLabsAPIError("Invalid API key or unable to connect to ElevenLabs API")
 
     @retry_async()
     async def _get_history_items_async(self, session: aiohttp.ClientSession, voice_id: str) -> List[Dict[str, Any]]:
