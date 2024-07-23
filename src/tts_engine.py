@@ -83,8 +83,8 @@ class TTSEngine(ABC):
         return -1
 
     @abstractmethod
-    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
-                               tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str, tone: Tone = Tone.PLAIN,
+                               lang=Language.RUSSIAN) -> bool:
         """
         Asynchronously synthesize speech from text and save it to a file.
 
@@ -135,8 +135,8 @@ class OpenAITTSEngine(TTSEngine):
                                                                            response_format="wav", input=text)
         response.stream_to_file(filename)
 
-    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
-                               tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str, tone: Tone = Tone.PLAIN,
+                               lang=Language.RUSSIAN) -> bool:
         url = "https://api.openai.com/v1/audio/speech"
         headers = {"Authorization": f"Bearer {self.client.api_key}", "Content-Type": "application/json"}
         data = {"model": self.model, "input": text, "voice": self.voice, "response_format": "wav"}
@@ -181,8 +181,7 @@ class GoogleTTSEngine(TTSEngine):
         self.voice = config.get('google_tts_voice', 'ru-RU-Wavenet-A')
         self.audio_encoding = texttospeech.AudioEncoding.LINEAR16
 
-    def synthesize(self, text: str, filename: str,
-                   tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> None:
+    def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> None:
         """
         Synthesize speech using Google's Text-to-Speech and save it to a file.
 
@@ -210,8 +209,8 @@ class GoogleTTSEngine(TTSEngine):
     def max_text_length(self) -> int:
         return -1
 
-    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
-                               tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str, tone: Tone = Tone.PLAIN,
+                               lang=Language.RUSSIAN) -> bool:
         from google.cloud import texttospeech
 
         # Google Cloud TTS doesn't have an async API, so we'll run it in an executor
@@ -293,8 +292,8 @@ class YandexTTSEngine(TTSEngine):
     def max_text_length(self) -> int:
         return -1
 
-    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
-                               tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str, tone: Tone = Tone.PLAIN,
+                               lang=Language.RUSSIAN) -> bool:
         # Yandex SpeechKit doesn't have an async API, so we'll run it in an executor
 
         def synthesize_wrapper(par: dict) -> bytes:
@@ -332,8 +331,7 @@ class ElevenLabsTTSEngine(TTSEngine):
         # Initialize voice IDs for different languages
         self.voice_ids = {Language.ENGLISH: config.get('elevenlabs_voice_id_en', 'N2lVS1w4EtoT3dr4eOWO'),
                           Language.GERMAN: config.get('elevenlabs_voice_id_de', 'Ay1WwRHxUsu3hEeAp8JZ'),
-                          Language.RUSSIAN: config.get('elevenlabs_voice_id_ru', 'cjVigY5qzO86Huf0OWal'),
-                          }
+                          Language.RUSSIAN: config.get('elevenlabs_voice_id_ru', 'cjVigY5qzO86Huf0OWal'), }
 
         # Set up voice parameters
         self.stability = config.get('elevenlabs_stability', 0.5)
@@ -443,19 +441,10 @@ class ElevenLabsTTSEngine(TTSEngine):
 
         url = f"{self.base_url}/text-to-speech/{voice_id}"
 
-        headers = {
-            "Content-Type": "application/json",
-            "xi-api-key": self.api_key
-        }
+        headers = {"Content-Type": "application/json", "xi-api-key": self.api_key}
 
-        data = {
-            "text": text,
-            "model_id": self.model_id,
-            "voice_settings": {
-                "stability": self.stability,
-                "similarity_boost": self.similarity_boost
-            }
-        }
+        data = {"text": text, "model_id": self.model_id,
+            "voice_settings": {"stability": self.stability, "similarity_boost": self.similarity_boost}}
 
         response = requests.post(url, json=data, headers=headers, params=self.query)
 
@@ -520,8 +509,8 @@ class ElevenLabsTTSEngine(TTSEngine):
                 logger.error(f"Failed to get history items: {response.status} - {await response.text()}")
                 return []
 
-    async def _find_matching_history_item_async(self, session: aiohttp.ClientSession, text: str, voice_id: str) \
-            -> Optional[str]:
+    async def _find_matching_history_item_async(self, session: aiohttp.ClientSession, text: str, voice_id: str) -> \
+    Optional[str]:
         """
         Asynchronously find a matching history item for the given text and voice ID.
 
@@ -596,19 +585,10 @@ class ElevenLabsTTSEngine(TTSEngine):
 
             url = f"{self.base_url}/text-to-speech/{voice_id}"
 
-            headers = {
-                "Content-Type": "application/json",
-                "xi-api-key": self.api_key
-            }
+            headers = {"Content-Type": "application/json", "xi-api-key": self.api_key}
 
-            data = {
-                "text": text,
-                "model_id": self.model_id,
-                "voice_settings": {
-                    "stability": self.stability,
-                    "similarity_boost": self.similarity_boost
-                }
-            }
+            data = {"text": text, "model_id": self.model_id,
+                "voice_settings": {"stability": self.stability, "similarity_boost": self.similarity_boost}}
 
             for attempt in range(self.max_retries):
                 try:
@@ -641,8 +621,8 @@ class ElevenLabsTTSEngine(TTSEngine):
 
             return False
 
-    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str,
-                               tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> bool:
+    async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str, tone: Tone = Tone.PLAIN,
+                               lang=Language.RUSSIAN) -> bool:
         """
         Asynchronously synthesize speech using ElevenLabs API and save it to a file.
 
@@ -675,19 +655,10 @@ class ElevenLabsTTSEngine(TTSEngine):
 
         url = f"{self.base_url}/text-to-speech/{voice_id}"
 
-        headers = {
-            "Content-Type": "application/json",
-            "xi-api-key": self.api_key
-        }
+        headers = {"Content-Type": "application/json", "xi-api-key": self.api_key}
 
-        data = {
-            "text": text,
-            "model_id": self.model_id,
-            "voice_settings": {
-                "stability": self.stability,
-                "similarity_boost": self.similarity_boost
-            }
-        }
+        data = {"text": text, "model_id": self.model_id,
+            "voice_settings": {"stability": self.stability, "similarity_boost": self.similarity_boost}}
 
         for attempt in range(self.max_retries):
             try:
@@ -721,7 +692,7 @@ class ElevenLabsTTSEngine(TTSEngine):
         return False
 
     @staticmethod
-    def _convert_mp3_to_wav(self, mp3_file: str, wav_file: str) -> None:
+    def _convert_mp3_to_wav(mp3_file: str, wav_file: str) -> None:
         """
         Convert an MP3 file to WAV format.
 
