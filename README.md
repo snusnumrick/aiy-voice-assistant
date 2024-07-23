@@ -90,6 +90,22 @@ Key aspects of the assistant include:
        "yandex_tts_role_plain": "neutral",
        "yandex_tts_role_happy": "good",
        "yandex_tts_speed": 1.0,
+       "elevenlabs_voice_id_en": "ID of voice you want elevenlabs TTS use for english",
+       "elevenlabs_voice_id_de": "ID of voice you want elevenlabs TTS use for german",
+       "elevenlabs_voice_id_ru": "ID of voice you want elevenlabs TTS use for russian", 
+       "elevenlabs_stability":  0.5,
+       "elevenlabs_similarity_boost": 0.75,
+       "elevenlabs_style": 0.0,
+       "elevenlabs_use_speaker_boost": false,
+       "elevenlabs_max_retries": 5,
+       "elevenlabs_initial_retry_delay": 1,
+       "elevenlabs_retry_jitter_factor": 0.1,
+       "elevenlabs_output_format": "eleven_multilingual_v2", 
+       "openai_tts_model": "tts",
+       "openai_tts_voice": "alloy",
+       "google_service_account_file": "~/gcloud.json",
+       "google_tts_language": "ru-RU",
+       "google_tts_voice": "ru-RU-Wavenet-A",
        "cleaning_time_start_hour": 3,
        "cleaning_time_stop_hour": 4,
        "form_new_memories_at_night": true,
@@ -103,6 +119,9 @@ Key aspects of the assistant include:
        "assistant_email_username": "Enter the username for the email account the assistant will use"
    }
    ```
+   
+   Note:
+   * listed are dafault values. If you are comfortable with them you don't have to put such entries into config file.
 
    Adjust the following fields in the `config.json`:
    - `assistant_email_address`: The email address the assistant will use to send emails
@@ -112,18 +131,23 @@ Key aspects of the assistant include:
    - `assistant_email_username`: Username for the assistant's email account
 
 6. Set up environment variables:
-   Create a `.env` file in the project root and add the following (replace with your actual API keys and sensitive information):
+   Create a `.env` file in the project root and 
+   add the following (replace with your actual API keys and sensitive information):
    ```
    OPENAI_API_KEY=your_openai_api_key
    GOOGLE_API_KEY=your_google_api_key
    YANDEX_API_KEY=your_yandex_api_key
    ANTHROPIC_API_KEY=your_anthropic_api_key
-   EMAIL_PASSWORD=your_email_password
+   EMAIL_PASSWORD=your_SNOT_server_password
    GOOGLE_CUSTOMSEARCH_KEY=your_google_customsearch_key
    TAVILY_API_KEY=your_tavily_api_key
+   OPENROUTER_API_KEY=your_open_router_api_key
+   PERPLEXITY_API_KEY=your_perplexity_api_key
    ```
 
-   Note: Make sure to keep your `.env` file secure and never commit it to version control.
+   Notes
+      * Make sure to keep your `.env` file secure and never commit it to version control.
+      * Depending on configuration, some of these API keys may be unnecessary.
 
 ## Usage
 
