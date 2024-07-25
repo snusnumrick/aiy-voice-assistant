@@ -116,7 +116,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                     # Step 2 & 3: Generate AI responses, synthesize speech, and build playlist
                     playlist = []
                     response_count = 0
-                    synthesis_tasks = []
+                    pending_tasks = set()
 
                     async for ai_response in conversation_manager.get_response(text):
                         for response in ai_response:
@@ -139,49 +139,47 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             # Start speech synthesis
                             synthesis_task = asyncio.create_task(
                                 tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang))
-                            synthesis_tasks.append((emo, audio_file_name, synthesis_task))
+                            pending_tasks.add(synthesis_task)
 
                         # Process completed synthesis tasks
-                        completed_tasks, synthesis_tasks = await asyncio.wait(
-                            [task for _, _, task in synthesis_tasks],
+                        done, pending_tasks = await asyncio.wait(
+                            pending_tasks,
                             timeout=0.1,
                             return_when=asyncio.FIRST_COMPLETED
                         )
 
-                        for task in completed_tasks:
-                            for i, (emo, audio_file_name, synth_task) in enumerate(synthesis_tasks):
-                                if synth_task == task:
-                                    try:
-                                        result = task.result()
-                                        logger.info(
-                                            f"({time_string_ms(timezone)}) Synthesis result for {audio_file_name}: {result}")
-                                        if isinstance(result, bool) and result:
-                                            playlist.append((emo, audio_file_name))
-                                        else:
-                                            logger.error(f"Speech synthesis failed for file: {audio_file_name}")
-                                            error_visual(leds)
-                                    except Exception as e:
-                                        logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
-                                        logger.error(traceback.format_exc())
-                                        error_visual(leds)
-                                    synthesis_tasks.pop(i)
-                                    break
+                        for task in done:
+                            try:
+                                result, audio_file_name = await task
+                                logger.info(
+                                    f"({time_string_ms(timezone)}) Synthesis result for {audio_file_name}: {result}")
+                                if isinstance(result, bool) and result:
+                                    playlist.append((emo, audio_file_name))
+                                else:
+                                    logger.error(f"Speech synthesis failed for file: {audio_file_name}")
+                                    error_visual(leds)
+                            except Exception as e:
+                                logger.error(f"Error synthesizing speech: {str(e)}")
+                                logger.error(traceback.format_exc())
+                                error_visual(leds)
 
                     # Wait for any remaining synthesis tasks
-                    for emo, audio_file_name, task in synthesis_tasks:
-                        try:
-                            result = await task
-                            logger.info(
-                                f"({time_string_ms(timezone)}) Synthesis result for {audio_file_name}: {result}")
-                            if isinstance(result, bool) and result:
-                                playlist.append((emo, audio_file_name))
-                            else:
-                                logger.error(f"Speech synthesis failed for file: {audio_file_name}")
+                    if pending_tasks:
+                        done, _ = await asyncio.wait(pending_tasks)
+                        for task in done:
+                            try:
+                                result, audio_file_name = await task
+                                logger.info(
+                                    f"({time_string_ms(timezone)}) Synthesis result for {audio_file_name}: {result}")
+                                if isinstance(result, bool) and result:
+                                    playlist.append((emo, audio_file_name))
+                                else:
+                                    logger.error(f"Speech synthesis failed for file: {audio_file_name}")
+                                    error_visual(leds)
+                            except Exception as e:
+                                logger.error(f"Error synthesizing speech: {str(e)}")
+                                logger.error(traceback.format_exc())
                                 error_visual(leds)
-                        except Exception as e:
-                            logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
-                            logger.error(traceback.format_exc())
-                            error_visual(leds)
 
                     # Step 4: Play all synthesized responses
                     if playlist:
