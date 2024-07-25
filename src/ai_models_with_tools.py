@@ -160,7 +160,9 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
                     # If we have any complete sentences, yield them
                     if len(sentences) > 1:
+                        logger.info(f"{len(sentences)} sentences extracted")
                         for sentence in sentences[:-1]:
+                            logger.info(f"yield {sentence}")
                             yield sentence
 
                         # Keep the last (potentially incomplete) sentence
