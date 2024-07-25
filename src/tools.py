@@ -341,7 +341,7 @@ def retry_async(max_retries: int = 5, initial_retry_delay: float = 1, backoff_fa
                 try:
                     return await func(*args, **kwargs)
                 except Exception as e:
-                    if attempt == max_retries - 1:
+                    if attempt == (max_retries - 1):
                         logger.error(f"Failed after {max_retries} attempts: {str(e)}")
                         raise
                     retry_time = initial_retry_delay * (backoff_factor ** attempt)
@@ -356,7 +356,7 @@ def retry_async(max_retries: int = 5, initial_retry_delay: float = 1, backoff_fa
 
 
 def retry_async_generator(max_retries: int = 5, initial_retry_delay: float = 1, backoff_factor: float = 2,
-                jitter_factor: float = 0.1):
+                          jitter_factor: float = 0.1):
     """
     A decorator for implementing retry logic with exponential backoff and jitter.
 
@@ -393,8 +393,6 @@ def retry_async_generator(max_retries: int = 5, initial_retry_delay: float = 1, 
     return decorator
 
 
-
-
 def extract_sentences(text: str) -> List[str]:
     """
     Extract sentences from the given text.
@@ -405,6 +403,7 @@ def extract_sentences(text: str) -> List[str]:
     Returns:
         List[str]: A list of extracted sentences.
     """
+    logger.info(f"Extracting sentences from: {text}")
     sentence_end_pattern = re.compile(r'(?<=[.!?])\s+(?=[A-Z])')
 
     # Split the text into potential sentences
@@ -426,6 +425,7 @@ def extract_sentences(text: str) -> List[str]:
 
         sentences.append(sentence)
 
+    logger.info(f"Extracted sentences: {sentences}")
     return sentences
 
 

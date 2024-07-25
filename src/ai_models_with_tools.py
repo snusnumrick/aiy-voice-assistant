@@ -142,33 +142,38 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         Yields:
            str: Complete sentences from the AI model's response.
         """
-        logger.debug(f"get_response_async: {messages}")
+        logger.info(f"get_response_async: {messages}")
         message_list = [m for m in messages]
 
         current_text = ""
         current_tool_use = None
 
         async for event in self._get_response_async(message_list):
+            logger.info(f"Received event: {event}")
             event_type = event.get('type')
 
             if event_type == 'content_block_delta':
                 delta = event.get('delta', {})
                 if delta.get('type') == 'text_delta':
                     text = delta.get('text', '')
+                    logger.info(f"Received text delta: {text}")
                     current_text += text
+                    logger.info(f"Current text: {current_text}")
                     sentences = extract_sentences(current_text)
 
                     # If we have any complete sentences, yield them
                     if len(sentences) > 1:
                         logger.info(f"{len(sentences)} sentences extracted")
                         for sentence in sentences[:-1]:
-                            logger.info(f"yield {sentence}")
+                            logger.info(f"Yielding sentence: {sentence}")
                             yield sentence
 
                         # Keep the last (potentially incomplete) sentence
                         current_text = sentences[-1]
+                        logger.info(f"Remaining text: {current_text}")
 
                 elif delta.get('type') == 'input_json_delta':
+                    logger.info(f"Received input JSON delta: {delta.get('partial_json', '')}")
                     if current_tool_use is None:
                         current_tool_use = {}
                     current_tool_use['input'] = current_tool_use.get('input', '') + delta.get('partial_json', '')
@@ -176,6 +181,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             elif event_type == 'content_block_start':
                 content_block = event.get('content_block', {})
                 if content_block.get('type') == 'tool_use':
+                    logger.info(f"Tool use started: {content_block}")
                     current_tool_use = {
                         'name': content_block.get('name'),
                         'id': content_block.get('id'),
@@ -183,18 +189,20 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     }
 
             elif event_type == 'content_block_stop':
+                logger.info("Content block stopped")
                 if current_tool_use:
                     try:
                         tool_input = json.loads(current_tool_use['input'])
                         tool_name = current_tool_use['name']
                         tool_use_id = current_tool_use['id']
+                        logger.info(f"Processing tool use: {tool_name}, {tool_use_id}")
                         tool_processor = self.tools_processors[tool_name]
                         tool_result = await tool_processor(tool_input)
                         if self.tools[tool_name].iterative:
                             message_list.append({"role": "user", "content": [
                                 {'type': 'tool_result', 'content': tool_result, "tool_use_id": tool_use_id}]})
                             async for response in self.get_response_async(message_list):
-                                logger.info(f"yield response {response}")
+                                logger.info(f"Yielding tool response: {response}")
                                 yield response
                     except json.JSONDecodeError:
                         logger.error(f"Failed to decode tool input JSON: {current_tool_use['input']}")
@@ -202,14 +210,17 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                         current_tool_use = None
 
             elif event_type == 'message_stop':
+                logger.info("Message stopped")
                 # Yield any remaining text
                 if current_text:
-                    logger.info(f"yield current_text: {current_text}")
+                    logger.info(f"Yielding final text: {current_text}")
                     yield current_text
 
         # Yield any remaining text if the message_stop event wasn't received
         if current_text:
+            logger.info(f"Yielding remaining text: {current_text}")
             yield current_text
+
 
 def main():
     # from aiy.leds import Leds
