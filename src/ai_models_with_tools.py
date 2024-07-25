@@ -100,8 +100,9 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 async with aiohttp.ClientSession() as session:
                     async with session.post(self.url, headers=self.headers, json=data) as response:
                         res = await response.text()
+                        logger.info(f"response text: {res}")
                         response_dict = json.loads(res)
-                        logger.info(f"response: {response_dict}")
+                        logger.info(f"response dict: {response_dict}")
 
                         if 'error' in response_dict:
                             error_type = response_dict.get('error', {}).get('type')
