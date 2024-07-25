@@ -208,7 +208,7 @@ class ConversationManager:
             AsyncGenerator[List[Dict[str,any]]: The AI-generated response,
             marked with emotion response and language code
         """
-        logger.info(f"call to get_response for: {text}")
+        logger.debug(f"call to get_response for: {text}")
 
         # update system message
         self.message_history[0] = {"role": "system", "content": self.get_system_prompt()}
@@ -234,7 +234,7 @@ class ConversationManager:
         async for response_text in self.ai_model.get_response_async(list(self.message_history)):
             crt = clean_response(response_text)
 
-            logger.info(f"{time_string_ms(self.timezone)}) AI response: {text} -> {response_text}")
+            logger..debug(f"{time_string_ms(self.timezone)}) AI response: {text} -> {response_text}")
             if self.message_history[-1]["role"] != "assistant":
                 self.message_history.append({"role": "assistant", "content": crt})
             else:
