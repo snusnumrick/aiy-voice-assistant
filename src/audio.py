@@ -30,6 +30,7 @@ from pydub import AudioSegment
 from src.config import Config
 from src.responce_player import ResponsePlayer
 from src.tts_engine import TTSEngine
+from src.tools import time_string_ms, get_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +198,8 @@ class SpeechTranscriber:
         self.cleaning_routine: Callable = cleaning
         self.cleaning_task = None
         self.last_clean_date: Optional[datetime.date] = None
+        self.timezone = get_timezone()
+
 
     async def check_and_schedule_cleaning(self) -> None:
         now: datetime.datetime = datetime.datetime.now()
@@ -243,7 +246,7 @@ class SpeechTranscriber:
 
             def start_idle():
                 nonlocal status, time_breathing_started, breathing_on, player_process
-                logger.debug('Ready to listen...')
+                logger.info(f'({time_string_ms(self.timezone)}) Ready to listen...')
                 if player_process is None or not player_process.is_playing():
                     self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
                     self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
@@ -252,14 +255,14 @@ class SpeechTranscriber:
 
             def start_listening():
                 nonlocal status, breathing_on, recoding_started_at
-                logger.debug('Recording audio...')
+                logger.info(f'({time_string_ms(self.timezone)}) Recording audio...')
                 self.leds.update(Leds.rgb_on(self.led_recording_color))
                 breathing_on = False
                 recoding_started_at = time.time()
 
             def start_processing():
                 nonlocal status, record_more
-                logger.debug('Processing audio...')
+                logger.debug(f'({time_string_ms(self.timezone)}) Processing audio...')
                 self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_processing_color))
                 record_more = self.number_of_chuncks_to_record_after_button_depressed

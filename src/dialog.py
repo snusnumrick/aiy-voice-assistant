@@ -21,6 +21,7 @@ from .config import Config
 from .conversation_manager import ConversationManager
 from .responce_player import ResponsePlayer
 from .tts_engine import TTSEngine, Tone, Language
+from .tools import get_timezone, time_string_ms
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
     transcriber = SpeechTranscriber(button, leds, config, cleaning=cleaning_routine)
     response_player = None
     original_audio_file_name = config.get('audio_file_name', 'speech.wav')
+    timezone = get_timezone()
 
     async with aiohttp.ClientSession() as session:
         while True:
@@ -98,13 +100,13 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
 
                 # Step 1: Listen and transcribe user speech
                 text = await transcriber.transcribe_speech(response_player)
-                logger.info('You said: %s', text)
+                logger.info(f'({time_string_ms(timezone)}) You said: %s', text)
 
                 if text:
                     # Step 2: Generate AI response
                     async for ai_response in conversation_manager.get_response(text):
                         logger.debug(f"conversation_manager response: {ai_response}")
-                        logger.info('AI says: %s', " ".join([r["text"] for r in ai_response]))
+                        logger.info(f'({time_string_ms(timezone)}) AI says: {" ".join([r["text"] for r in ai_response])}')
 
                         if ai_response:
                             # Step 3: Asynchronously synthesize speech for each response
@@ -133,7 +135,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             for emo, audio_file_name, task in tasks:
                                 try:
                                     result = await task
-                                    logger.debug(f"Synthesis result for {audio_file_name}: {result}")
+                                    logger.info(f"({time_string_ms(timezone)}) Synthesis result for {audio_file_name}: {result}")
                                     if isinstance(result, bool):
                                         if result:
                                             playlist.append((emo, audio_file_name))

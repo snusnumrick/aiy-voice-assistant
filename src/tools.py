@@ -82,6 +82,11 @@ def get_timezone() -> str:
     return timezone["timeZoneId"]
 
 
+def time_string_ms(timezone_string: str) -> str:
+    # 07:00.989
+    return datetime.now(pytz.utc).astimezone(pytz.timezone(timezone_string)).strftime("%M:%S.%f")[:-3]
+
+
 def get_current_date_time_location(timezone_string: str) -> str:
     """
     :param timezone_string: A string representing the timezone to convert the current date and time to (e.g. 'America/Los_Angeles').
