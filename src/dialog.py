@@ -99,7 +99,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
 
                 # Step 1: Listen and transcribe user speech
                 text = await transcriber.transcribe_speech(response_player)
-                logger..debug(f'({time_string_ms(timezone)}) You said: %s', text)
+                logger.debug(f'({time_string_ms(timezone)}) You said: %s', text)
 
                 if text:
                     # Step 2 & 3: Generate AI responses and immediately synthesize speech
@@ -128,7 +128,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             try:
                                 result = await tts_engine.synthesize_async(session, response_text, audio_file_name,
                                                                            tone, lang)
-                                logger..debug(
+                                logger.debug(
                                     f"({time_string_ms(timezone)}) Synthesis result for {audio_file_name}: {result}")
                                 if result:
                                     playlist.append((emo, audio_file_name))

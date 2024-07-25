@@ -234,7 +234,7 @@ class ConversationManager:
         async for response_text in self.ai_model.get_response_async(list(self.message_history)):
             crt = clean_response(response_text)
 
-            logger..debug(f"{time_string_ms(self.timezone)}) AI response: {text} -> {response_text}")
+            logger.debug(f"{time_string_ms(self.timezone)}) AI response: {text} -> {response_text}")
             if self.message_history[-1]["role"] != "assistant":
                 self.message_history.append({"role": "assistant", "content": crt})
             else:
