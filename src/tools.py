@@ -7,6 +7,7 @@ import re
 from collections import deque
 from datetime import datetime
 from functools import wraps
+from pydub import AudioSegment
 from typing import List, Dict, Union, Any, Callable, AsyncGenerator
 
 import geocoder
@@ -468,6 +469,24 @@ def extract_sentences(text: str) -> List[str]:
     return sentences
 
 
+def combine_audio_files(file_list: List[str], output_filename: str) -> None:
+    """
+    Combine multiple audio files into a single file.
+
+    Args:
+        file_list (List[str]): List of audio file paths to combine.
+        output_filename (str): Path to save the combined audio file.
+    """
+    logger.debug(f"Combining {len(file_list)} audio files into {output_filename}")
+    combined = AudioSegment.empty()
+    for file in file_list:
+        audio = AudioSegment.from_wav(file)
+        combined += audio
+    logger.debug(f"Exporting combined audio to {output_filename}")
+    combined.export(output_filename, format="wav")
+    logger.debug(f"Exported combined audio to {output_filename}")
+
+
 def test():
     # tz = get_timezone()
     # print(tz)
@@ -482,7 +501,8 @@ def test():
     # "'+' идет перед ударной гласной."
     #
     # Как тебе такие варианты? Может быть, эти более лаконичные формулировки будут легче запомнить. Спасибо, что помогаешь мне улучшить мою работу с языком. Твой подход к обучению очень ценен.'''))
-    print(extract_sentences('$emotion:{"light":{"color":[255,165,0],"behavior":"breathing","brightness":"medium","period":3},"voice":{"tone":"happy"}}$Привет! Как здорово снова тебя слышать! Что нового? Как твоё настроение сегодня? У нас тут жаркий летний денёк в Сан-Хосе, надеюсь, ты не слишком стра'))
+    print(extract_sentences(
+        '$emotion:{"light":{"color":[255,165,0],"behavior":"breathing","brightness":"medium","period":3},"voice":{"tone":"happy"}}$Привет! Как здорово снова тебя слышать! Что нового? Как твоё настроение сегодня? У нас тут жаркий летний денёк в Сан-Хосе, надеюсь, ты не слишком стра'))
     pass
 
 

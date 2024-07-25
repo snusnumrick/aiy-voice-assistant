@@ -25,12 +25,11 @@ from aiy.board import Button
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import AudioFormat, Recorder
 from google.cloud import speech
-from pydub import AudioSegment
 
 from src.config import Config
 from src.responce_player import ResponsePlayer
 from src.tts_engine import TTSEngine
-from src.tools import time_string_ms, get_timezone
+from src.tools import time_string_ms, get_timezone, combine_audio_files
 
 logger = logging.getLogger(__name__)
 
@@ -436,24 +435,6 @@ def split_text(text: str, max_length: int) -> List[str]:
         chunks.append(current_chunk.strip())
 
     return chunks
-
-
-def combine_audio_files(file_list: List[str], output_filename: str) -> None:
-    """
-    Combine multiple audio files into a single file.
-
-    Args:
-        file_list (List[str]): List of audio file paths to combine.
-        output_filename (str): Path to save the combined audio file.
-    """
-    logger.debug(f"Combining {len(file_list)} audio files into {output_filename}")
-    combined = AudioSegment.empty()
-    for file in file_list:
-        audio = AudioSegment.from_wav(file)
-        combined += audio
-    logger.debug(f"Exporting combined audio to {output_filename}")
-    combined.export(output_filename, format="wav")
-    logger.debug(f"Exported combined audio to {output_filename}")
 
 
 def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Config) -> bool:

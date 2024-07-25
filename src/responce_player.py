@@ -15,7 +15,7 @@ from typing import List, Tuple, Dict, Optional
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import play_wav_async
 
-from src.audio import combine_audio_files
+from src.tools import combine_audio_files
 
 logger = logging.getLogger(__name__)
 
