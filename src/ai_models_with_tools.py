@@ -147,6 +147,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
         current_text = ""
         current_tool_use = None
+        message_ended = False
 
         async for event in self._get_response_async(message_list):
             logger.debug(f"Received event: {event}")
@@ -163,7 +164,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
                     # If we have any complete sentences, yield them
                     if len(sentences) > 1:
-                        logger.debug(f"{len(sentences)} sentences extracted")
+                        logger.info(f"{len(sentences)} sentences extracted")
                         for sentence in sentences[:-1]:
                             logger.info(f"Yielding sentence: {sentence}")
                             yield sentence
@@ -181,7 +182,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             elif event_type == 'content_block_start':
                 content_block = event.get('content_block', {})
                 if content_block.get('type') == 'tool_use':
-                    logger.debug(f"Tool use started: {content_block}")
+                    logger.info(f"Tool use started: {content_block}")
                     current_tool_use = {
                         'name': content_block.get('name'),
                         'id': content_block.get('id'),
@@ -195,7 +196,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                         tool_input = json.loads(current_tool_use['input'])
                         tool_name = current_tool_use['name']
                         tool_use_id = current_tool_use['id']
-                        logger.debug(f"Processing tool use: {tool_name}, {tool_use_id}")
+                        logger.info(f"Processing tool use: {tool_name}, {tool_use_id}")
                         tool_processor = self.tools_processors[tool_name]
                         tool_result = await tool_processor(tool_input)
                         if self.tools[tool_name].iterative:
@@ -211,16 +212,18 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
             elif event_type == 'message_stop':
                 logger.debug("Message stopped")
-                # Yield any remaining text
-                if current_text:
-                    logger.info(f"Yielding final text: {current_text}")
-                    yield current_text
+                message_ended = True
 
-        # Yield any remaining text if the message_stop event wasn't received
+            # If the message has ended and we have any remaining text, yield it
+            if message_ended and current_text:
+                logger.info(f"Yielding final text: {current_text}")
+                yield current_text
+                current_text = ""  # Clear current_text to prevent duplication
+
+        # If the message somehow ended without a message_stop event and we still have text, yield it
         if current_text:
             logger.info(f"Yielding remaining text: {current_text}")
             yield current_text
-
 
 def main():
     # from aiy.leds import Leds
