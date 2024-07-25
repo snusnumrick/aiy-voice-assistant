@@ -208,6 +208,7 @@ class ConversationManager:
             AsyncGenerator[List[Dict[str,any]]: The AI-generated response,
             marked with emotion response and language code
         """
+        logger.info(f"call to get_response for: {text}")
 
         # update system message
         self.message_history[0] = {"role": "system", "content": self.get_system_prompt()}
