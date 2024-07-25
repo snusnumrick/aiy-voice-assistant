@@ -66,13 +66,14 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                           conversation_manager: ConversationManager,
                           config: Config, timezone: str) -> None:
     """
-    The main conversation loop of the AI assistant with interleaved AI response and speech synthesis.
+    The main conversation loop of the AI assistant with interleaved AI response and speech synthesis,
+    ensuring responses are played in the correct order.
 
     This function handles the flow of conversation, including:
     - Listening for user input
     - Transcribing speech to text
     - Generating AI responses and immediately synthesizing speech for each response
-    - Playing all synthesized speech responses together
+    - Playing all synthesized speech responses together in the correct order
 
     Args:
         button (Button): The AIY Kit button object.
@@ -130,53 +131,23 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                                 tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang))
                             synthesis_tasks.append((emo, audio_file_name, synthesis_task))
 
-                        # Process completed synthesis tasks
-                        done, pending = await asyncio.wait(
-                            [task for _, _, task in synthesis_tasks],
-                            timeout=0.1,
-                            return_when=asyncio.FIRST_COMPLETED
-                        )
+                    # Wait for all synthesis tasks to complete
+                    for emo, audio_file_name, task in synthesis_tasks:
+                        try:
+                            result = await task
+                            logger.info(
+                                f"({time_string_ms(timezone)}) Synthesis result for {audio_file_name}: {result}")
+                            if result:
+                                playlist.append((emo, audio_file_name))
+                            else:
+                                logger.error(f"Speech synthesis failed for file: {audio_file_name}")
+                                error_visual(leds)
+                        except Exception as e:
+                            logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
+                            logger.error(traceback.format_exc())
+                            error_visual(leds)
 
-                        for completed_task in done:
-                            for i, (emo, audio_file_name, task) in enumerate(synthesis_tasks):
-                                if task == completed_task:
-                                    try:
-                                        result = await task
-                                        logger.info(
-                                            f"({time_string_ms(timezone)}) Synthesis result for {audio_file_name}: {result}")
-                                        if result:
-                                            playlist.append((emo, audio_file_name))
-                                        else:
-                                            logger.error(f"Speech synthesis failed for file: {audio_file_name}")
-                                            error_visual(leds)
-                                    except Exception as e:
-                                        logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
-                                        logger.error(traceback.format_exc())
-                                        error_visual(leds)
-                                    synthesis_tasks.pop(i)
-                                    break
-
-                    # Wait for any remaining synthesis tasks
-                    if synthesis_tasks:
-                        done, _ = await asyncio.wait([task for _, _, task in synthesis_tasks])
-                        for completed_task in done:
-                            for emo, audio_file_name, task in synthesis_tasks:
-                                if task == completed_task:
-                                    try:
-                                        result = await task
-                                        logger.info(
-                                            f"({time_string_ms(timezone)}) Synthesis result for {audio_file_name}: {result}")
-                                        if result:
-                                            playlist.append((emo, audio_file_name))
-                                        else:
-                                            logger.error(f"Speech synthesis failed for file: {audio_file_name}")
-                                            error_visual(leds)
-                                    except Exception as e:
-                                        logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
-                                        logger.error(traceback.format_exc())
-                                        error_visual(leds)
-
-                    # Step 4: Play all synthesized responses
+                    # Step 4: Play all synthesized responses in order
                     if playlist:
                         if response_player:
                             response_player.stop()
