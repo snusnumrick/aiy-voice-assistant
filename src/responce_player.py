@@ -172,7 +172,7 @@ class ResponsePlayer:
             playlist (List[Tuple[Dict, str]]): A list of tuples containing LED behavior and audio file path.
             leds (Leds): An instance of the Leds class to control.
         """
-        logger.info(f"Playing {playlist}.")
+        logger.debug(f"Playing {playlist}.")
         self.playlist = playlist
         self.current_process: Optional[Popen] = None
         self._is_playing = False
@@ -187,34 +187,34 @@ class ResponsePlayer:
             if wav2merge is None:
                 wav2merge = [wav]
                 current_emo = emo
-                logger.info(f"1 {current_emo} {wav2merge}")
+                logger.debug(f"1 {current_emo} {wav2merge}")
             elif emo is None:
                 wav2merge.append(wav)
-                logger.info(f"2 {current_emo} {wav2merge}")
+                logger.debug(f"2 {current_emo} {wav2merge}")
             else:
                 if len(wav2merge) == 1:
                     new_play_list.append((current_emo, wav2merge[0]))
-                    logger.info(f"3 {new_play_list}")
+                    logger.debug(f"3 {new_play_list}")
                 else:
                     # Create a temporary file and get its name
                     output_filename = tempfile.mktemp(suffix=".wav")
                     combine_audio_files(wav2merge, output_filename)
                     new_play_list.append((current_emo, output_filename))
-                    logger.info(f"4 {new_play_list}")
+                    logger.debug(f"4 {new_play_list}")
                 wav2merge = [wav]
                 current_emo = emo
         if wav2merge:
             if len(wav2merge) == 1:
                 new_play_list.append((current_emo, wav2merge[0]))
-                logger.info(f"5 {new_play_list}")
+                logger.debug(f"5 {new_play_list}")
             else:
                 # Create a temporary file and get its name
                 output_filename = tempfile.mktemp(suffix=".wav")
                 combine_audio_files(wav2merge, output_filename)
                 new_play_list.append((current_emo, output_filename))
-                logger.info(f"5 {new_play_list}")
+                logger.debug(f"5 {new_play_list}")
         self.playlist = new_play_list
-        logger.info(f"Playing {playlist}.")
+        logger.debug(f"Playing {self.playlist}.")
 
     def play(self):
         """Starts playing the playlist in a separate thread."""
