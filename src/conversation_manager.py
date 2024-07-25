@@ -19,7 +19,7 @@ from typing import List, Tuple, AsyncGenerator, Deque, Dict
 
 from src.llm_tools import optimize_rules, optimize_facts
 from src.responce_player import extract_emotions, extract_language
-from src.tools import format_message_history, clean_response
+from src.tools import format_message_history, clean_response, time_string_ms
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -233,7 +233,7 @@ class ConversationManager:
         async for response_text in self.ai_model.get_response_async(list(self.message_history)):
             crt = clean_response(response_text)
 
-            logger.debug(f"AI response: {text} -> {response_text}")
+            logger.info(f"{time_string_ms(self.timezone)}) AI response: {text} -> {response_text}")
             if self.message_history[-1]["role"] != "assistant":
                 self.message_history.append({"role": "assistant", "content": crt})
             else:
