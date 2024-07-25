@@ -77,7 +77,7 @@ def main():
 
         # Start the main conversation loop
         # main_loop(board.button, leds, tts_engine, conversation_manager, config)
-        asyncio.run(main_loop_async(board.button, leds, tts_engines, conversation_manager, config))
+        asyncio.run(main_loop_async(board.button, leds, tts_engines, conversation_manager, config, timezone))
 
 
 if __name__ == '__main__':
