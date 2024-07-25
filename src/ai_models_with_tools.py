@@ -9,7 +9,7 @@ import aiohttp
 
 from src.ai_models import ClaudeAIModel
 from src.config import Config
-from src.tools import get_token_count
+from src.tools import extract_sentences, retry_async
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +37,21 @@ class Tool:
                 raise ValueError(f'Required field "{required}" does not exist in parameters')
 
 
-
 class ClaudeAIModelWithTools(ClaudeAIModel):
+    """
+    A class representing an AI model with tool-using capabilities.
+
+    This class extends the base ClaudeAIModel to include functionality for using
+    various tools during the conversation process.
+    """
     def __init__(self, config: Config, tools: List[Tool]) -> None:
+        """
+        Initialize the ClaudeAIModelWithTools instance.
+
+        Args:
+            config (Config): Configuration object for the AI model.
+            tools (List[Tool]): List of Tool objects available to the model.
+        """
         super().__init__(config)
         self.tools_description = [{'name': t.name,
                                    'description': t.description,
@@ -55,14 +67,6 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                                   for t in tools]
         self.tools_processors = {t.name: t.processor for t in tools}
         self.tools = {t.name: t for t in tools}
-        self.max_retries = config.get('max_retries', 5)
-        self.initial_retry_delay = config.get('initial_retry_delay', 1)
-        self.jitter_factor = config.get('jitter_factor', 0.1)
-
-    def _get_retry_time(self, attempt: int) -> float:
-        base_delay = self.initial_retry_delay * (2 ** attempt)
-        jitter = random.uniform(0, self.jitter_factor * base_delay)
-        return base_delay + jitter
 
     def get_response(self, messages: List[Dict[str, str]]) -> str:
         response_dict = self._get_response(messages)
@@ -86,74 +90,122 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 pass
         return response_text
 
-    async def _get_response_async(self, messages: List[Dict[str, str]]) -> dict:
+    @retry_async()
+    async def _get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[dict, None]:
+        """
+        Asynchronously get responses from the AI model.
+
+        This method sends messages to the AI model and yields the response events.
+
+        Args:
+            messages (List[Dict[str, str]]): List of message dictionaries to send to the model.
+
+        Yields:
+            dict: Response events from the AI model.
+        """
         system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
         non_system_message = [m for m in messages if m["role"] != 'system']
 
-        data = {"model": self.model, "max_tokens": self.max_tokens, "tools": self.tools_description,
-                "messages": non_system_message}
+        data = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "tools": self.tools_description,
+            "messages": non_system_message,
+            "stream": True  # Enable streaming
+        }
         if system_message_combined:
             data["system"] = system_message_combined
 
-        for attempt in range(self.max_retries):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(self.url, headers=self.headers, json=data) as response:
-                        res = await response.text()
-                        response_dict = json.loads(res)
-
-                        if 'error' in response_dict:
-                            error_type = response_dict.get('error', {}).get('type')
-                            if error_type == 'overloaded_error':
-                                retry_time = self._get_retry_time(attempt)
-                                logger.warning(f"API overloaded, retrying after {retry_time:.2f} seconds...")
-                                await asyncio.sleep(retry_time)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.url, headers=self.headers, json=data) as response:
+                async for line in response.content:
+                    if line:
+                        line = line.decode('utf-8').strip()
+                        if line.startswith('data: '):
+                            try:
+                                event_data = json.loads(line[6:])
+                                yield event_data
+                            except json.JSONDecodeError:
+                                logger.error(f"Failed to decode JSON: {line}")
                                 continue
-                            else:
-                                raise Exception(f"API error: {response_dict['error']}")
-
-                        return response_dict
-            except Exception as e:
-                if attempt == self.max_retries - 1:
-                    logger.error(f"Failed after {self.max_retries} attempts: {str(e)}")
-                    raise
-                retry_time = self._get_retry_time(attempt)
-                logger.warning(f"An error occurred: {str(e)}. Retrying in {retry_time:.2f} seconds...")
-                await asyncio.sleep(retry_time)
-
-        raise Exception(f"Failed to get response after {self.max_retries} attempts")
 
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
+        """
+        Asynchronously process responses from the AI model and yield sentences.
+
+        This method handles the streaming response from the AI model, processes tool
+        usage, and yields complete sentences as they become available.
+
+        Args:
+           messages (List[Dict[str, str]]): List of message dictionaries to send to the model.
+
+        Yields:
+           str: Complete sentences from the AI model's response.
+        """
         logger.debug(f"get_response_async: {messages}")
         message_list = [m for m in messages]
 
-        response_dict = await self._get_response_async(message_list)
-        logger.debug(f"get_response_async: {json.dumps(response_dict, indent=2)}")
-        if 'usage' in response_dict:
-            logger.info(f"tokens usage: {response_dict['usage']} vs estimate {get_token_count(message_list)}")
-        if 'content' not in response_dict:
-            logger.error(f"No content in response: {json.dumps(response_dict, indent=2)}")
-            if 'error' in response_dict:
-                response_dict['content'] = [{"type": "text", "text": response_dict["error"]["message"]}]
-            else:
-                return
-        message_list.append({"role": "assistant", "content": response_dict['content']})
-        for content in response_dict['content']:
-            if content['type'] == 'text':
-                yield content['text']
+        current_text = ""
+        current_tool_use = None
 
-            elif content['type'] == 'tool_use':
-                tool_name = content['name']
-                tool_use_id = content['id']
-                tool_parameters = content['input']
-                tool_processor = self.tools_processors[tool_name]
-                tool_result = await tool_processor(tool_parameters)
-                if self.tools[tool_name].iterative:
-                    message_list.append({"role": "user", "content": [
-                        {'type': 'tool_result', 'content': tool_result, "tool_use_id": tool_use_id}]})
-                    async for response in self.get_response_async(message_list):
-                        yield response
+        async for event in self._get_response_async(message_list):
+            event_type = event.get('type')
 
+            if event_type == 'content_block_delta':
+                delta = event.get('delta', {})
+                if delta.get('type') == 'text_delta':
+                    text = delta.get('text', '')
+                    current_text += text
+                    sentences = extract_sentences(current_text)
+
+                    # If we have any complete sentences, yield them
+                    if len(sentences) > 1:
+                        for sentence in sentences[:-1]:
+                            yield sentence
+
+                        # Keep the last (potentially incomplete) sentence
+                        current_text = sentences[-1]
+
+                elif delta.get('type') == 'input_json_delta':
+                    if current_tool_use is None:
+                        current_tool_use = {}
+                    current_tool_use['input'] = current_tool_use.get('input', '') + delta.get('partial_json', '')
+
+            elif event_type == 'content_block_start':
+                content_block = event.get('content_block', {})
+                if content_block.get('type') == 'tool_use':
+                    current_tool_use = {
+                        'name': content_block.get('name'),
+                        'id': content_block.get('id'),
+                        'input': ''
+                    }
+
+            elif event_type == 'content_block_stop':
+                if current_tool_use:
+                    try:
+                        tool_input = json.loads(current_tool_use['input'])
+                        tool_name = current_tool_use['name']
+                        tool_use_id = current_tool_use['id']
+                        tool_processor = self.tools_processors[tool_name]
+                        tool_result = await tool_processor(tool_input)
+                        if self.tools[tool_name].iterative:
+                            message_list.append({"role": "user", "content": [
+                                {'type': 'tool_result', 'content': tool_result, "tool_use_id": tool_use_id}]})
+                            async for response in self.get_response_async(message_list):
+                                yield response
+                    except json.JSONDecodeError:
+                        logger.error(f"Failed to decode tool input JSON: {current_tool_use['input']}")
+                    finally:
+                        current_tool_use = None
+
+            elif event_type == 'message_stop':
+                # Yield any remaining text
+                if current_text:
+                    yield current_text
+
+        # Yield any remaining text if the message_stop event wasn't received
+        if current_text:
+            yield current_text
 
 def main():
     # from aiy.leds import Leds

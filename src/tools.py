@@ -319,10 +319,19 @@ def clean_response(response: str) -> str:
     return re.sub(pattern, '', response)
 
 
-def retry_async(max_retries: int = 1, initial_retry_delay: float = 1, backoff_factor: float = 2,
+def retry_async(max_retries: int = 5, initial_retry_delay: float = 1, backoff_factor: float = 2,
                 jitter_factor: float = 0.1):
     """
     A decorator for implementing retry logic with exponential backoff and jitter.
+
+    Args:
+        max_retries (int): Maximum number of retry attempts.
+        initial_retry_delay (float): Initial delay between retries in seconds.
+        backoff_factor (float): Factor by which the delay increases with each retry.
+        jitter_factor (float): Factor for randomness in retry delay.
+
+    Returns:
+        Callable: Decorated function with retry logic.
     """
 
     def decorator(func):
@@ -344,6 +353,40 @@ def retry_async(max_retries: int = 1, initial_retry_delay: float = 1, backoff_fa
         return wrapper
 
     return decorator
+
+
+def extract_sentences(text: str) -> List[str]:
+    """
+    Extract sentences from the given text.
+
+    Args:
+        text (str): Input text to be split into sentences.
+
+    Returns:
+        List[str]: A list of extracted sentences.
+    """
+    sentence_end_pattern = re.compile(r'(?<=[.!?])\s+(?=[A-Z])')
+
+    # Split the text into potential sentences
+    potential_sentences = sentence_end_pattern.split(text)
+
+    # Process each potential sentence
+    sentences = []
+    for sentence in potential_sentences:
+        # Trim whitespace
+        sentence = sentence.strip()
+
+        # Skip empty sentences
+        if not sentence:
+            continue
+
+        # Add final punctuation if it's missing
+        if sentence[-1] not in '.!?':
+            sentence += '.'
+
+        sentences.append(sentence)
+
+    return sentences
 
 
 def test():
