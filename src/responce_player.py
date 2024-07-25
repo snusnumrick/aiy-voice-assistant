@@ -187,26 +187,32 @@ class ResponsePlayer:
             if wav2merge is None:
                 wav2merge = [wav]
                 current_emo = emo
+                logger.info(f"1 {current_emo} {wav2merge}")
             elif emo is None:
                 wav2merge.append(wav)
+                logger.info(f"2 {current_emo} {wav2merge}")
             else:
                 if len(wav2merge) == 1:
                     new_play_list.append((current_emo, wav2merge[0]))
+                    logger.info(f"3 {new_play_list}")
                 else:
                     # Create a temporary file and get its name
                     output_filename = tempfile.mktemp(suffix=".wav")
                     combine_audio_files(wav2merge, output_filename)
                     new_play_list.append((current_emo, output_filename))
+                    logger.info(f"4 {new_play_list}")
                 wav2merge = [wav]
                 current_emo = emo
         if wav2merge:
             if len(wav2merge) == 1:
                 new_play_list.append((current_emo, wav2merge[0]))
+                logger.info(f"5 {new_play_list}")
             else:
                 # Create a temporary file and get its name
                 output_filename = tempfile.mktemp(suffix=".wav")
                 combine_audio_files(wav2merge, output_filename)
                 new_play_list.append((current_emo, output_filename))
+                logger.info(f"5 {new_play_list}")
         self.playlist = new_play_list
         logger.info(f"Playing {playlist}.")
 
