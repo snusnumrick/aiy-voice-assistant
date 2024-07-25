@@ -66,14 +66,13 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                           conversation_manager: ConversationManager,
                           config: Config, timezone: str) -> None:
     """
-    The main conversation loop of the AI assistant with interleaved AI response and speech synthesis,
-    ensuring responses are played in the correct order.
+    The main conversation loop of the AI assistant with truly interleaved AI response generation and speech synthesis.
 
     This function handles the flow of conversation, including:
     - Listening for user input
     - Transcribing speech to text
     - Generating AI responses and immediately synthesizing speech for each response
-    - Playing all synthesized speech responses together in the correct order
+    - Playing all synthesized speech responses in order
 
     Args:
         button (Button): The AIY Kit button object.
@@ -103,10 +102,9 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                 logger.info(f'({time_string_ms(timezone)}) You said: %s', text)
 
                 if text:
-                    # Step 2 & 3: Generate AI responses, synthesize speech, and build playlist
+                    # Step 2 & 3: Generate AI responses and immediately synthesize speech
                     playlist = []
                     response_count = 0
-                    synthesis_tasks = []
 
                     async for ai_response in conversation_manager.get_response(text):
                         for response in ai_response:
@@ -126,26 +124,21 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             tts_engine = tts_engines.get(lang, tts_engines[Language.RUSSIAN])
                             logger.debug(f"Tone: {tone}, language = {lang}, tts_engine = {tts_engine}")
 
-                            # Start speech synthesis
-                            synthesis_task = asyncio.create_task(
-                                tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang))
-                            synthesis_tasks.append((emo, audio_file_name, synthesis_task))
-
-                    # Wait for all synthesis tasks to complete
-                    for emo, audio_file_name, task in synthesis_tasks:
-                        try:
-                            result = await task
-                            logger.info(
-                                f"({time_string_ms(timezone)}) Synthesis result for {audio_file_name}: {result}")
-                            if result:
-                                playlist.append((emo, audio_file_name))
-                            else:
-                                logger.error(f"Speech synthesis failed for file: {audio_file_name}")
+                            # Synthesize speech immediately
+                            try:
+                                result = await tts_engine.synthesize_async(session, response_text, audio_file_name,
+                                                                           tone, lang)
+                                logger.info(
+                                    f"({time_string_ms(timezone)}) Synthesis result for {audio_file_name}: {result}")
+                                if result:
+                                    playlist.append((emo, audio_file_name))
+                                else:
+                                    logger.error(f"Speech synthesis failed for file: {audio_file_name}")
+                                    error_visual(leds)
+                            except Exception as e:
+                                logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
+                                logger.error(traceback.format_exc())
                                 error_visual(leds)
-                        except Exception as e:
-                            logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
-                            logger.error(traceback.format_exc())
-                            error_visual(leds)
 
                     # Step 4: Play all synthesized responses in order
                     if playlist:
