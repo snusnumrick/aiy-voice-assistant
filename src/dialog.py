@@ -5,7 +5,6 @@ This module contains the main loop for handling the conversation flow,
 including speech recognition, AI response generation, and speech synthesis.
 """
 
-import asyncio
 import logging
 import os
 import time
@@ -20,8 +19,8 @@ from .audio import SpeechTranscriber
 from .config import Config
 from .conversation_manager import ConversationManager
 from .responce_player import ResponsePlayer
-from .tts_engine import TTSEngine, Tone, Language
 from .tools import time_string_ms
+from .tts_engine import TTSEngine, Tone, Language
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +62,7 @@ def append_suffix(file_name: str, suffix: str) -> str:
 
 
 async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language, TTSEngine],
-                          conversation_manager: ConversationManager,
-                          config: Config, timezone: str) -> None:
+                          conversation_manager: ConversationManager, config: Config, timezone: str) -> None:
     """
     The main conversation loop of the AI assistant with truly interleaved AI response generation and speech synthesis.
 
@@ -115,8 +113,8 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             response_text = response["text"]
                             lang_code = response["language"]
                             audio_file_name = append_suffix(original_audio_file_name, str(response_count))
-                            tone = Tone.PLAIN if 'voice' not in emo or 'tone' not in emo['voice'] or emo['voice'][
-                                'tone'] != "happy" else Tone.HAPPY
+                            tone = Tone.PLAIN if (emo is None) or ('voice' not in emo) or (
+                                        'tone' not in emo['voice']) or (emo['voice']['tone'] != "happy") else Tone.HAPPY
                             lang = {"ru": Language.RUSSIAN, "en": Language.ENGLISH, "de": Language.GERMAN}.get(
                                 lang_code, Language.RUSSIAN)
 

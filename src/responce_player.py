@@ -6,6 +6,7 @@ patterns, and managing a playlist of audio files with corresponding LED behavior
 import json
 import logging
 import re
+import tempfile
 import threading
 import time
 from subprocess import Popen
@@ -13,6 +14,8 @@ from typing import List, Tuple, Dict, Optional
 
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import play_wav_async
+
+from src.audio import combine_audio_files
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +35,7 @@ def emotions_prompt() -> str:
             'Empty emotion or emotion with empty voice reset tone to plain.')
 
 
-def extract_emotions(text: str) -> List[Tuple[dict, str]]:
+def extract_emotions(text: str) -> List[Tuple[Optional[dict], str]]:
     """
         This function parses the given text and extracts 'emotion' dictionaries (if any) and the associated text following them.
         The structured data is returned as a list of tuples, each containing the dictionary and the corresponding text.
@@ -55,11 +58,11 @@ def extract_emotions(text: str) -> List[Tuple[dict, str]]:
         if not match:
             remaining_text = text[pos:].strip()
             if remaining_text:
-                results.append(({}, remaining_text))
+                results.append((None, remaining_text))
             break
         preceding_text = match.group(1).strip()
         if preceding_text:
-            results.append(({}, preceding_text))
+            results.append((None, preceding_text))
 
         emotion_dict_str = match.group(2) if match.group(2) else '{}'
         associated_text = match.group(3).strip()
@@ -67,7 +70,7 @@ def extract_emotions(text: str) -> List[Tuple[dict, str]]:
             emotion_dict = json.loads(emotion_dict_str)
             results.append((emotion_dict, associated_text))
         except json.JSONDecodeError:
-            results.append(({}, associated_text))
+            results.append((None, associated_text))
         pos = match.end()
 
     return results
@@ -161,7 +164,7 @@ class ResponsePlayer:
     A class for playing a sequence of audio files with corresponding LED behaviors.
     """
 
-    def __init__(self, playlist: List[Tuple[Dict, str]], leds: Leds):
+    def __init__(self, playlist: List[Tuple[Optional[Dict], str]], leds: Leds):
         """
         Initializes the ResponsePlayer.
 
@@ -175,6 +178,37 @@ class ResponsePlayer:
         self._is_playing = False
         self.play_thread: Optional[threading.Thread] = None
         self.leds = leds
+
+        # merge audio files with the same emotion
+        new_play_list = []
+        wav2merge = []
+        current_emo = None
+        for emo, wav in self.playlist:
+            if wav2merge is None:
+                wav2merge = [wav]
+                current_emo = emo
+            elif emo is None:
+                wav2merge.append(wav)
+            else:
+                if len(wav2merge) == 1:
+                    new_play_list.append((current_emo, wav2merge[0]))
+                else:
+                    # Create a temporary file and get its name
+                    output_filename = tempfile.mktemp(suffix=".wav")
+                    combine_audio_files(wav2merge, output_filename)
+                    new_play_list.append((current_emo, output_filename))
+                wav2merge = [wav]
+                current_emo = emo
+        if wav2merge:
+            if len(wav2merge) == 1:
+                new_play_list.append((current_emo, wav2merge[0]))
+            else:
+                # Create a temporary file and get its name
+                output_filename = tempfile.mktemp(suffix=".wav")
+                combine_audio_files(wav2merge, output_filename)
+                new_play_list.append((current_emo, output_filename))
+        self.playlist = new_play_list
+        logger.info(f"Playing {playlist}.")
 
     def play(self):
         """Starts playing the playlist in a separate thread."""
@@ -191,11 +225,11 @@ class ResponsePlayer:
             if not self._is_playing:
                 break
 
-            light_behavior = {}
-            if "light" in emotion:
-                light_behavior = emotion["light"]
-
-            change_light_behavior(light_behavior, self.leds)
+            if emotion is not None:
+                light_behavior = {}
+                if "light" in emotion:
+                    light_behavior = emotion["light"]
+                change_light_behavior(light_behavior, self.leds)
 
             self.current_process = play_wav_async(audio_file)
 
