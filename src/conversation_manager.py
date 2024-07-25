@@ -115,13 +115,14 @@ class ConversationManager:
         message_history (deque): A queue of message dictionaries representing the conversation history.
     """
 
-    def __init__(self, config, ai_model: AIModel):
+    def __init__(self, config, ai_model: AIModel, timezone: str):
         """
         Initialize the ConversationManager.
 
         Args:
             config (Config): The application configuration object.
             ai_model (AIModel): The AI model to use for generating responses.
+            timezone (str): Current timezone to store time
         """
         self.config = config
         self.searcher = WebSearcher(config)
@@ -130,7 +131,7 @@ class ConversationManager:
         self.facts = self.load_facts()
         self.rules = self.load_rules()
         self.location = get_location()
-        self.timezone = get_timezone()
+        self.timezone = timezone
         self.current_language_code = "ru"
         self.hard_rules_russian = (""
                                    "Если в ответе на твой запрос указано время без указания часового пояса, "

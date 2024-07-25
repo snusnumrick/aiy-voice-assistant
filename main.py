@@ -24,6 +24,7 @@ from src.config import Config
 from src.conversation_manager import ConversationManager
 from src.dialog import main_loop_async
 from src.tts_engine import YandexTTSEngine, Language, ElevenLabsTTSEngine
+from src.tools import get_timezone
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -41,6 +42,7 @@ def main():
     Main function to initialize and run the AI Voice Assistant.
     """
     config = Config()
+    timezone = get_timezone()
 
     with Board() as board, Leds() as leds:
 

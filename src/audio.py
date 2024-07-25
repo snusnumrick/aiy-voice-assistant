@@ -170,7 +170,8 @@ class SpeechTranscriber:
         streaming_config (speech.StreamingRecognitionConfig): Configuration for streaming recognition.
     """
 
-    def __init__(self, button: Button, leds: Leds, config, cleaning: Optional[Callable] = None):
+    def __init__(self, button: Button, leds: Leds, config, cleaning: Optional[Callable] = None,
+                 timezone: Optional[str] = None) -> None:
         """
         Initialize the SpeechTranscriber.
 
@@ -178,6 +179,8 @@ class SpeechTranscriber:
             button (Button): The AIY Kit button object.
             leds (Leds): The AIY Kit LED object.
             config (Config): The application configuration object.
+            cleaning (Optional[Callable]): Optional callback function to clean the audio stream.
+            timezone (Optional[str]): The timezone of the current location.
         """
         self.button = button
         self.leds = leds
@@ -198,7 +201,7 @@ class SpeechTranscriber:
         self.cleaning_routine: Callable = cleaning
         self.cleaning_task = None
         self.last_clean_date: Optional[datetime.date] = None
-        self.timezone = get_timezone()
+        self.timezone: str = get_timezone() if timezone is None else timezone
 
 
     async def check_and_schedule_cleaning(self) -> None:
@@ -262,7 +265,7 @@ class SpeechTranscriber:
 
             def start_processing():
                 nonlocal status, record_more
-                logger.debug(f'({time_string_ms(self.timezone)}) Processing audio...')
+                logger.info(f'({time_string_ms(self.timezone)}) Processing audio...')
                 self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_processing_color))
                 record_more = self.number_of_chuncks_to_record_after_button_depressed

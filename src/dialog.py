@@ -21,7 +21,7 @@ from .config import Config
 from .conversation_manager import ConversationManager
 from .responce_player import ResponsePlayer
 from .tts_engine import TTSEngine, Tone, Language
-from .tools import get_timezone, time_string_ms
+from .tools import time_string_ms
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +62,9 @@ def append_suffix(file_name: str, suffix: str) -> str:
     return new_path
 
 
-async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language, TTSEngine], conversation_manager: ConversationManager,
-                          config: Config) -> None:
+async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language, TTSEngine],
+                          conversation_manager: ConversationManager,
+                          config: Config, timezone: str) -> None:
     """
     The main conversation loop of the AI assistant.
 
@@ -81,6 +82,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
         tts_engines (Dict[Language, TTSEngine]): Dictionary of TTS engines for each supported language.
         conversation_manager (ConversationManager): The conversation manager object.
         config (Config): The application configuration object.
+        timezone (str): The timezone to use for the conversation loop.
     """
 
     async def cleaning_routine():
@@ -90,7 +92,6 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
     transcriber = SpeechTranscriber(button, leds, config, cleaning=cleaning_routine)
     response_player = None
     original_audio_file_name = config.get('audio_file_name', 'speech.wav')
-    timezone = get_timezone()
 
     async with aiohttp.ClientSession() as session:
         while True:
