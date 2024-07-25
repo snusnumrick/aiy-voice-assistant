@@ -66,7 +66,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                           conversation_manager: ConversationManager,
                           config: Config, timezone: str) -> None:
     """
-    The main conversation loop of the AI assistant with truly concurrent speech synthesis.
+    The main conversation loop of the AI assistant with interleaved AI response and speech synthesis.
 
     This function handles the flow of conversation, including:
     - Listening for user input
@@ -74,9 +74,8 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
     - Generating AI responses and immediately synthesizing speech for each response
     - Playing all synthesized speech responses together
 
-    The function now processes AI responses as they are generated, initiating
-    speech synthesis immediately for each response. This optimizes the response time
-    by overlapping AI response generation with speech synthesis.
+    The function now truly interleaves AI response generation with speech synthesis,
+    initiating speech synthesis for each response as soon as it's generated.
 
     Args:
         button (Button): The AIY Kit button object.
@@ -89,8 +88,8 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
     The conversation loop follows these steps:
     1. Listen for and transcribe user speech.
     2. Generate AI responses and immediately initiate speech synthesis for each response.
-    3. Collect all synthesized speech files into a playlist.
-    4. Play all synthesized responses together.
+    3. Collect all synthesized speech files into a playlist as they become available.
+    4. Play all synthesized responses together once all are ready.
 
     This loop continues indefinitely, handling any errors that occur during the process.
     """
@@ -114,9 +113,11 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                 logger.info(f'({time_string_ms(timezone)}) You said: %s', text)
 
                 if text:
-                    # Step 2: Generate AI responses and immediately synthesize speech
-                    synthesis_tasks = []
+                    # Step 2 & 3: Generate AI responses, synthesize speech, and build playlist
+                    playlist = []
                     response_count = 0
+                    synthesis_tasks = []
+
                     async for ai_response in conversation_manager.get_response(text):
                         for response in ai_response:
                             response_count += 1
@@ -135,12 +136,38 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             tts_engine = tts_engines.get(lang, tts_engines[Language.RUSSIAN])
                             logger.debug(f"Tone: {tone}, language = {lang}, tts_engine = {tts_engine}")
 
-                            task = asyncio.create_task(
+                            # Start speech synthesis
+                            synthesis_task = asyncio.create_task(
                                 tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang))
-                            synthesis_tasks.append((emo, audio_file_name, task))
+                            synthesis_tasks.append((emo, audio_file_name, synthesis_task))
 
-                    # Step 3: Wait for all synthesis tasks to complete and build playlist
-                    playlist = []
+                        # Process completed synthesis tasks
+                        completed_tasks, synthesis_tasks = await asyncio.wait(
+                            [task for _, _, task in synthesis_tasks],
+                            timeout=0.1,
+                            return_when=asyncio.FIRST_COMPLETED
+                        )
+
+                        for task in completed_tasks:
+                            for i, (emo, audio_file_name, synth_task) in enumerate(synthesis_tasks):
+                                if synth_task == task:
+                                    try:
+                                        result = task.result()
+                                        logger.info(
+                                            f"({time_string_ms(timezone)}) Synthesis result for {audio_file_name}: {result}")
+                                        if isinstance(result, bool) and result:
+                                            playlist.append((emo, audio_file_name))
+                                        else:
+                                            logger.error(f"Speech synthesis failed for file: {audio_file_name}")
+                                            error_visual(leds)
+                                    except Exception as e:
+                                        logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
+                                        logger.error(traceback.format_exc())
+                                        error_visual(leds)
+                                    synthesis_tasks.pop(i)
+                                    break
+
+                    # Wait for any remaining synthesis tasks
                     for emo, audio_file_name, task in synthesis_tasks:
                         try:
                             result = await task
