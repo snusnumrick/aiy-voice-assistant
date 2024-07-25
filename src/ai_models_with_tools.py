@@ -91,7 +91,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         non_system_message = [m for m in messages if m["role"] != 'system']
 
         data = {"model": self.model, "max_tokens": self.max_tokens, "tools": self.tools_description,
-                "messages": non_system_message, "stream": True}
+                "messages": non_system_message}
         if system_message_combined:
             data["system"] = system_message_combined
 
@@ -99,15 +99,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(self.url, headers=self.headers, json=data) as response:
-                        buffer = b''
-                        async for chunk in response.content.iter_any():
-                            logger.info(f"response chunk: {chunk}")
-                            buffer += chunk
-
                         res = await response.text()
-                        logger.info(f"response text: {res}")
                         response_dict = json.loads(res)
-                        logger.info(f"response dict: {response_dict}")
 
                         if 'error' in response_dict:
                             error_type = response_dict.get('error', {}).get('type')
