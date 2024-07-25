@@ -402,35 +402,22 @@ def extract_sentences(text: str) -> List[str]:
     the main text, splits the text into sentences, and then reattaches the special
     patterns to the appropriate sentences based on their original positions.
 
+    The function is designed to work with both English and Russian text.
+
     Args:
         text (str): The input text to be processed. May contain special patterns
-                    enclosed in $...$, as well as normal sentences.
+                    enclosed in $...$, as well as normal sentences in English or Russian.
 
     Returns:
         List[str]: A list of extracted sentences. Special patterns are reattached
                    to the sentences they were originally associated with.
 
-    Behavior:
-    1. Extracts all special patterns (enclosed in $...$) from the text.
-    2. Removes these patterns temporarily from the text, keeping track of their positions.
-    3. Splits the remaining text into sentences.
-    4. Processes each sentence:
-       - Trims whitespace
-       - Adds final punctuation if missing
-       - Reattaches relevant special patterns based on their original positions
-    5. If any special patterns remain (e.g., at the end of the text), they are
-       attached to the last sentence.
-
     Note:
-    - Special patterns at the very beginning of the text will be attached to the first sentence.
-    - Special patterns at the very end of the text will be attached to the last sentence.
-    - The function assumes that special patterns should not be split across sentences.
-
-    Example:
-        Input: "$emotion:happy$Hello! How are you? $action:wave$"
-        Output: ["$emotion:happy$Hello!", "How are you?", "$action:wave$"]
+    - The function now uses a more flexible sentence-splitting approach that works
+      for both English and Russian text.
+    - Incomplete sentences at the end of the text are preserved.
     """
-    logger.info(f"Extracting sentences from: {text}")
+    logger.debug(f"Extracting sentences from: {text}")
 
     # Extract any special tags or JSON-like structures
     special_patterns = re.findall(r'\$.*?\$', text)
@@ -445,9 +432,10 @@ def extract_sentences(text: str) -> List[str]:
     # Sort pattern_positions by position
     pattern_positions.sort(key=lambda x: x[0])
 
-    # Split the remaining text into sentences
-    sentence_end_pattern = re.compile(r'(?<=[.!?])\s+(?=[A-Z])|(?<=[.!?])$')
-    potential_sentences = sentence_end_pattern.split(text)
+    # Split the text into sentences
+    # This regex works for both English and Russian, and preserves incomplete sentences
+    sentence_pattern = re.compile(r'([^.!?…]+[.!?…]+(?:\s|$)|[^.!?…]+$)')
+    potential_sentences = sentence_pattern.findall(text)
 
     # Process each potential sentence
     sentences = []
@@ -459,10 +447,6 @@ def extract_sentences(text: str) -> List[str]:
         # Skip empty sentences
         if not sentence:
             continue
-
-        # Add final punctuation if it's missing
-        if sentence[-1] not in '.!?':
-            sentence += '.'
 
         # Add any special patterns that belong to this sentence
         sentence_start = current_position
@@ -480,23 +464,26 @@ def extract_sentences(text: str) -> List[str]:
     if remaining_patterns and sentences:
         sentences[-1] += ''.join(remaining_patterns)
 
-    logger.info(f"Extracted sentences: {sentences}")
+    logger.debug(f"Extracted sentences: {sentences}")
     return sentences
+
 
 def test():
     # tz = get_timezone()
     # print(tz)
     # print(get_current_datetime_english(tz) + " " + get_location())
     # print(get_current_date_time_for_facts(tz))
-    print(indent_content('''Спасибо за предложение, Антон. Ты прав, возможно, другая формулировка поможет мне лучше усвоить это правило. Давай попробую:
-
-"Знак ударения '+' всегда ставится непосредственно перед ударной гласной в слове."
-
-Или еще короче:
-
-"'+' идет перед ударной гласной."
-
-Как тебе такие варианты? Может быть, эти более лаконичные формулировки будут легче запомнить. Спасибо, что помогаешь мне улучшить мою работу с языком. Твой подход к обучению очень ценен.'''))
+    #     print(indent_content('''Спасибо за предложение, Антон. Ты прав, возможно, другая формулировка поможет мне лучше усвоить это правило. Давай попробую:
+    #
+    # "Знак ударения '+' всегда ставится непосредственно перед ударной гласной в слове."
+    #
+    # Или еще короче:
+    #
+    # "'+' идет перед ударной гласной."
+    #
+    # Как тебе такие варианты? Может быть, эти более лаконичные формулировки будут легче запомнить. Спасибо, что помогаешь мне улучшить мою работу с языком. Твой подход к обучению очень ценен.'''))
+    print(extract_sentences('$emotion:{"light":{"color":[255,165,0],"behavior":"breathing","brightness":"medium","period":3},"voice":{"tone":"happy"}}$Привет! Как здорово снова тебя слышать! Что нового? Как твоё настроение сегодня? У нас тут жаркий летний денёк в Сан-Хосе, надеюсь, ты не слишком стра'))
+    pass
 
 
 if __name__ == '__main__':
