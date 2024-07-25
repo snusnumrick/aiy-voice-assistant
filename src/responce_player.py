@@ -181,7 +181,7 @@ class ResponsePlayer:
 
         # merge audio files with the same emotion
         new_play_list = []
-        wav2merge = []
+        wav2merge = None
         current_emo = None
         for emo, wav in self.playlist:
             if wav2merge is None:
