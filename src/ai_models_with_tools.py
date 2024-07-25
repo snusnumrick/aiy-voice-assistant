@@ -99,6 +99,11 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(self.url, headers=self.headers, json=data) as response:
+                        buffer = b''
+                        async for chunk in response.content.iter_any():
+                            logger.info(f"response chunk: {chunk}")
+                            buffer += chunk
+
                         res = await response.text()
                         logger.info(f"response text: {res}")
                         response_dict = json.loads(res)
