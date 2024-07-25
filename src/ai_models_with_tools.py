@@ -194,6 +194,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                             message_list.append({"role": "user", "content": [
                                 {'type': 'tool_result', 'content': tool_result, "tool_use_id": tool_use_id}]})
                             async for response in self.get_response_async(message_list):
+                                logger.info(f"yield response {response}")
                                 yield response
                     except json.JSONDecodeError:
                         logger.error(f"Failed to decode tool input JSON: {current_tool_use['input']}")
@@ -203,6 +204,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             elif event_type == 'message_stop':
                 # Yield any remaining text
                 if current_text:
+                    logger.info(f"yield current_text: {current_text}")
                     yield current_text
 
         # Yield any remaining text if the message_stop event wasn't received
