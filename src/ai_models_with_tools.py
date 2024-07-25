@@ -9,7 +9,7 @@ import aiohttp
 
 from src.ai_models import ClaudeAIModel
 from src.config import Config
-from src.tools import extract_sentences, retry_async
+from src.tools import extract_sentences, retry_async_generator
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 pass
         return response_text
 
-    @retry_async()
+    @retry_async_generator()
     async def _get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[dict, None]:
         """
         Asynchronously get responses from the AI model.
