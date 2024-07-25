@@ -145,7 +145,9 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                         if response_player:
                             response_player.stop()
                             time.sleep(0.5)
+                        logger.info(f'({time_string_ms(timezone)}) playlist is ready')
                         response_player = ResponsePlayer(playlist, leds)
+                        logger.info(f'({time_string_ms(timezone)}) playing')
                         response_player.play()
 
             except Exception as e:
