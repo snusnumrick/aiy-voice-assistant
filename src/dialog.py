@@ -126,8 +126,8 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             try:
                                 result = await tts_engine.synthesize_async(session, response_text, audio_file_name,
                                                                            tone, lang)
-                                logger.debug(
-                                    f"({time_string_ms(timezone)}) Synthesis result for {audio_file_name}: {result}")
+                                logger.info(
+                                    f"({time_string_ms(timezone)}) Synthesis {response_text} -> {audio_file_name}")
                                 if result:
                                     playlist.append((emo, audio_file_name))
                                 else:
