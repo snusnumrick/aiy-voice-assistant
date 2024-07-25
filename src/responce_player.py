@@ -169,7 +169,7 @@ class ResponsePlayer:
             playlist (List[Tuple[Dict, str]]): A list of tuples containing LED behavior and audio file path.
             leds (Leds): An instance of the Leds class to control.
         """
-
+        logger.info(f"Playing {playlist}.")
         self.playlist = playlist
         self.current_process: Optional[Popen] = None
         self._is_playing = False
