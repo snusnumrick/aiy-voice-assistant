@@ -395,22 +395,63 @@ def retry_async_generator(max_retries: int = 5, initial_retry_delay: float = 1, 
 
 def extract_sentences(text: str) -> List[str]:
     """
-    Extract sentences from the given text.
+    Extracts sentences from the given text while preserving special patterns.
+
+    This function handles text that may contain special patterns (enclosed in $...$)
+    such as emotion tags or JSON-like structures. It separates these patterns from
+    the main text, splits the text into sentences, and then reattaches the special
+    patterns to the appropriate sentences based on their original positions.
 
     Args:
-        text (str): Input text to be split into sentences.
+        text (str): The input text to be processed. May contain special patterns
+                    enclosed in $...$, as well as normal sentences.
 
     Returns:
-        List[str]: A list of extracted sentences.
+        List[str]: A list of extracted sentences. Special patterns are reattached
+                   to the sentences they were originally associated with.
+
+    Behavior:
+    1. Extracts all special patterns (enclosed in $...$) from the text.
+    2. Removes these patterns temporarily from the text, keeping track of their positions.
+    3. Splits the remaining text into sentences.
+    4. Processes each sentence:
+       - Trims whitespace
+       - Adds final punctuation if missing
+       - Reattaches relevant special patterns based on their original positions
+    5. If any special patterns remain (e.g., at the end of the text), they are
+       attached to the last sentence.
+
+    Note:
+    - Special patterns at the very beginning of the text will be attached to the first sentence.
+    - Special patterns at the very end of the text will be attached to the last sentence.
+    - The function assumes that special patterns should not be split across sentences.
+
+    Example:
+        Input: "$emotion:happy$Hello! How are you? $action:wave$"
+        Output: ["$emotion:happy$Hello!", "How are you?", "$action:wave$"]
     """
     logger.info(f"Extracting sentences from: {text}")
-    sentence_end_pattern = re.compile(r'(?<=[.!?])\s+(?=[A-Z])')
 
-    # Split the text into potential sentences
+    # Extract any special tags or JSON-like structures
+    special_patterns = re.findall(r'\$.*?\$', text)
+
+    # Remove special patterns from the text and keep their positions
+    pattern_positions = []
+    for pattern in special_patterns:
+        position = text.index(pattern)
+        pattern_positions.append((position, pattern))
+        text = text.replace(pattern, '', 1)
+
+    # Sort pattern_positions by position
+    pattern_positions.sort(key=lambda x: x[0])
+
+    # Split the remaining text into sentences
+    sentence_end_pattern = re.compile(r'(?<=[.!?])\s+(?=[A-Z])|(?<=[.!?])$')
     potential_sentences = sentence_end_pattern.split(text)
 
     # Process each potential sentence
     sentences = []
+    current_position = 0
     for sentence in potential_sentences:
         # Trim whitespace
         sentence = sentence.strip()
@@ -423,11 +464,24 @@ def extract_sentences(text: str) -> List[str]:
         if sentence[-1] not in '.!?':
             sentence += '.'
 
+        # Add any special patterns that belong to this sentence
+        sentence_start = current_position
+        sentence_end = current_position + len(sentence)
+        relevant_patterns = [pattern for pos, pattern in pattern_positions if sentence_start <= pos < sentence_end]
+
+        if relevant_patterns:
+            sentence = ''.join(relevant_patterns) + sentence
+
         sentences.append(sentence)
+        current_position = sentence_end + 1  # +1 for the space between sentences
+
+    # If there are any remaining special patterns, add them to the last sentence
+    remaining_patterns = [pattern for pos, pattern in pattern_positions if pos >= current_position]
+    if remaining_patterns and sentences:
+        sentences[-1] += ''.join(remaining_patterns)
 
     logger.info(f"Extracted sentences: {sentences}")
     return sentences
-
 
 def test():
     # tz = get_timezone()
