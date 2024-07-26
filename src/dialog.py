@@ -123,8 +123,8 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             task = asyncio.create_task(tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang))
                             synthesis_tasks.append((emo, audio_file_name, task))
 
-                        # Yield control to allow tasks to start executing
-                        await asyncio.sleep(0)
+                            # Yield control to allow tasks to start executing
+                            await asyncio.sleep(0)
 
                     # Wait for all synthesis tasks to complete
                     for emo, audio_file_name, task in synthesis_tasks:
