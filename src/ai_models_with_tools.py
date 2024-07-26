@@ -122,8 +122,10 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     if line:
                         line = line.decode('utf-8').strip()
                         if line.startswith('data: '):
+                            line = line[6:]
+                        if line.startswith('{'):
                             try:
-                                event_data = json.loads(line[6:])
+                                event_data = json.loads(line)
                                 yield event_data
                             except json.JSONDecodeError:
                                 logger.error(f"Failed to decode JSON: {line}")
@@ -148,10 +150,15 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         current_text = ""
         current_tool_use = None
         message_ended = False
+        assistant_message = ""
 
         async for event in self._get_response_async(message_list):
             logger.debug(f"Received event: {event}")
             event_type = event.get('type')
+
+            if event_type == 'error':
+                logger.error(f"Error: {event['error']}")
+                continue
 
             if event_type == 'content_block_delta':
                 delta = event.get('delta', {})
@@ -167,6 +174,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                         logger.debug(f"{len(sentences)-1} sentences extracted")
                         for sentence in sentences[:-1]:
                             logger.debug(f"Yielding sentence: {sentence}")
+                            assistant_message += f"{sentence} "
                             yield sentence
 
                         # Keep the last (potentially incomplete) sentence
@@ -184,6 +192,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 if content_block.get('type') == 'tool_use':
                     logger.debug(f"Tool use started: {content_block}")
                     current_tool_use = {
+                        'type': 'tool_use',
                         'name': content_block.get('name'),
                         'id': content_block.get('id'),
                         'input': ''
@@ -194,6 +203,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 if current_tool_use:
                     try:
                         tool_input = json.loads(current_tool_use['input'])
+                        current_tool_use['input'] = tool_input
+                        message_list.append({"role": "assistant", "content": [current_tool_use]})
                         tool_name = current_tool_use['name']
                         tool_use_id = current_tool_use['id']
                         logger.debug(f"Processing tool use: {tool_name}, {tool_use_id}")
@@ -215,10 +226,14 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 message_ended = True
 
             # If the message has ended and we have any remaining text, yield it
-            if message_ended and current_text:
-                logger.debug(f"Yielding final text: {current_text}")
-                yield current_text
-                current_text = ""  # Clear current_text to prevent duplication
+            if message_ended:
+                if current_text:
+                    logger.debug(f"Yielding final text: {current_text}")
+                    assistant_message += f"{current_text} "
+                    yield current_text
+                    current_text = ""  # Clear current_text to prevent duplication
+                message_list.append({"role": "assistant", "content": assistant_message})
+                assistant_message = ""
 
         # If the message somehow ended without a message_stop event and we still have text, yield it
         if current_text:
@@ -230,7 +245,7 @@ def main():
     #
     # config = Config()
     # with Leds() as leds:
-    #     search_tool = WebSearchTool(config, leds)
+    #     search_tool = WebSearchTool(config)
     #
     #     tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
     #                   parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
@@ -243,24 +258,22 @@ def main():
 
 
 async def loop():
-    # from aiy.leds import Leds
-    #
-    # config = Config()
-    #
-    # with Leds() as leds:
-    #
-    #     search_tool = WebSearchTool(config, leds)
-    #
-    #     tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
-    #                   parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
-    #                   processor=search_tool.do_search_async), ]
-    #     model = ClaudeAIModelWithTools(config, tools=tools)
-    #     message = "Today is July 11, 2024. who will play at euro 2024 final?"
-    #     print(message)
-    #     messages = [{"role": "user", "content": message}]
-    #     async for response_part in model.get_response_async(messages):
-    #         messages.append({"role": "assistant", "content": response_part})
-    #         print(response_part, flush=True)
+    from src.web_search_tool import WebSearchTool
+
+    config = Config()
+
+    search_tool = WebSearchTool(config)
+
+    tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
+                  parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
+                  processor=search_tool.do_search_async), ]
+    model = ClaudeAIModelWithTools(config, tools=tools)
+    message = "Today is July 11, 2024. who will play at euro 2024 final?"
+    print(message)
+    messages = [{"role": "user", "content": message}]
+    async for response_part in model.get_response_async(messages):
+        # messages.append({"role": "assistant", "content": response_part})
+        print(response_part, flush=True)
 
     pass
 

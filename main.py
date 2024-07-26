@@ -46,7 +46,7 @@ def main():
 
     with Board() as board, Leds() as leds:
 
-        search_tool = WebSearchTool(config, leds)
+        search_tool = WebSearchTool(config)
         send_email_tool = SendEmailTool(config)
         tools = [search_tool.tool_definition(), send_email_tool.tool_definition()]
 
