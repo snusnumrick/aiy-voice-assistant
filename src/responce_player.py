@@ -190,7 +190,7 @@ class ResponsePlayer:
 
     def _merge(self):
 
-        def process(wav_list: List[str]) -> List[uple[Optional[Dict], str]]:
+        def process(wav_list: List[str]) -> List[Tuple[Optional[Dict], str]]:
             result = []
             if len(wav_list) == 1:
                 result.append((current_emo, wav_list[0]))
