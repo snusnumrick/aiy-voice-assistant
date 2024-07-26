@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import random
 from dataclasses import dataclass, field
 from typing import List, Dict, Callable, AsyncGenerator, Awaitable
 
@@ -9,7 +8,7 @@ import aiohttp
 
 from src.ai_models import ClaudeAIModel
 from src.config import Config
-from src.tools import extract_sentences, retry_async_generator
+from src.tools import extract_sentences, retry_async_generator, get_token_count
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +43,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
     This class extends the base ClaudeAIModel to include functionality for using
     various tools during the conversation process.
     """
+
     def __init__(self, config: Config, tools: List[Tool]) -> None:
         """
         Initialize the ClaudeAIModelWithTools instance.
@@ -53,17 +53,14 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             tools (List[Tool]): List of Tool objects available to the model.
         """
         super().__init__(config)
-        self.tools_description = [{'name': t.name,
-                                   'description': t.description,
-                                   'input_schema': {'type': 'object',
-                                                    'properties': {p.name: {'type': p.type,
-                                                                            'description': p.description
-                                                                            }
-                                                                   for p in t.parameters
-                                                                   },
-                                                    'required': t.required
-                                                    }
-                                   }
+        self.tools_description = [{'name': t.name, 'description': t.description, 'input_schema': {'type': 'object',
+                                                                                                  'properties': {
+                                                                                                      p.name: {
+                                                                                                          'type': p.type,
+                                                                                                          'description': p.description}
+                                                                                                      for p in
+                                                                                                      t.parameters},
+                                                                                                  'required': t.required}}
                                   for t in tools]
         self.tools_processors = {t.name: t.processor for t in tools}
         self.tools = {t.name: t for t in tools}
@@ -91,7 +88,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         return response_text
 
     @retry_async_generator()
-    async def _get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[dict, None]:
+    async def _get_response_async(self, messages: List[Dict[str, str]], streaming=False) -> AsyncGenerator[dict, None]:
         """
         Asynchronously get responses from the AI model.
 
@@ -106,13 +103,9 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
         non_system_message = [m for m in messages if m["role"] != 'system']
 
-        data = {
-            "model": self.model,
-            "max_tokens": self.max_tokens,
-            "tools": self.tools_description,
-            "messages": non_system_message,
-            "stream": True  # Enable streaming
-        }
+        data = {"model": self.model, "max_tokens": self.max_tokens, "tools": self.tools_description,
+                "messages": non_system_message, "stream": streaming  # Enable streaming
+                }
         if system_message_combined:
             data["system"] = system_message_combined
 
@@ -145,6 +138,45 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
            str: Complete sentences from the AI model's response.
         """
         logger.debug(f"get_response_async: {messages}")
+        streaming = self.config.get("llm_streaming", False)
+        if streaming:
+            async for response in self._get_response_async_streaming(messages):
+                yield response
+        else:
+            async for response in self._get_response_async_plain(messages):
+                yield response
+
+    async def _get_response_async_plain(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
+        message_list = [m for m in messages]
+
+        async for response_dict in self._get_response_async(message_list, streaming=False):
+            logger.debug(f"get_response_async: {json.dumps(response_dict, indent=2)}")
+            if 'usage' in response_dict:
+                logger.info(f"tokens usage: {response_dict['usage']} vs estimate {get_token_count(message_list)}")
+            if 'content' not in response_dict:
+                logger.error(f"No content in response: {json.dumps(response_dict, indent=2)}")
+                if 'error' in response_dict:
+                    response_dict['content'] = [{"type": "text", "text": response_dict["error"]["message"]}]
+                else:
+                    return
+            message_list.append({"role": "assistant", "content": response_dict['content']})
+            for content in response_dict['content']:
+                if content['type'] == 'text':
+                    yield content['text']
+
+                elif content['type'] == 'tool_use':
+                    tool_name = content['name']
+                    tool_use_id = content['id']
+                    tool_parameters = content['input']
+                    tool_processor = self.tools_processors[tool_name]
+                    tool_result = await tool_processor(tool_parameters)
+                    if self.tools[tool_name].iterative:
+                        message_list.append({"role": "user", "content": [
+                            {'type': 'tool_result', 'content': tool_result, "tool_use_id": tool_use_id}]})
+                        async for response in self.get_response_async(message_list):
+                            yield response
+
+    async def _get_response_async_streaming(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
         message_list = [m for m in messages]
 
         current_text = ""
@@ -152,7 +184,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         message_ended = False
         assistant_message = ""
 
-        async for event in self._get_response_async(message_list):
+        async for event in self._get_response_async(message_list, streaming=True):
             logger.debug(f"Received event: {event}")
             event_type = event.get('type')
 
@@ -171,7 +203,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
                     # If we have any complete sentences, yield them
                     if len(sentences) > 1:
-                        logger.debug(f"{len(sentences)-1} sentences extracted")
+                        logger.debug(f"{len(sentences) - 1} sentences extracted")
                         for sentence in sentences[:-1]:
                             logger.debug(f"Yielding sentence: {sentence}")
                             assistant_message += f"{sentence} "
@@ -191,12 +223,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 content_block = event.get('content_block', {})
                 if content_block.get('type') == 'tool_use':
                     logger.debug(f"Tool use started: {content_block}")
-                    current_tool_use = {
-                        'type': 'tool_use',
-                        'name': content_block.get('name'),
-                        'id': content_block.get('id'),
-                        'input': ''
-                    }
+                    current_tool_use = {'type': 'tool_use', 'name': content_block.get('name'),
+                                        'id': content_block.get('id'), 'input': ''}
 
             elif event_type == 'content_block_stop':
                 logger.debug("Content block stopped")
@@ -240,42 +268,29 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             logger.debug(f"Yielding remaining text: {current_text}")
             yield current_text
 
+
 def main():
-    # from aiy.leds import Leds
-    #
-    # config = Config()
-    # with Leds() as leds:
-    #     search_tool = WebSearchTool(config)
-    #
-    #     tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
-    #                   parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
-    #                   processor=search_tool.do_search_async), ]
-    #     model = ClaudeAIModelWithTools(config, tools=tools)
-    #     messages = [{"role": "user", "content": "who will play at euro 2024 final?"}]
-    #     response = model.get_response(messages)
-    #     print(response)
-    pass
-
-
-async def loop():
     from src.web_search_tool import WebSearchTool
-
     config = Config()
-
     search_tool = WebSearchTool(config)
+    model = ClaudeAIModelWithTools(config, tools=[search_tool.tool_definition()])
+    message = "Today is July 11, 2024. who will play at euro 2024 final?"
+    print(message)
+    messages = [{"role": "user", "content": message}]
+    print(model.get_response(messages))
 
-    tools = [Tool(name="internet_search", description="Search Internet", iterative=True,
-                  parameters=[ToolParameter(name='query', type='string', description='A query to search for')],
-                  processor=search_tool.do_search_async), ]
-    model = ClaudeAIModelWithTools(config, tools=tools)
+
+async def main_async():
+    from src.web_search_tool import WebSearchTool
+    config = Config()
+    search_tool = WebSearchTool(config)
+    model = ClaudeAIModelWithTools(config, tools=[search_tool.tool_definition()])
     message = "Today is July 11, 2024. who will play at euro 2024 final?"
     print(message)
     messages = [{"role": "user", "content": message}]
     async for response_part in model.get_response_async(messages):
-        # messages.append({"role": "assistant", "content": response_part})
         print(response_part, flush=True)
-
-    pass
+    print(messages)
 
 
 if __name__ == "__main__":
@@ -285,6 +300,6 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     load_dotenv()
-    asyncio.run(loop())
+    asyncio.run(main_async())
 
     # main()

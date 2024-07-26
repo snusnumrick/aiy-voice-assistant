@@ -88,6 +88,7 @@ class ClaudeAIModel(AIModel):
         self.url = "https://api.anthropic.com/v1/messages"
         self.headers = {"content-type": "application/json", "x-api-key": os.getenv('ANTHROPIC_API_KEY'),
                         "anthropic-version": "2023-06-01"}
+        self.config = config
 
     def _get_response(self, messages: List[Dict[str, str]]) -> dict:
         system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
