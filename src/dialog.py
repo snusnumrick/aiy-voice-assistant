@@ -123,20 +123,21 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             logger.debug(f"Tone: {tone}, language = {lang}, tts_engine = {tts_engine}")
 
                             # Synthesize speech immediately
-                            try:
-                                result = await tts_engine.synthesize_async(session, response_text, audio_file_name,
-                                                                           tone, lang)
-                                logger.info(
-                                    f"({time_string_ms(timezone)}) Synthesis {response_text} -> {audio_file_name}")
-                                if result:
-                                    playlist.append((emo, audio_file_name))
-                                else:
-                                    logger.error(f"Speech synthesis failed for file: {audio_file_name}")
-                                    error_visual(leds)
-                            except Exception as e:
-                                logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
-                                logger.error(traceback.format_exc())
-                                error_visual(leds)
+                            # try:
+                            #     result = await tts_engine.synthesize_async(session, response_text, audio_file_name,
+                            #                                                tone, lang)
+                            #     logger.info(
+                            #         f"({time_string_ms(timezone)}) Synthesis {response_text} -> {audio_file_name}")
+                            #     if result:
+                            #         playlist.append((emo, audio_file_name))
+                            #     else:
+                            #         logger.error(f"Speech synthesis failed for file: {audio_file_name}")
+                            #         error_visual(leds)
+                            # except Exception as e:
+                            #     logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
+                            #     logger.error(traceback.format_exc())
+                            #     error_visual(leds)
+                            playlist.append((emo, audio_file_name))
 
                     # Step 4: Play all synthesized responses in order
                     if playlist:
