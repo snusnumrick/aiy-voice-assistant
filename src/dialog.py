@@ -103,9 +103,10 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                     synthesis_tasks = []
 
                     async for ai_response in conversation_manager.get_response(text):
+                        logger.info(f"ai response: {ai_response}")
                         for response in ai_response:
                             response_count += 1
-                            logger.info(f'({time_string_ms(timezone)}) AI response: {response["text"]}')
+                            logger.info(f'({time_string_ms(timezone)}) AI says: {response["text"]}')
 
                             emo = response["emotion"]
                             response_text = response["text"]

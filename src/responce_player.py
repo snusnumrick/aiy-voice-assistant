@@ -178,12 +178,35 @@ class ResponsePlayer:
         self._is_playing = False
         self.play_thread: Optional[threading.Thread] = None
         self.leds = leds
+        self.currently_playing = -1
 
         # merge audio files with the same emotion
+        self._merge()
+        logger.debug(f"Playing {self.playlist}.")
+
+    def add(self, playitem: Tuple[Optional[Dict], str]) -> None:
+        self.playlist.append(playitem)
+        self._merge()
+
+    def _merge(self):
+
+        def process(wav_list: List[str]) -> List[uple[Optional[Dict], str]]:
+            result = []
+            if len(wav_list) == 1:
+                result.append((current_emo, wav_list[0]))
+                logger.debug(f"3 {new_play_list}")
+            else:
+                # Create a temporary file and get its name
+                output_filename = tempfile.mktemp(suffix=".wav")
+                combine_audio_files(wav_list, output_filename)
+                result.append((current_emo, output_filename))
+                logger.debug(f"4 {new_play_list}")
+            return result
+
         new_play_list = []
         wav2merge = None
         current_emo = None
-        for emo, wav in self.playlist:
+        for emo, wav in self.playlist[self.currently_playing+1:]:
             if wav2merge is None:
                 wav2merge = [wav]
                 current_emo = emo
@@ -192,29 +215,12 @@ class ResponsePlayer:
                 wav2merge.append(wav)
                 logger.debug(f"2 {current_emo} {wav2merge}")
             else:
-                if len(wav2merge) == 1:
-                    new_play_list.append((current_emo, wav2merge[0]))
-                    logger.debug(f"3 {new_play_list}")
-                else:
-                    # Create a temporary file and get its name
-                    output_filename = tempfile.mktemp(suffix=".wav")
-                    combine_audio_files(wav2merge, output_filename)
-                    new_play_list.append((current_emo, output_filename))
-                    logger.debug(f"4 {new_play_list}")
+                new_play_list += process(wav2merge)
                 wav2merge = [wav]
                 current_emo = emo
         if wav2merge:
-            if len(wav2merge) == 1:
-                new_play_list.append((current_emo, wav2merge[0]))
-                logger.debug(f"5 {new_play_list}")
-            else:
-                # Create a temporary file and get its name
-                output_filename = tempfile.mktemp(suffix=".wav")
-                combine_audio_files(wav2merge, output_filename)
-                new_play_list.append((current_emo, output_filename))
-                logger.debug(f"5 {new_play_list}")
+            new_play_list += process(wav2merge)
         self.playlist = new_play_list
-        logger.debug(f"Playing {self.playlist}.")
 
     def play(self):
         """Starts playing the playlist in a separate thread."""
@@ -226,7 +232,7 @@ class ResponsePlayer:
     def _play_sequence(self):
         """Internal method to play the sequence of audio files and control LED behavior."""
 
-        for emotion, audio_file in self.playlist:
+        for i,  (emotion, audio_file) in enumerate(self.playlist):
             logger.debug(emotion)
             if not self._is_playing:
                 break
@@ -238,6 +244,7 @@ class ResponsePlayer:
                 change_light_behavior(light_behavior, self.leds)
 
             self.current_process = play_wav_async(audio_file)
+            self.currently_playing = i
 
             # Wait for the audio to finish
             self.current_process.wait()
