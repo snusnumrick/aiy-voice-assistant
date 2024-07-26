@@ -84,7 +84,6 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
     async def cleaning_routine():
         await conversation_manager.process_and_clean()
 
-    # Initialize components
     transcriber = SpeechTranscriber(button, leds, config, cleaning=cleaning_routine, timezone=timezone)
     response_player = None
     original_audio_file_name = config.get('audio_file_name', 'speech.wav')
@@ -92,17 +91,15 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
     async with aiohttp.ClientSession() as session:
         while True:
             try:
-                # for viz purposes
                 conversation_manager.save_dialog()
 
-                # Step 1: Listen and transcribe user speech
                 text = await transcriber.transcribe_speech(response_player)
                 logger.info(f'({time_string_ms(timezone)}) You said: %s', text)
 
                 if text:
-                    # Step 2 & 3: Generate AI responses and immediately synthesize speech
                     playlist = []
                     response_count = 0
+                    synthesis_tasks = []
 
                     async for ai_response in conversation_manager.get_response(text):
                         for response in ai_response:
@@ -118,32 +115,36 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             lang = {"ru": Language.RUSSIAN, "en": Language.ENGLISH, "de": Language.GERMAN}.get(
                                 lang_code, Language.RUSSIAN)
 
-                            # Select the appropriate TTS engine based on language
                             tts_engine = tts_engines.get(lang, tts_engines[Language.RUSSIAN])
                             logger.debug(f"Tone: {tone}, language = {lang}, tts_engine = {tts_engine}")
 
-                            # Synthesize speech immediately
-                            # try:
-                            #     result = await tts_engine.synthesize_async(session, response_text, audio_file_name,
-                            #                                                tone, lang)
-                            #     logger.info(
-                            #         f"({time_string_ms(timezone)}) Synthesis {response_text} -> {audio_file_name}")
-                            #     if result:
-                            #         playlist.append((emo, audio_file_name))
-                            #     else:
-                            #         logger.error(f"Speech synthesis failed for file: {audio_file_name}")
-                            #         error_visual(leds)
-                            # except Exception as e:
-                            #     logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
-                            #     logger.error(traceback.format_exc())
-                            #     error_visual(leds)
-                            playlist.append((emo, audio_file_name))
+                            # Create and start the task immediately
+                            task = asyncio.create_task(tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang))
+                            synthesis_tasks.append((emo, audio_file_name, task))
 
-                    # Step 4: Play all synthesized responses in order
+                        # Yield control to allow tasks to start executing
+                        await asyncio.sleep(0)
+
+                    # Wait for all synthesis tasks to complete
+                    for emo, audio_file_name, task in synthesis_tasks:
+                        try:
+                            result = await task
+                            if result:
+                                logger.info(f"({time_string_ms(timezone)}) Synthesis {audio_file_name} completed")
+                                playlist.append((emo, audio_file_name))
+                            else:
+                                logger.error(f"Speech synthesis failed for file: {audio_file_name}")
+                                error_visual(leds)
+                        except Exception as e:
+                            logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
+                            logger.error(traceback.format_exc())
+                            error_visual(leds)
+
+                    # Play all synthesized responses in order
                     if playlist:
                         if response_player:
                             response_player.stop()
-                            time.sleep(0.5)
+                            await asyncio.sleep(0.5)
                         logger.info(f'({time_string_ms(timezone)}) playlist is ready')
                         response_player = ResponsePlayer(playlist, leds)
                         logger.info(f'({time_string_ms(timezone)}) playing')
