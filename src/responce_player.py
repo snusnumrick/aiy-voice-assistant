@@ -212,13 +212,14 @@ class ResponsePlayer:
         logger.info("Merge process ended")
 
     def _process_merged_audio(self, emo, wav_list):
+        logger.info(f"merging {emo} {wav_list} {self.playlist}")
         if len(wav_list) == 1:
             self.playlist.put((emo, wav_list[0]))
         else:
             output_filename = tempfile.mktemp(suffix=".wav")
             combine_audio_files(wav_list, output_filename)
             self.playlist.put((emo, output_filename))
-        logger.info(f"Processed and added merged audio to playlist: {emo}, {wav_list}")
+        logger.info(f"Processed and added merged audio to playlist: {emo}, {wav_list},  {self.playlist}")
 
     def play(self):
         logger.info("Starting playback")
