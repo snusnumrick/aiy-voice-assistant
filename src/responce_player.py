@@ -15,6 +15,7 @@ from typing import List, Tuple, Dict, Optional
 
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import play_wav_async
+from .tools import time_string_ms
 
 from src.tools import combine_audio_files
 
@@ -165,8 +166,9 @@ class ResponsePlayer:
     A class for playing a sequence of audio files with corresponding LED behaviors.
     """
 
-    def __init__(self, playlist: List[Tuple[Optional[Dict], str]], leds: Leds):
-        logger.info(f"Initializing ResponsePlayer with playlist: {playlist}")
+    def __init__(self, playlist: List[Tuple[Optional[Dict], str]], leds: Leds, timezone: str):
+        logger.debug(f"Initializing ResponsePlayer with playlist: {playlist}")
+        self.timezone = timezone
         self.playlist = queue.Queue()
         self.wav_list = []
         self.current_process: Optional[Popen] = None
@@ -186,7 +188,7 @@ class ResponsePlayer:
         emo, file = playitem
         light = None if emo is None else emo.get('light', {})
         light_item = (light, file)
-        logger.info(f"Adding {light_item} to merge queue.")
+        logger.debug(f"Adding {light_item} to merge queue.")
         self.merge_queue.put(light_item)
         if self.merge_thread is None or not self.merge_thread.is_alive():
             self.merge_thread = threading.Thread(target=self._merge_audio_files)
@@ -195,36 +197,36 @@ class ResponsePlayer:
             self.play()
 
     def _merge_audio_files(self):
-        logger.info("Starting merge process")
+        logger.debug("Starting merge process")
         while self._should_play or not self.merge_queue.empty():
             try:
                 light, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
-                logger.info(f"merging {light} {wav} {self.current_light} {self.wav_list}")
+                logger.debug(f"merging {light} {wav} {self.current_light} {self.wav_list}")
                 if self.current_light is None:
                     self.current_light = light if light is not None else {}
                     self.wav_list = [wav]
-                    logger.info(f"1 {self.current_light} {self.wav_list}")
+                    logger.debug(f"1 {self.current_light} {self.wav_list}")
                 elif light is None or light == self.current_light:
                     self.wav_list.append(wav)
-                    logger.info(f"2 {self.current_light} {self.wav_list}")
+                    logger.debug(f"2 {self.current_light} {self.wav_list}")
                 else:
                     self._process_merged_audio()
                     self.current_light = light
                     self.wav_list = [wav]
-                    logger.info(f"3 {self.current_light} {self.wav_list}")
+                    logger.debug(f"3 {self.current_light} {self.wav_list}")
             except queue.Empty:
                 if self.wav_list:
                     self._process_merged_audio()
                     self.wav_list = []
                     self.current_light = None
-                    logger.info(f"4 {self.current_light} {self.wav_list}")
-        logger.info("Merge process ended")
+                    logger.debug(f"4 {self.current_light} {self.wav_list}")
+        logger.debug("Merge process ended")
 
     def _process_merged_audio(self):
         with self.lock:
             if not self.wav_list:
                 return
-            logger.info(f"merging {self.current_light} {self.wav_list} {self.playlist}")
+            logger.debug(f"merging {self.current_light} {self.wav_list} {self.playlist}")
             if len(self.wav_list) == 1:
                 self.playlist.put((self.current_light, self.wav_list[0]))
             else:
@@ -232,10 +234,10 @@ class ResponsePlayer:
                 combine_audio_files(self.wav_list, output_filename)
                 self.playlist.put((self.current_light, output_filename))
             self.wav_list = []
-            logger.info(f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list},  {self.playlist}")
+            logger.debug(f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list},  {self.playlist}")
 
     def play(self):
-        logger.info("Starting playback")
+        logger.debug("Starting playback")
         if not self._should_play:
             self._should_play = True
             self._playback_completed.clear()
@@ -243,11 +245,11 @@ class ResponsePlayer:
             self.play_thread.start()
 
     def _play_sequence(self):
-        logger.info("_play_sequence started")
+        logger.debug("_play_sequence started")
         while self._should_play:
             try:
                 light, audio_file = self.playlist.get(timeout=0.1)
-                logger.info(f"Playing {audio_file} with light {light}")
+                logger.info(f"({time_string_ms(self.timezone)}) Playing {audio_file} with light {light}")
 
                 if light is not None:
                     change_light_behavior(light, self.leds)
@@ -262,7 +264,7 @@ class ResponsePlayer:
                 # Switch off LED
                 self.leds.update(Leds.rgb_off())
 
-                logger.info(f"Finished playing {audio_file}")
+                logger.debug(f"Finished playing {audio_file}")
             except queue.Empty:
                 logger.debug("playlist is empty")
                 self._process_merged_audio()
@@ -273,15 +275,15 @@ class ResponsePlayer:
                         break
                     time.sleep(0.3)
                 else:
-                    logger.info(f"playlist has {self.playlist.qsize()} items; "
+                    logger.debug(f"playlist has {self.playlist.qsize()} items; "
                                 f"merge queue has {self.merge_queue.qsize()} items")
 
-        logger.info("_play_sequence ended")
+        logger.debug("_play_sequence ended")
         self.current_process = None
         self._playback_completed.set()
 
     def stop(self):
-        logger.info("Stopping playback")
+        logger.debug("Stopping playback")
         self._should_play = False
         if self.current_process:
             self.current_process.terminate()

@@ -116,7 +116,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             if result:
                                 logger.info(f"({time_string_ms(timezone)}) Synthesis {audio_file_name} completed")
                                 if response_player is None:
-                                    response_player = ResponsePlayer([(emo, audio_file_name)], leds)
+                                    response_player = ResponsePlayer([(emo, audio_file_name)], leds, timezone)
                                     response_player.play()
                                 else:
                                     response_player.add((emo, audio_file_name))
