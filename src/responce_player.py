@@ -265,15 +265,15 @@ class ResponsePlayer:
 
                 logger.info(f"Finished playing {audio_file}")
             except queue.Empty:
-                logger.info("playlist is empty")
+                logger.debug("playlist is empty")
                 self._process_merged_audio()
-                logger.info(f"playlist has {self.playlist.qsize()} items; "
+                logger.debug(f"playlist has {self.playlist.qsize()} items; "
                             f"merge queue has {self.merge_queue.qsize()} items")
                 # If both queues are empty, wait a bit before checking again
                 if self.playlist.empty() and self.merge_queue.empty():
                     if not self._should_play:
                         break
-                    time.sleep(0.1)
+                    time.sleep(0.3)
 
         logger.info("_play_sequence ended")
         self.current_process = None
