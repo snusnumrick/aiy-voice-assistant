@@ -96,6 +96,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
 
                 text = await transcriber.transcribe_speech(response_player)
                 logger.info(f'({time_string_ms(timezone)}) You said: %s', text)
+                response_player = None
 
                 if text:
                     response_count = 0
