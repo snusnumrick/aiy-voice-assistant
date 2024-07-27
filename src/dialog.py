@@ -105,15 +105,15 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
 
                     async def process_synthesis_result(num, emo, audio_file_name, task):
                         nonlocal response_player
-                        logger.info(f"Starting process_synthesis_result for {audio_file_name}")
+                        logger.debug(f"Starting process_synthesis_result for {audio_file_name}")
                         try:
                             if num > 0:
                                 await asyncio.gather(*synthesis_tasks[:num], return_exceptions=True)
 
                             result = await task
-                            logger.info(f"Synthesis task completed for {audio_file_name}")
+                            logger.debug(f"Synthesis task completed for {audio_file_name}")
                             if result:
-                                logger.info(
+                                logger.debug(
                                     f"({time_string_ms(timezone)}) Synthesis {audio_file_name} completed successfully")
                                 if response_player is None:
                                     response_player = ResponsePlayer([(emo, audio_file_name)], leds)
@@ -127,10 +127,10 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
                             logger.error(traceback.format_exc())
                             error_visual(leds)
-                        logger.info(f"Finished process_synthesis_result for {audio_file_name}")
+                        logger.debug(f"Finished process_synthesis_result for {audio_file_name}")
 
                     async for ai_response in conversation_manager.get_response(text):
-                        logger.info(f"ai response: {ai_response}")
+                        logger.debug(f"ai response: {ai_response}")
                         for response in ai_response:
                             response_count += 1
                             logger.info(f'({time_string_ms(timezone)}) AI says: {response["text"]}')
@@ -159,9 +159,9 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             await asyncio.sleep(0)
 
                     # Wait for all synthesis tasks to complete
-                    logger.info("Waiting for all synthesis tasks to complete")
+                    logger.debug("Waiting for all synthesis tasks to complete")
                     await asyncio.gather(*process_tasks, return_exceptions=True)
-                    logger.info("All synthesis tasks completed")
+                    logger.debug("All synthesis tasks completed")
 
                     # Ensure all audio has finished playing
                     # while (response_player is not None) and response_player.is_playing():
