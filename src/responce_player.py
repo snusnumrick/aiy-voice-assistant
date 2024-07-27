@@ -166,7 +166,7 @@ class ResponsePlayer:
     """
 
     def __init__(self, playlist: List[Tuple[Optional[Dict], str]], leds: Leds):
-        logger.debug(f"Initializing ResponsePlayer with playlist: {playlist}")
+        logger.info(f"Initializing ResponsePlayer with playlist: {playlist}")
         self.playlist = queue.Queue()
         self.current_process: Optional[Popen] = None
         self._should_play = False
@@ -181,7 +181,7 @@ class ResponsePlayer:
             self.add(item)
 
     def add(self, playitem: Tuple[Optional[Dict], str]) -> None:
-        logger.debug(f"Adding {playitem} to merge queue.")
+        logger.info(f"Adding {playitem} to merge queue.")
         self.merge_queue.put(playitem)
         if self.merge_thread is None or not self.merge_thread.is_alive():
             self.merge_thread = threading.Thread(target=self._merge_audio_files)
@@ -190,44 +190,44 @@ class ResponsePlayer:
             self.play()
 
     def _merge_audio_files(self):
-        logger.debug("Starting merge process")
+        logger.info("Starting merge process")
         wav_list = []
         while self._should_play or not self.merge_queue.empty():
             try:
                 emo, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
-                logger.debug(f"merging {emo} {wav} {self.current_emo} {wav_list}")
+                logger.info(f"merging {emo} {wav} {self.current_emo} {wav_list}")
                 if self.current_emo is None:
                     self.current_emo = emo if emo is not None else {}
                     wav_list = [wav]
-                    logger.debug(f"1 {self.current_emo} {wav_list}")
+                    logger.info(f"1 {self.current_emo} {wav_list}")
                 elif emo is None or emo == self.current_emo:
                     wav_list.append(wav)
-                    logger.debug(f"2 {self.current_emo} {wav_list}")
+                    logger.info(f"2 {self.current_emo} {wav_list}")
                 else:
                     self._process_merged_audio(self.current_emo, wav_list)
                     self.current_emo = emo
                     wav_list = [wav]
-                    logger.debug(f"3 {self.current_emo} {wav_list}")
+                    logger.info(f"3 {self.current_emo} {wav_list}")
             except queue.Empty:
                 if wav_list:
                     self._process_merged_audio(self.current_emo, wav_list)
                     wav_list = []
                     self.current_emo = None
-                    logger.debug(f"4 {self.current_emo} {wav_list}")
-        logger.debug("Merge process ended")
+                    logger.info(f"4 {self.current_emo} {wav_list}")
+        logger.info("Merge process ended")
 
     def _process_merged_audio(self, emo, wav_list):
-        logger.debug(f"merging {emo} {wav_list} {self.playlist}")
+        logger.info(f"merging {emo} {wav_list} {self.playlist}")
         if len(wav_list) == 1:
             self.playlist.put((emo, wav_list[0]))
         else:
             output_filename = tempfile.mktemp(suffix=".wav")
             combine_audio_files(wav_list, output_filename)
             self.playlist.put((emo, output_filename))
-        logger.debug(f"Processed and added merged audio to playlist: {emo}, {wav_list},  {self.playlist}")
+        logger.info(f"Processed and added merged audio to playlist: {emo}, {wav_list},  {self.playlist}")
 
     def play(self):
-        logger.debug("Starting playback")
+        logger.info("Starting playback")
         if not self._should_play:
             self._should_play = True
             self._playback_completed.clear()
@@ -235,11 +235,11 @@ class ResponsePlayer:
             self.play_thread.start()
 
     def _play_sequence(self):
-        logger.debug("_play_sequence started")
+        logger.info("_play_sequence started")
         while self._should_play:
             try:
                 emotion, audio_file = self.playlist.get(timeout=0.1)
-                logger.debug(f"Playing {audio_file} with emotion {emotion}")
+                logger.info(f"Playing {audio_file} with emotion {emotion}")
 
                 if emotion is not None and "light" in emotion:
                     light_behavior = emotion["light"]
@@ -255,7 +255,7 @@ class ResponsePlayer:
                 # Switch off LED
                 self.leds.update(Leds.rgb_off())
 
-                logger.debug(f"Finished playing {audio_file}")
+                logger.info(f"Finished playing {audio_file}")
             except queue.Empty:
                 # If both queues are empty, wait a bit before checking again
                 if self.playlist.empty() and self.merge_queue.empty():
@@ -263,12 +263,12 @@ class ResponsePlayer:
                         break
                     time.sleep(0.1)
 
-        logger.debug("_play_sequence ended")
+        logger.info("_play_sequence ended")
         self.current_process = None
         self._playback_completed.set()
 
     def stop(self):
-        logger.debug("Stopping playback")
+        logger.info("Stopping playback")
         self._should_play = False
         if self.current_process:
             self.current_process.terminate()
