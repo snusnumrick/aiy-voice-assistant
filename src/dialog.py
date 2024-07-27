@@ -141,24 +141,31 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             tts_engine = tts_engines.get(lang, tts_engines[Language.RUSSIAN])
                             logger.debug(f"Tone: {tone}, language = {lang}, tts_engine = {tts_engine}")
 
-                            # Create and start the task immediately
                             task = asyncio.create_task(
                                 tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang))
                             synthesis_tasks.append(asyncio.create_task(process_synthesis_result(emo, audio_file_name, task)))
 
-                    # Wait for all synthesis tasks to complete
                     logger.info("Waiting for all synthesis tasks to complete")
                     await asyncio.gather(*synthesis_tasks, return_exceptions=True)
                     logger.info("All synthesis tasks completed")
 
-                    # Ensure all audio has finished playing
                     if response_player:
+                        timeout = 30  # 30 seconds timeout
+                        start_time = time.time()
                         while not response_player.all_playback_complete():
+                            if time.time() - start_time > timeout:
+                                logger.warning("Playback timeout reached. Forcing stop.")
+                                response_player.force_stop()
+                                break
                             await asyncio.sleep(0.1)
                         response_player.stop()
                         response_player = None
+                        logger.info("ResponsePlayer stopped and reset")
 
             except Exception as e:
                 logger.error(f"An error occurred in the main loop: {str(e)}")
                 logger.error(traceback.format_exc())
                 error_visual(leds)
+                if response_player:
+                    response_player.force_stop()
+                    response_player = None
