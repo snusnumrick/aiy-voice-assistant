@@ -172,7 +172,7 @@ class ResponsePlayer:
             playlist (List[Tuple[Dict, str]]): A list of tuples containing LED behavior and audio file path.
             leds (Leds): An instance of the Leds class to control.
         """
-        logger.debug(f"Playing {playlist}.")
+        logger.info(f"Playing {playlist}.")
         self.playlist = playlist
         self.current_process: Optional[Popen] = None
         self._is_playing = False
@@ -182,11 +182,13 @@ class ResponsePlayer:
 
         # merge audio files with the same emotion
         self._merge()
-        logger.debug(f"Playing {self.playlist}.")
+        logger.info(f"Playing {self.playlist}.")
 
     def add(self, playitem: Tuple[Optional[Dict], str]) -> None:
+        logger.info(f"Adding {playitem}.")
         self.playlist.append(playitem)
         self._merge()
+        logger.info(f"Merged list {self.playlist}.")
 
     def _merge(self):
 
@@ -224,7 +226,7 @@ class ResponsePlayer:
 
     def play(self):
         """Starts playing the playlist in a separate thread."""
-
+        logger.info("play")
         self._is_playing = True
         self.play_thread = threading.Thread(target=self._play_sequence)
         self.play_thread.start()
@@ -233,7 +235,7 @@ class ResponsePlayer:
         """Internal method to play the sequence of audio files and control LED behavior."""
 
         for i,  (emotion, audio_file) in enumerate(self.playlist):
-            logger.debug(emotion)
+            logger.info(emotion)
             if not self._is_playing:
                 break
 
@@ -258,7 +260,7 @@ class ResponsePlayer:
 
     def stop(self):
         """Stops the currently playing audio and LED sequence."""
-
+        logger.info("Stopping.")
         self._is_playing = False
         if self.current_process:
             self.current_process.terminate()
