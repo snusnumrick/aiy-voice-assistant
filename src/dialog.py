@@ -82,8 +82,6 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
         timezone (str): The timezone to use for the conversation loop.
     """
 
-    logger.info("Starting main_loop_async")
-
     async def cleaning_routine():
         await conversation_manager.process_and_clean()
 
@@ -110,13 +108,12 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             result = await task
                             logger.info(f"Synthesis task completed for {audio_file_name}")
                             if result:
-                                logger.info(
-                                    f"({time_string_ms(timezone)}) Synthesis {audio_file_name} completed successfully")
+                                logger.info(f"({time_string_ms(timezone)}) Synthesis {audio_file_name} completed successfully")
                                 if response_player is None:
-                                    response_player = ResponsePlayer([(emo, audio_file_name)], leds)
+                                    response_player = ResponsePlayer([], leds)
+                                response_player.add((emo, audio_file_name))
+                                if not response_player.is_playing():
                                     response_player.play()
-                                else:
-                                    response_player.add((emo, audio_file_name))
                             else:
                                 logger.error(f"Speech synthesis failed for file: {audio_file_name}")
                                 error_visual(leds)
@@ -144,28 +141,31 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             tts_engine = tts_engines.get(lang, tts_engines[Language.RUSSIAN])
                             logger.debug(f"Tone: {tone}, language = {lang}, tts_engine = {tts_engine}")
 
-                            # Create and start the task immediately
-                            synthesis_task = asyncio.create_task(
+                            task = asyncio.create_task(
                                 tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang))
-                            process_task = asyncio.create_task(
-                                process_synthesis_result(emo, audio_file_name, synthesis_task))
-                            synthesis_tasks.append(process_task)
+                            synthesis_tasks.append(asyncio.create_task(process_synthesis_result(emo, audio_file_name, task)))
 
-                            # Yield control to allow tasks to start executing
-                            await asyncio.sleep(0)
-
-                    # Wait for all synthesis tasks to complete
                     logger.info("Waiting for all synthesis tasks to complete")
                     await asyncio.gather(*synthesis_tasks, return_exceptions=True)
                     logger.info("All synthesis tasks completed")
 
-                    # Ensure all audio has finished playing
-                    while (response_player is not None) and response_player.is_playing():
-                        await asyncio.sleep(0.1)
-
-                    response_player = None
+                    if response_player:
+                        timeout = 30  # 30 seconds timeout
+                        start_time = time.time()
+                        while not response_player.all_playback_complete():
+                            if time.time() - start_time > timeout:
+                                logger.warning("Playback timeout reached. Forcing stop.")
+                                response_player.force_stop()
+                                break
+                            await asyncio.sleep(0.1)
+                        response_player.stop()
+                        response_player = None
+                        logger.info("ResponsePlayer stopped and reset")
 
             except Exception as e:
                 logger.error(f"An error occurred in the main loop: {str(e)}")
                 logger.error(traceback.format_exc())
                 error_visual(leds)
+                if response_player:
+                    response_player.force_stop()
+                    response_player = None
