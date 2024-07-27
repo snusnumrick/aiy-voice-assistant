@@ -272,5 +272,6 @@ class ResponsePlayer:
             self.merge_thread.join(timeout=1.0)
 
     def is_playing(self) -> bool:
+        logger.info(f"{self._should_play} {self.playlist.empty()} {self.merge_queue.empty()} {self.current_process }")
         return self._should_play and (
                     not self.playlist.empty() or not self.merge_queue.empty() or self.current_process is not None)
