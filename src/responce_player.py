@@ -4,8 +4,8 @@ based on emotional states. It includes utilities for adjusting RGB colors, chang
 patterns, and managing a playlist of audio files with corresponding LED behaviors.
 """
 import json
-import queue
 import logging
+import queue
 import re
 import tempfile
 import threading
@@ -166,19 +166,12 @@ class ResponsePlayer:
     """
 
     def __init__(self, playlist: List[Tuple[Optional[Dict], str]], leds: Leds):
-        """
-        Initializes the ResponsePlayer.
-
-        Args:
-            playlist (List[Tuple[Dict, str]]): A list of tuples containing LED behavior and audio file path.
-            leds (Leds): An instance of the Leds class to control.
-        """
         logger.info(f"Initializing ResponsePlayer with playlist: {playlist}")
         self.playlist = queue.Queue()
         for item in playlist:
             self.playlist.put(item)
         self.current_process: Optional[Popen] = None
-        self._is_playing = False
+        self._should_play = False
         self.play_thread: Optional[threading.Thread] = None
         self.leds = leds
         self.currently_playing = -1
@@ -191,6 +184,8 @@ class ResponsePlayer:
         if self.merge_thread is None or not self.merge_thread.is_alive():
             self.merge_thread = threading.Thread(target=self._merge_audio_files)
             self.merge_thread.start()
+        if not self._should_play:
+            self.play()
 
     def _merge_audio_files(self):
         logger.info("Starting merge process")
@@ -213,8 +208,8 @@ class ResponsePlayer:
                     self._process_merged_audio(current_emo, wav_list)
                     wav_list = []
                     current_emo = None
-                if self.merge_queue.empty():
-                    logger.info("Merge queue is empty, ending merge process")
+                if self.merge_queue.empty() and not self._should_play:
+                    logger.info("Merge queue is empty and playback is stopped, ending merge process")
                     break
         logger.info("Merge process ended")
 
@@ -228,18 +223,15 @@ class ResponsePlayer:
         logger.info(f"Processed and added merged audio to playlist: {emo}, {wav_list}")
 
     def play(self):
-        """Starts playing the playlist in a separate thread."""
         logger.info("Starting playback")
-        if not self._is_playing:
-            self._is_playing = True
+        if not self._should_play:
+            self._should_play = True
             self.play_thread = threading.Thread(target=self._play_sequence)
             self.play_thread.start()
 
     def _play_sequence(self):
-        """Internal method to play the sequence of audio files and control LED behavior."""
-
         logger.info("_play_sequence started")
-        while self._is_playing:
+        while self._should_play:
             try:
                 emotion, audio_file = self.playlist.get(timeout=0.1)
                 logger.info(f"Playing {audio_file} with emotion {emotion}")
@@ -259,18 +251,16 @@ class ResponsePlayer:
 
                 logger.info(f"Finished playing {audio_file}")
             except queue.Empty:
-                if self.playlist.empty() and self.merge_queue.empty() and (
-                        self.merge_thread is None or not self.merge_thread.is_alive()):
-                    logger.info("All queues are empty and merge process is not running, stopping playback")
-                    self._is_playing = False
+                # If both queues are empty, wait a bit before checking again
+                if self.playlist.empty() and self.merge_queue.empty():
+                    time.sleep(0.1)
 
         logger.info("_play_sequence ended")
         self.current_process = None
 
     def stop(self):
-        """Stops the currently playing audio and LED sequence."""
         logger.info("Stopping playback")
-        self._is_playing = False
+        self._should_play = False
         if self.current_process:
             self.current_process.terminate()
         if self.play_thread and self.play_thread.is_alive():
@@ -279,11 +269,5 @@ class ResponsePlayer:
             self.merge_thread.join()
 
     def is_playing(self) -> bool:
-        """
-        Checks if the player is currently playing.
-
-        Returns:
-            bool: True if playing, False otherwise.
-        """
-
-        return self._is_playing
+        return self._should_play and (
+                not self.playlist.empty() or not self.merge_queue.empty() or self.current_process is not None)
