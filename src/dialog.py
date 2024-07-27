@@ -156,7 +156,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
 
                     response_player = None
 
-                except Exception as e:
+            except Exception as e:
                 logger.error(f"An error occurred in the main loop: {str(e)}")
                 logger.error(traceback.format_exc())
                 error_visual(leds)
