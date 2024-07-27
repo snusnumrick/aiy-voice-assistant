@@ -352,10 +352,10 @@ class YandexTTSEngine(TTSEngine):
 
         loop = asyncio.get_event_loop()
         args = {"model": self.voice_model(tone=tone, lang=lang), "text": text}
-        logger.info(f"Synthesizing text: {text[:50]}...")
+        logger.debug(f"Synthesizing text: {text[:50]}...")
         result = await loop.run_in_executor(None, synthesize_wrapper, args)
 
-        logger.info(f"Audio content being written to file {filename}")
+        logger.debug(f"Audio content being written to file {filename}")
         async with aiofiles.open(filename, "wb") as out:
             await out.write(result)
 
