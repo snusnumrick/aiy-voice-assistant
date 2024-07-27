@@ -177,14 +177,17 @@ class ResponsePlayer:
         self.merge_thread: Optional[threading.Thread] = None
         self.merge_queue = queue.Queue()
         self._playback_completed = threading.Event()
-        self.current_emo = None
+        self.current_light = None
         self.lock = threading.Lock()
         for item in playlist:
             self.add(item)
 
     def add(self, playitem: Tuple[Optional[Dict], str]) -> None:
-        logger.info(f"Adding {playitem} to merge queue.")
-        self.merge_queue.put(playitem)
+        emo, file = playitem
+        light = None if emo is None else emo.get('light', {})
+        light_item = (emo, file)
+        logger.info(f"Adding {light_item} to merge queue.")
+        self.merge_queue.put(light_item)
         if self.merge_thread is None or not self.merge_thread.is_alive():
             self.merge_thread = threading.Thread(target=self._merge_audio_files)
             self.merge_thread.start()
@@ -195,38 +198,38 @@ class ResponsePlayer:
         logger.info("Starting merge process")
         while self._should_play or not self.merge_queue.empty():
             try:
-                emo, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
-                logger.info(f"merging {emo} {wav} {self.current_emo} {self.wav_list}")
-                if self.current_emo is None:
-                    self.current_emo = emo if emo is not None else {}
+                light, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
+                logger.info(f"merging {light} {wav} {self.current_light} {self.wav_list}")
+                if self.current_light is None:
+                    self.current_light = light if light is not None else {}
                     self.wav_list = [wav]
-                    logger.info(f"1 {self.current_emo} {self.wav_list}")
-                elif emo is None or emo == self.current_emo:
+                    logger.info(f"1 {self.current_light} {self.wav_list}")
+                elif light is None or light == self.current_light:
                     self.wav_list.append(wav)
-                    logger.info(f"2 {self.current_emo} {self.wav_list}")
+                    logger.info(f"2 {self.current_light} {self.wav_list}")
                 else:
                     self._process_merged_audio()
-                    self.current_emo = emo
+                    self.current_light = light
                     self.wav_list = [wav]
-                    logger.info(f"3 {self.current_emo} {self.wav_list}")
+                    logger.info(f"3 {self.current_light} {self.wav_list}")
             except queue.Empty:
                 if self.wav_list:
                     self._process_merged_audio()
                     self.wav_list = []
-                    self.current_emo = None
-                    logger.info(f"4 {self.current_emo} {self.wav_list}")
+                    self.current_light = None
+                    logger.info(f"4 {self.current_light} {self.wav_list}")
         logger.info("Merge process ended")
 
     def _process_merged_audio(self):
         with self.lock:
-            logger.info(f"merging {self.current_emo} {self.wav_list} {self.playlist}")
+            logger.info(f"merging {self.current_light} {self.wav_list} {self.playlist}")
             if len(self.wav_list) == 1:
-                self.playlist.put((self.current_emo, self.wav_list[0]))
+                self.playlist.put((self.current_light, self.wav_list[0]))
             else:
                 output_filename = tempfile.mktemp(suffix=".wav")
                 combine_audio_files(self.wav_list, output_filename)
-                self.playlist.put((self.current_emo, output_filename))
-            logger.info(f"Processed and added merged audio to playlist: {self.current_emo}, {self.wav_list},  {self.playlist}")
+                self.playlist.put((self.current_light, output_filename))
+            logger.info(f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list},  {self.playlist}")
 
     def play(self):
         logger.info("Starting playback")
@@ -240,12 +243,11 @@ class ResponsePlayer:
         logger.info("_play_sequence started")
         while self._should_play:
             try:
-                emotion, audio_file = self.playlist.get(timeout=0.1)
-                logger.info(f"Playing {audio_file} with emotion {emotion}")
+                light, audio_file = self.playlist.get(timeout=0.1)
+                logger.info(f"Playing {audio_file} with light {light}")
 
-                if emotion is not None and "light" in emotion:
-                    light_behavior = emotion["light"]
-                    change_light_behavior(light_behavior, self.leds)
+                if light is not None:
+                    change_light_behavior(light, self.leds)
 
                 self.current_process = play_wav_async(audio_file)
                 self.currently_playing += 1
