@@ -168,8 +168,6 @@ class ResponsePlayer:
     def __init__(self, playlist: List[Tuple[Optional[Dict], str]], leds: Leds):
         logger.info(f"Initializing ResponsePlayer with playlist: {playlist}")
         self.playlist = queue.Queue()
-        for item in playlist:
-            self.playlist.put(item)
         self.current_process: Optional[Popen] = None
         self._should_play = False
         self.play_thread: Optional[threading.Thread] = None
@@ -179,6 +177,8 @@ class ResponsePlayer:
         self.merge_queue = queue.Queue()
         self._playback_completed = threading.Event()
         self.current_emo = None
+        for item in playlist:
+            self.add(item)
 
     def add(self, playitem: Tuple[Optional[Dict], str]) -> None:
         logger.info(f"Adding {playitem} to merge queue.")
@@ -197,7 +197,7 @@ class ResponsePlayer:
                 emo, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
                 logger.info(f"merging {emo} {wav} {self.current_emo} {wav_list}")
                 if self.current_emo is None:
-                    self.current_emo = emo
+                    self.current_emo = emo if emo is not None else {}
                     wav_list = [wav]
                     logger.info(f"1 {self.current_emo} {wav_list}")
                 elif emo is None or emo == self.current_emo:
