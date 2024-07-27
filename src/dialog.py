@@ -82,6 +82,8 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
         timezone (str): The timezone to use for the conversation loop.
     """
 
+    logger.info("Starting main_loop_async")
+
     async def cleaning_routine():
         await conversation_manager.process_and_clean()
 
@@ -98,17 +100,18 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                 logger.info(f'({time_string_ms(timezone)}) You said: %s', text)
 
                 if text:
-                    playlist = []
                     response_count = 0
                     synthesis_tasks = []
 
                     async def process_synthesis_result(emo, audio_file_name, task):
                         nonlocal response_player
-                        logger.info(f"process_synthesis_result for {audio_file_name}")
+                        logger.info(f"Starting process_synthesis_result for {audio_file_name}")
                         try:
                             result = await task
+                            logger.info(f"Synthesis task completed for {audio_file_name}")
                             if result:
-                                logger.info(f"({time_string_ms(timezone)}) Synthesis {audio_file_name} completed")
+                                logger.info(
+                                    f"({time_string_ms(timezone)}) Synthesis {audio_file_name} completed successfully")
                                 if response_player is None:
                                     response_player = ResponsePlayer([(emo, audio_file_name)], leds)
                                     response_player.play()
@@ -121,6 +124,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
                             logger.error(traceback.format_exc())
                             error_visual(leds)
+                        logger.info(f"Finished process_synthesis_result for {audio_file_name}")
 
                     async for ai_response in conversation_manager.get_response(text):
                         logger.info(f"ai response: {ai_response}")
@@ -141,18 +145,22 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             logger.debug(f"Tone: {tone}, language = {lang}, tts_engine = {tts_engine}")
 
                             # Create and start the task immediately
-                            task = asyncio.create_task(
+                            synthesis_task = asyncio.create_task(
                                 tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang))
-                            asyncio.create_task(process_synthesis_result(emo, audio_file_name, task))
+                            process_task = asyncio.create_task(
+                                process_synthesis_result(emo, audio_file_name, synthesis_task))
+                            synthesis_tasks.append(process_task)
 
                             # Yield control to allow tasks to start executing
                             await asyncio.sleep(0)
 
-                        # Wait for all synthesis tasks to complete
-                    await asyncio.gather(*[task for _, _, task in synthesis_tasks])
+                    # Wait for all synthesis tasks to complete
+                    logger.info("Waiting for all synthesis tasks to complete")
+                    await asyncio.gather(*synthesis_tasks, return_exceptions=True)
+                    logger.info("All synthesis tasks completed")
 
                     # Ensure all audio has finished playing
-                    while response_player and response_player.is_playing():
+                    while (response_player is not None) and response_player.is_playing():
                         await asyncio.sleep(0.1)
 
                     response_player = None
