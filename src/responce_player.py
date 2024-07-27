@@ -4,6 +4,7 @@ based on emotional states. It includes utilities for adjusting RGB colors, chang
 patterns, and managing a playlist of audio files with corresponding LED behaviors.
 """
 import json
+import queue
 import logging
 import re
 import tempfile
@@ -172,100 +173,110 @@ class ResponsePlayer:
             playlist (List[Tuple[Dict, str]]): A list of tuples containing LED behavior and audio file path.
             leds (Leds): An instance of the Leds class to control.
         """
-        logger.info(f"Playing {playlist}.")
-        self.playlist = playlist
+        logger.info(f"Initializing ResponsePlayer with playlist: {playlist}")
+        self.playlist = queue.Queue()
+        for item in playlist:
+            self.playlist.put(item)
         self.current_process: Optional[Popen] = None
         self._is_playing = False
         self.play_thread: Optional[threading.Thread] = None
         self.leds = leds
         self.currently_playing = -1
-
-        # merge audio files with the same emotion
-        self._merge()
-        logger.info(f"Playing {self.playlist}.")
+        self.merge_thread: Optional[threading.Thread] = None
+        self.merge_queue = queue.Queue()
 
     def add(self, playitem: Tuple[Optional[Dict], str]) -> None:
-        logger.info(f"Adding {playitem}.")
-        self.playlist.append(playitem)
-        self._merge()
-        logger.info(f"Merged list {self.playlist}.")
+        logger.info(f"Adding {playitem} to merge queue.")
+        self.merge_queue.put(playitem)
+        if self.merge_thread is None or not self.merge_thread.is_alive():
+            self.merge_thread = threading.Thread(target=self._merge_audio_files)
+            self.merge_thread.start()
 
-    def _merge(self):
-
-        def process(wav_list: List[str]) -> List[Tuple[Optional[Dict], str]]:
-            result = []
-            if len(wav_list) == 1:
-                result.append((current_emo, wav_list[0]))
-                logger.debug(f"3 {new_play_list}")
-            else:
-                # Create a temporary file and get its name
-                output_filename = tempfile.mktemp(suffix=".wav")
-                combine_audio_files(wav_list, output_filename)
-                result.append((current_emo, output_filename))
-                logger.debug(f"4 {new_play_list}")
-            return result
-
-        new_play_list = []
-        wav2merge = None
+    def _merge_audio_files(self):
+        logger.info("Starting merge process")
         current_emo = None
-        for emo, wav in self.playlist[self.currently_playing+1:]:
-            if wav2merge is None:
-                wav2merge = [wav]
-                current_emo = emo
-                logger.debug(f"1 {current_emo} {wav2merge}")
-            elif emo is None:
-                wav2merge.append(wav)
-                logger.debug(f"2 {current_emo} {wav2merge}")
-            else:
-                new_play_list += process(wav2merge)
-                wav2merge = [wav]
-                current_emo = emo
-        if wav2merge:
-            new_play_list += process(wav2merge)
-        self.playlist = new_play_list
+        wav_list = []
+        while True:
+            try:
+                emo, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
+                if current_emo is None:
+                    current_emo = emo
+                    wav_list = [wav]
+                elif emo is None or emo == current_emo:
+                    wav_list.append(wav)
+                else:
+                    self._process_merged_audio(current_emo, wav_list)
+                    current_emo = emo
+                    wav_list = [wav]
+            except queue.Empty:
+                if wav_list:
+                    self._process_merged_audio(current_emo, wav_list)
+                    wav_list = []
+                    current_emo = None
+                if self.merge_queue.empty():
+                    logger.info("Merge queue is empty, ending merge process")
+                    break
+        logger.info("Merge process ended")
+
+    def _process_merged_audio(self, emo, wav_list):
+        if len(wav_list) == 1:
+            self.playlist.put((emo, wav_list[0]))
+        else:
+            output_filename = tempfile.mktemp(suffix=".wav")
+            combine_audio_files(wav_list, output_filename)
+            self.playlist.put((emo, output_filename))
+        logger.info(f"Processed and added merged audio to playlist: {emo}, {wav_list}")
 
     def play(self):
         """Starts playing the playlist in a separate thread."""
-        logger.info("play")
-        self._is_playing = True
-        self.play_thread = threading.Thread(target=self._play_sequence)
-        self.play_thread.start()
+        logger.info("Starting playback")
+        if not self._is_playing:
+            self._is_playing = True
+            self.play_thread = threading.Thread(target=self._play_sequence)
+            self.play_thread.start()
 
     def _play_sequence(self):
         """Internal method to play the sequence of audio files and control LED behavior."""
 
-        for i,  (emotion, audio_file) in enumerate(self.playlist):
-            logger.info(emotion)
-            if not self._is_playing:
-                break
+        logger.info("_play_sequence started")
+        while self._is_playing:
+            try:
+                emotion, audio_file = self.playlist.get(timeout=0.1)
+                logger.info(f"Playing {audio_file} with emotion {emotion}")
 
-            if emotion is not None:
-                light_behavior = {}
-                if "light" in emotion:
+                if emotion is not None and "light" in emotion:
                     light_behavior = emotion["light"]
-                change_light_behavior(light_behavior, self.leds)
+                    change_light_behavior(light_behavior, self.leds)
 
-            self.current_process = play_wav_async(audio_file)
-            self.currently_playing = i
+                self.current_process = play_wav_async(audio_file)
+                self.currently_playing += 1
 
-            # Wait for the audio to finish
-            self.current_process.wait()
+                # Wait for the audio to finish
+                self.current_process.wait()
 
-            # switch off led
-            self.leds.update(Leds.rgb_off())
-            time.sleep(1)
+                # Switch off LED
+                self.leds.update(Leds.rgb_off())
 
-        self._is_playing = False
+                logger.info(f"Finished playing {audio_file}")
+            except queue.Empty:
+                if self.playlist.empty() and self.merge_queue.empty() and (
+                        self.merge_thread is None or not self.merge_thread.is_alive()):
+                    logger.info("All queues are empty and merge process is not running, stopping playback")
+                    self._is_playing = False
+
+        logger.info("_play_sequence ended")
         self.current_process = None
 
     def stop(self):
         """Stops the currently playing audio and LED sequence."""
-        logger.info("Stopping.")
+        logger.info("Stopping playback")
         self._is_playing = False
         if self.current_process:
             self.current_process.terminate()
         if self.play_thread and self.play_thread.is_alive():
             self.play_thread.join()
+        if self.merge_thread and self.merge_thread.is_alive():
+            self.merge_thread.join()
 
     def is_playing(self) -> bool:
         """
