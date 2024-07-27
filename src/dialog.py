@@ -104,6 +104,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
 
                     async def process_synthesis_result(emo, audio_file_name, task):
                         nonlocal response_player
+                        logger.info(f"process_synthesis_result for {audio_file_name}")
                         try:
                             result = await task
                             if result:
