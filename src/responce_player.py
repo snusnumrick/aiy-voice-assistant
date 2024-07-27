@@ -274,3 +274,11 @@ class ResponsePlayer:
     def is_playing(self) -> bool:
         return self._should_play and (
                     not self.playlist.empty() or not self.merge_queue.empty() or self.current_process is not None)
+
+    def all_playback_complete(self) -> bool:
+        return (not self._should_play and
+                self.playlist.empty() and
+                self.merge_queue.empty() and
+                self.current_process is None and
+                (self.play_thread is None or not self.play_thread.is_alive()) and
+                (self.merge_thread is None or not self.merge_thread.is_alive()))
