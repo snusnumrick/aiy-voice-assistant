@@ -222,16 +222,15 @@ class ResponsePlayer:
 
     def _process_merged_audio(self):
         with self.lock:
+            if not self.wav_list:
+                return
             logger.info(f"merging {self.current_light} {self.wav_list} {self.playlist}")
             if len(self.wav_list) == 1:
                 self.playlist.put((self.current_light, self.wav_list[0]))
-            elif self.wav_list:
+            else:
                 output_filename = tempfile.mktemp(suffix=".wav")
                 combine_audio_files(self.wav_list, output_filename)
                 self.playlist.put((self.current_light, output_filename))
-            else:
-                logger.warning("No audio files to merge")
-                return
             self.wav_list = []
             logger.info(f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list},  {self.playlist}")
 
