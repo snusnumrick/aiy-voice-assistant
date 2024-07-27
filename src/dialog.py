@@ -100,12 +100,16 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
 
                 if text:
                     response_count = 0
+                    process_tasks = []
                     synthesis_tasks = []
 
-                    async def process_synthesis_result(emo, audio_file_name, task):
+                    async def process_synthesis_result(num, emo, audio_file_name, task):
                         nonlocal response_player
                         logger.info(f"Starting process_synthesis_result for {audio_file_name}")
                         try:
+                            if num > 0:
+                                await asyncio.gather(*synthesis_tasks[:num], return_exceptions=True)
+
                             result = await task
                             logger.info(f"Synthesis task completed for {audio_file_name}")
                             if result:
@@ -146,16 +150,17 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             # Create and start the task immediately
                             synthesis_task = asyncio.create_task(
                                 tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang))
+                            synthesis_tasks.append(synthesis_task)
                             process_task = asyncio.create_task(
-                                process_synthesis_result(emo, audio_file_name, synthesis_task))
-                            synthesis_tasks.append(process_task)
+                                process_synthesis_result(len(process_tasks), emo, audio_file_name, synthesis_task))
+                            process_tasks.append(process_task)
 
                             # Yield control to allow tasks to start executing
                             await asyncio.sleep(0)
 
                     # Wait for all synthesis tasks to complete
                     logger.info("Waiting for all synthesis tasks to complete")
-                    await asyncio.gather(*synthesis_tasks, return_exceptions=True)
+                    await asyncio.gather(*process_tasks, return_exceptions=True)
                     logger.info("All synthesis tasks completed")
 
                     # Ensure all audio has finished playing
