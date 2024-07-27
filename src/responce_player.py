@@ -168,6 +168,7 @@ class ResponsePlayer:
     def __init__(self, playlist: List[Tuple[Optional[Dict], str]], leds: Leds):
         logger.info(f"Initializing ResponsePlayer with playlist: {playlist}")
         self.playlist = queue.Queue()
+        self.wav_list = []
         self.current_process: Optional[Popen] = None
         self._should_play = False
         self.play_thread: Optional[threading.Thread] = None
@@ -177,6 +178,7 @@ class ResponsePlayer:
         self.merge_queue = queue.Queue()
         self._playback_completed = threading.Event()
         self.current_emo = None
+        self.lock = threading.Lock()
         for item in playlist:
             self.add(item)
 
@@ -191,40 +193,40 @@ class ResponsePlayer:
 
     def _merge_audio_files(self):
         logger.info("Starting merge process")
-        wav_list = []
         while self._should_play or not self.merge_queue.empty():
             try:
                 emo, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
-                logger.info(f"merging {emo} {wav} {self.current_emo} {wav_list}")
+                logger.info(f"merging {emo} {wav} {self.current_emo} {self.wav_list}")
                 if self.current_emo is None:
                     self.current_emo = emo if emo is not None else {}
-                    wav_list = [wav]
-                    logger.info(f"1 {self.current_emo} {wav_list}")
+                    self.wav_list = [wav]
+                    logger.info(f"1 {self.current_emo} {self.wav_list}")
                 elif emo is None or emo == self.current_emo:
-                    wav_list.append(wav)
-                    logger.info(f"2 {self.current_emo} {wav_list}")
+                    self.wav_list.append(wav)
+                    logger.info(f"2 {self.current_emo} {self.wav_list}")
                 else:
-                    self._process_merged_audio(self.current_emo, wav_list)
+                    self._process_merged_audio()
                     self.current_emo = emo
-                    wav_list = [wav]
-                    logger.info(f"3 {self.current_emo} {wav_list}")
+                    self.wav_list = [wav]
+                    logger.info(f"3 {self.current_emo} {self.wav_list}")
             except queue.Empty:
-                if wav_list:
-                    self._process_merged_audio(self.current_emo, wav_list)
-                    wav_list = []
+                if self.wav_list:
+                    self._process_merged_audio()
+                    self.wav_list = []
                     self.current_emo = None
-                    logger.info(f"4 {self.current_emo} {wav_list}")
+                    logger.info(f"4 {self.current_emo} {self.wav_list}")
         logger.info("Merge process ended")
 
-    def _process_merged_audio(self, emo, wav_list):
-        logger.info(f"merging {emo} {wav_list} {self.playlist}")
-        if len(wav_list) == 1:
-            self.playlist.put((emo, wav_list[0]))
-        else:
-            output_filename = tempfile.mktemp(suffix=".wav")
-            combine_audio_files(wav_list, output_filename)
-            self.playlist.put((emo, output_filename))
-        logger.info(f"Processed and added merged audio to playlist: {emo}, {wav_list},  {self.playlist}")
+    def _process_merged_audio(self):
+        with self.lock:
+            logger.info(f"merging {self.current_emo} {self.wav_list} {self.playlist}")
+            if len(self.wav_list) == 1:
+                self.playlist.put((self.current_emo, self.wav_list[0]))
+            else:
+                output_filename = tempfile.mktemp(suffix=".wav")
+                combine_audio_files(self.wav_list, output_filename)
+                self.playlist.put((self.current_emo, output_filename))
+            logger.info(f"Processed and added merged audio to playlist: {self.current_emo}, {self.wav_list},  {self.playlist}")
 
     def play(self):
         logger.info("Starting playback")
@@ -257,6 +259,7 @@ class ResponsePlayer:
 
                 logger.info(f"Finished playing {audio_file}")
             except queue.Empty:
+                self._process_merged_audio()
                 # If both queues are empty, wait a bit before checking again
                 if self.playlist.empty() and self.merge_queue.empty():
                     if not self._should_play:
