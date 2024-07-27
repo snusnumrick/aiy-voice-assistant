@@ -158,10 +158,10 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                     logger.info("All synthesis tasks completed")
 
                     # Ensure all audio has finished playing
-                    while (response_player is not None) and response_player.is_playing():
-                        await asyncio.sleep(0.1)
-
-                    response_player = None
+                    # while (response_player is not None) and response_player.is_playing():
+                    #     await asyncio.sleep(0.1)
+                    #
+                    # response_player = None
 
             except Exception as e:
                 logger.error(f"An error occurred in the main loop: {str(e)}")
