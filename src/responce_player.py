@@ -244,6 +244,7 @@ class ResponsePlayer:
 
                 # Wait for the audio to finish
                 self.current_process.wait()
+                self.current_process = None
 
                 # Switch off LED
                 self.leds.update(Leds.rgb_off())
