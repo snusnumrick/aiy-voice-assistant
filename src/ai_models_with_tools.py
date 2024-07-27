@@ -228,6 +228,12 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
             elif event_type == 'content_block_stop':
                 logger.debug("Content block stopped")
+                for sentence in sentences:
+                    logger.debug(f"Yielding sentence: {sentence}")
+                    assistant_message += f"{sentence} "
+                    yield sentence
+                sentences = []
+                current_text = ""
                 if current_tool_use:
                     try:
                         tool_input = json.loads(current_tool_use['input'])
@@ -238,11 +244,12 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                         logger.debug(f"Processing tool use: {tool_name}, {tool_use_id}")
                         tool_processor = self.tools_processors[tool_name]
                         tool_result = await tool_processor(tool_input)
+                        logger.debug(f"tool result: {json.dumps(tool_result, indent=2)}")
                         if self.tools[tool_name].iterative:
                             message_list.append({"role": "user", "content": [
                                 {'type': 'tool_result', 'content': tool_result, "tool_use_id": tool_use_id}]})
                             async for response in self.get_response_async(message_list):
-                                logger.debug(f"Yielding tool response: {response}")
+                                logger.debug(f"Yielding after tool response: {response}")
                                 yield response
                     except json.JSONDecodeError:
                         logger.error(f"Failed to decode tool input JSON: {current_tool_use['input']}")
@@ -285,9 +292,13 @@ async def main_async():
     config = Config()
     search_tool = WebSearchTool(config)
     model = ClaudeAIModelWithTools(config, tools=[search_tool.tool_definition()])
-    message = "Today is July 11, 2024. who will play at euro 2024 final?"
+    system = """Today is 27 July 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
+    Отвечай естественно, как в устной речи. Говори максимально просто и понятно. Не используй списки и нумерации. Например, не говори 1. что-то; 2.
+    что-то. говори во-первых, во-вторых или просто перечисляй. При ответе на вопрос где важно время, помни какое сегодня число. Если чего-то не знаешь,
+    так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов."""
+    message = "Посмотри, в прогнозе сегодня жарко будет."
     print(message)
-    messages = [{"role": "user", "content": message}]
+    messages = [{"role":"system", "content":system}, {"role": "user", "content": message}]
     async for response_part in model.get_response_async(messages):
         print(response_part, flush=True)
     print(messages)
