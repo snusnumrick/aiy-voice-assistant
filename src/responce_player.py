@@ -178,6 +178,7 @@ class ResponsePlayer:
         self.merge_thread: Optional[threading.Thread] = None
         self.merge_queue = queue.Queue()
         self._playback_completed = threading.Event()
+        self.current_emo = None
 
     def add(self, playitem: Tuple[Optional[Dict], str]) -> None:
         logger.info(f"Adding {playitem} to merge queue.")
@@ -190,25 +191,24 @@ class ResponsePlayer:
 
     def _merge_audio_files(self):
         logger.info("Starting merge process")
-        current_emo = None
         wav_list = []
         while self._should_play or not self.merge_queue.empty():
             try:
                 emo, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
-                if current_emo is None:
-                    current_emo = emo
+                if self.current_emo is None:
+                    self.current_emo = emo
                     wav_list = [wav]
-                elif emo is None or emo == current_emo:
+                elif emo is None or emo == self.current_emo:
                     wav_list.append(wav)
                 else:
-                    self._process_merged_audio(current_emo, wav_list)
-                    current_emo = emo
+                    self._process_merged_audio(self.current_emo, wav_list)
+                    self.current_emo = emo
                     wav_list = [wav]
             except queue.Empty:
                 if wav_list:
-                    self._process_merged_audio(current_emo, wav_list)
+                    self._process_merged_audio(self.current_emo, wav_list)
                     wav_list = []
-                    current_emo = None
+                    self.current_emo = None
         logger.info("Merge process ended")
 
     def _process_merged_audio(self, emo, wav_list):
