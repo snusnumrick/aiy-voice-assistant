@@ -199,17 +199,21 @@ class ResponsePlayer:
                 if self.current_emo is None:
                     self.current_emo = emo
                     wav_list = [wav]
+                    logger.info(f"1 {self.current_emo} {wav_list}")
                 elif emo is None or emo == self.current_emo:
                     wav_list.append(wav)
+                    logger.info(f"2 {self.current_emo} {wav_list}")
                 else:
                     self._process_merged_audio(self.current_emo, wav_list)
                     self.current_emo = emo
                     wav_list = [wav]
+                    logger.info(f"3 {self.current_emo} {wav_list}")
             except queue.Empty:
                 if wav_list:
                     self._process_merged_audio(self.current_emo, wav_list)
                     wav_list = []
                     self.current_emo = None
+                    logger.info(f"4 {self.current_emo} {wav_list}")
         logger.info("Merge process ended")
 
     def _process_merged_audio(self, emo, wav_list):
