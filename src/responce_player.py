@@ -229,6 +229,7 @@ class ResponsePlayer:
                 output_filename = tempfile.mktemp(suffix=".wav")
                 combine_audio_files(self.wav_list, output_filename)
                 self.playlist.put((self.current_light, output_filename))
+            self.wav_list = []
             logger.info(f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list},  {self.playlist}")
 
     def play(self):
@@ -261,6 +262,7 @@ class ResponsePlayer:
 
                 logger.info(f"Finished playing {audio_file}")
             except queue.Empty:
+                logger.info("playlist is empty")
                 self._process_merged_audio()
                 # If both queues are empty, wait a bit before checking again
                 if self.playlist.empty() and self.merge_queue.empty():
