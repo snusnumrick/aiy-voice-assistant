@@ -177,6 +177,7 @@ class ResponsePlayer:
         self.currently_playing = -1
         self.merge_thread: Optional[threading.Thread] = None
         self.merge_queue = queue.Queue()
+        self._playback_completed = threading.Event()
 
     def add(self, playitem: Tuple[Optional[Dict], str]) -> None:
         logger.info(f"Adding {playitem} to merge queue.")
@@ -191,7 +192,7 @@ class ResponsePlayer:
         logger.info("Starting merge process")
         current_emo = None
         wav_list = []
-        while True:
+        while self._should_play or not self.merge_queue.empty():
             try:
                 emo, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
                 if current_emo is None:
@@ -208,9 +209,6 @@ class ResponsePlayer:
                     self._process_merged_audio(current_emo, wav_list)
                     wav_list = []
                     current_emo = None
-                if self.merge_queue.empty() and not self._should_play:
-                    logger.info("Merge queue is empty and playback is stopped, ending merge process")
-                    break
         logger.info("Merge process ended")
 
     def _process_merged_audio(self, emo, wav_list):
@@ -226,6 +224,7 @@ class ResponsePlayer:
         logger.info("Starting playback")
         if not self._should_play:
             self._should_play = True
+            self._playback_completed.clear()
             self.play_thread = threading.Thread(target=self._play_sequence)
             self.play_thread.start()
 
@@ -253,21 +252,25 @@ class ResponsePlayer:
             except queue.Empty:
                 # If both queues are empty, wait a bit before checking again
                 if self.playlist.empty() and self.merge_queue.empty():
+                    if not self._should_play:
+                        break
                     time.sleep(0.1)
 
         logger.info("_play_sequence ended")
         self.current_process = None
+        self._playback_completed.set()
 
     def stop(self):
         logger.info("Stopping playback")
         self._should_play = False
         if self.current_process:
             self.current_process.terminate()
+        self._playback_completed.wait(timeout=5.0)  # Wait up to 5 seconds for playback to complete
         if self.play_thread and self.play_thread.is_alive():
-            self.play_thread.join()
+            self.play_thread.join(timeout=1.0)
         if self.merge_thread and self.merge_thread.is_alive():
-            self.merge_thread.join()
+            self.merge_thread.join(timeout=1.0)
 
     def is_playing(self) -> bool:
         return self._should_play and (
-                not self.playlist.empty() or not self.merge_queue.empty() or self.current_process is not None)
+                    not self.playlist.empty() or not self.merge_queue.empty() or self.current_process is not None)
