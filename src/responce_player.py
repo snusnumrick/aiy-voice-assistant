@@ -195,6 +195,7 @@ class ResponsePlayer:
         while self._should_play or not self.merge_queue.empty():
             try:
                 emo, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
+                logger.info(f"merging {emo} {wav} {self.current_emo} {wav_list}")
                 if self.current_emo is None:
                     self.current_emo = emo
                     wav_list = [wav]
