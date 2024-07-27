@@ -185,7 +185,7 @@ class ResponsePlayer:
     def add(self, playitem: Tuple[Optional[Dict], str]) -> None:
         emo, file = playitem
         light = None if emo is None else emo.get('light', {})
-        light_item = (emo, file)
+        light_item = (light, file)
         logger.info(f"Adding {light_item} to merge queue.")
         self.merge_queue.put(light_item)
         if self.merge_thread is None or not self.merge_thread.is_alive():
