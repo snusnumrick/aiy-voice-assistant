@@ -167,7 +167,8 @@ class ResponsePlayer:
 
     This class manages a playlist of audio files and their associated LED behaviors.
     It handles merging of audio files, queueing of playback items, and coordination
-    of audio playback with LED control in a thread-safe manner.
+    of audio playback with LED control in a thread-safe manner. It uses condition
+    variables for efficient thread synchronization.
 
     Attributes:
         timezone (str): The timezone used for logging timestamps.
@@ -183,6 +184,7 @@ class ResponsePlayer:
         current_light (Optional[Dict]): The current LED behavior.
         lock (threading.Lock): Lock for ensuring thread-safe operations.
         _stopped (bool): Flag indicating whether the player is in a stopped state.
+        condition (threading.Condition): Condition variable for efficient thread synchronization.
     """
 
     def __init__(self, playlist: List[Tuple[Optional[Dict], str]], leds: Leds, timezone: str):
@@ -208,12 +210,16 @@ class ResponsePlayer:
         self.current_light = None
         self.lock = threading.Lock()
         self._stopped = False
+        self.condition = threading.Condition(self.lock)
         for item in playlist:
             self.add(item)
 
     def add(self, playitem: Tuple[Optional[Dict], str]) -> None:
         """
         Add a new item to the merge queue and start merging if necessary.
+
+        If the player is in a stopped state, this method will ignore the add request.
+        When an item is added, it notifies the playback thread to wake up and process the new item.
 
         Args:
             playitem (Tuple[Optional[Dict], str]): A tuple containing the LED behavior (or None) and the audio file path.
@@ -226,7 +232,11 @@ class ResponsePlayer:
         light = None if emo is None else emo.get('light', {})
         light_item = (light, file)
         logger.debug(f"Adding {light_item} to merge queue.")
-        self.merge_queue.put(light_item)
+
+        with self.condition:
+            self.merge_queue.put(light_item)
+            self.condition.notify()  # Notify waiting threads that a new item is available
+
         if self.merge_thread is None or not self.merge_thread.is_alive():
             self.merge_thread = threading.Thread(target=self._merge_audio_files)
             self.merge_thread.start()
@@ -305,40 +315,39 @@ class ResponsePlayer:
         Play the sequence of audio files with their corresponding LED behaviors.
 
         This method runs in a separate thread and continuously processes items from the playlist queue.
-        It handles playing audio files and controlling LED behavior.
+        It handles playing audio files and controlling LED behavior. It uses a condition variable
+        to efficiently wait for new items to be added to the playlist or for a stop signal.
         """
         logger.debug("_play_sequence started")
         while self._should_play:
-            try:
-                light, audio_file = self.playlist.get(timeout=0.1)
-                logger.info(f"({time_string_ms(self.timezone)}) Playing {audio_file} with light {light}")
+            with self.condition:
+                while self._should_play and self.playlist.empty() and self.merge_queue.empty():
+                    # Wait for an item to be added or for stop to be called
+                    self.condition.wait()
 
-                if light is not None:
-                    change_light_behavior(light, self.leds)
+                if not self._should_play:
+                    break
 
-                self.current_process = play_wav_async(audio_file)
-
-                # Wait for the audio to finish
-                self.current_process.wait()
-                self.current_process = None
-
-                # Switch off LED
-                self.leds.update(Leds.rgb_off())
-
-                logger.debug(f"Finished playing {audio_file}")
-            except queue.Empty:
-                logger.debug("playlist is empty")
-                with self.lock:
+                try:
+                    light, audio_file = self.playlist.get_nowait()
+                except queue.Empty:
+                    # If playlist is empty, process wav_list and continue
                     self._process_wav_list()
+                    continue
 
-                # If both queues are empty, wait a bit before checking again
-                if self.playlist.empty() and self.merge_queue.empty():
-                    if not self._should_play:
-                        break
-                    time.sleep(0.3)
-                else:
-                    logger.debug(f"playlist has {self.playlist.qsize()} items; "
-                                 f"merge queue has {self.merge_queue.qsize()} items")
+            logger.info(f"({time_string_ms(self.timezone)}) Playing {audio_file} with light {light}")
+
+            if light is not None:
+                change_light_behavior(light, self.leds)
+
+            self.current_process = play_wav_async(audio_file)
+            self.current_process.wait()
+            self.current_process = None
+
+            # Switch off LED
+            self.leds.update(Leds.rgb_off())
+
+            logger.debug(f"Finished playing {audio_file}")
 
         logger.debug("_play_sequence ended")
         self.current_process = None
@@ -350,14 +359,19 @@ class ResponsePlayer:
 
         This method:
         1. Sets the stop flags
-        2. Terminates any current playback
-        3. Clears all queues (merge_queue, playlist, wav_list)
-        4. Waits for the playback and merge threads to complete
-        5. Sets the player to a stopped state, ignoring further add calls
+        2. Notifies all waiting threads to wake up
+        3. Terminates any current playback
+        4. Clears all queues (merge_queue, playlist, wav_list)
+        5. Waits for the playback and merge threads to complete
+        6. Sets the player to a stopped state, ignoring further add calls
+
+        The use of condition variables ensures that waiting threads are immediately notified of the stop request.
         """
         logger.debug("Stopping playback and clearing all queues")
-        self._should_play = False
-        self._stopped = True
+        with self.condition:
+            self._should_play = False
+            self._stopped = True
+            self.condition.notify_all()  # Wake up all waiting threads
 
         # Terminate current playback
         if self.current_process:
@@ -378,7 +392,7 @@ class ResponsePlayer:
             self.wav_list.clear()
 
         # Wait for threads to complete
-        self._playback_completed.wait(timeout=5.0)  # Wait up to 5 seconds for playback to complete
+        self._playback_completed.wait(timeout=5.0)
         if self.play_thread and self.play_thread.is_alive():
             self.play_thread.join(timeout=1.0)
         if self.merge_thread and self.merge_thread.is_alive():
