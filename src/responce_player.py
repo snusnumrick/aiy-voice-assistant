@@ -182,6 +182,7 @@ class ResponsePlayer:
         _playback_completed (threading.Event): Event to signal when playback is completed.
         current_light (Optional[Dict]): The current LED behavior.
         lock (threading.Lock): Lock for ensuring thread-safe operations.
+        _stopped (bool): Flag indicating whether the player is in a stopped state.
     """
 
     def __init__(self, playlist: List[Tuple[Optional[Dict], str]], leds: Leds, timezone: str):
@@ -206,6 +207,7 @@ class ResponsePlayer:
         self._playback_completed = threading.Event()
         self.current_light = None
         self.lock = threading.Lock()
+        self._stopped = False
         for item in playlist:
             self.add(item)
 
@@ -216,6 +218,10 @@ class ResponsePlayer:
         Args:
             playitem (Tuple[Optional[Dict], str]): A tuple containing the LED behavior (or None) and the audio file path.
         """
+        if self._stopped:
+            logger.debug(f"Ignoring add request for {playitem} as player is stopped.")
+            return
+
         emo, file = playitem
         light = None if emo is None else emo.get('light', {})
         light_item = (light, file)
@@ -277,17 +283,19 @@ class ResponsePlayer:
             combine_audio_files(self.wav_list, output_filename)
             self.playlist.put((self.current_light, output_filename))
         self.wav_list = []
-        logger.debug(f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list}, {self.playlist}")
+        logger.debug(
+            f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list}, {self.playlist}")
 
     def play(self):
         """
         Start the playback process.
 
-        This method initiates the playback thread if it's not already running.
+        This method initiates the playback thread if it's not already running and resets the stopped state.
         """
         logger.debug("Starting playback")
         if not self._should_play:
             self._should_play = True
+            self._stopped = False
             self._playback_completed.clear()
             self.play_thread = threading.Thread(target=self._play_sequence)
             self.play_thread.start()
@@ -330,7 +338,7 @@ class ResponsePlayer:
                     time.sleep(0.3)
                 else:
                     logger.debug(f"playlist has {self.playlist.qsize()} items; "
-                                f"merge queue has {self.merge_queue.qsize()} items")
+                                 f"merge queue has {self.merge_queue.qsize()} items")
 
         logger.debug("_play_sequence ended")
         self.current_process = None
@@ -338,20 +346,45 @@ class ResponsePlayer:
 
     def stop(self):
         """
-        Stop the playback and merging processes.
+        Stop the playback and merging processes, clear all queues, and ignore further add calls.
 
-        This method sets the stop flag, terminates any current playback,
-        and waits for the playback and merge threads to complete.
+        This method:
+        1. Sets the stop flags
+        2. Terminates any current playback
+        3. Clears all queues (merge_queue, playlist, wav_list)
+        4. Waits for the playback and merge threads to complete
+        5. Sets the player to a stopped state, ignoring further add calls
         """
-        logger.debug("Stopping playback")
+        logger.debug("Stopping playback and clearing all queues")
         self._should_play = False
+        self._stopped = True
+
+        # Terminate current playback
         if self.current_process:
             self.current_process.terminate()
+
+        # Clear all queues
+        with self.lock:
+            while not self.merge_queue.empty():
+                try:
+                    self.merge_queue.get_nowait()
+                except queue.Empty:
+                    break
+            while not self.playlist.empty():
+                try:
+                    self.playlist.get_nowait()
+                except queue.Empty:
+                    break
+            self.wav_list.clear()
+
+        # Wait for threads to complete
         self._playback_completed.wait(timeout=5.0)  # Wait up to 5 seconds for playback to complete
         if self.play_thread and self.play_thread.is_alive():
             self.play_thread.join(timeout=1.0)
         if self.merge_thread and self.merge_thread.is_alive():
             self.merge_thread.join(timeout=1.0)
+
+        logger.debug("Playback stopped, all queues cleared, and player set to stopped state")
 
     def is_playing(self) -> bool:
         """
@@ -361,5 +394,5 @@ class ResponsePlayer:
             bool: True if audio is playing or queued, False otherwise.
         """
         logger.debug(f"{self._should_play} {self.playlist.empty()} {self.merge_queue.empty()} {self.current_process}")
-        return self._should_play and (
-                    not self.playlist.empty() or not self.merge_queue.empty() or self.current_process is not None)
+        return self._should_play and not self._stopped and (
+                not self.playlist.empty() or not self.merge_queue.empty() or self.current_process is not None)
