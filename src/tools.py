@@ -398,72 +398,68 @@ def extract_sentences(text: str) -> List[str]:
     """
     Extracts sentences from the given text while preserving special patterns.
 
-    This function handles text that may contain special patterns (enclosed in $...$)
-    such as emotion tags or JSON-like structures. It separates these patterns from
-    the main text, splits the text into sentences, and then reattaches the special
-    patterns to the appropriate sentences based on their original positions.
+    This function handles text that may contain special patterns (starting with $)
+    such as emotion tags or JSON-like structures. It preserves these patterns within
+    the sentences, and correctly splits sentences at punctuation marks, even when
+    they appear immediately after a special pattern without a space.
 
     The function is designed to work with both English and Russian text.
 
     Args:
         text (str): The input text to be processed. May contain special patterns
-                    enclosed in $...$, as well as normal sentences in English or Russian.
+                    starting with $, as well as normal sentences in English or Russian.
 
     Returns:
-        List[str]: A list of extracted sentences. Special patterns are reattached
-                   to the sentences they were originally associated with.
+        List[str]: A list of extracted sentences. Special patterns are preserved
+                   within the sentences they were originally associated with.
 
     Note:
-    - The function now uses a more flexible sentence-splitting approach that works
-      for both English and Russian text.
-    - Incomplete sentences at the end of the text are preserved.
+    - The function treats $... patterns (complete or incomplete) as part of the sentence.
+    - It correctly splits sentences at punctuation marks, even immediately after special patterns.
+    - It handles ellipsis and multiple punctuation marks as single sentence endings.
+    - Incomplete sentences or patterns at the end of the text are preserved.
     """
     logger.debug(f"Extracting sentences from: {text}")
 
-    # Extract any special tags or JSON-like structures
-    special_patterns = re.findall(r'\$.*?\$', text)
+    # Define patterns
+    special_pattern = r'\$[^$\s]+(?:\$|\s|$)'
+    sentence_end_pattern = r'(?:[.!?]|\.{3})+'
 
-    # Remove special patterns from the text and keep their positions
-    pattern_positions = []
-    for pattern in special_patterns:
-        position = text.index(pattern)
-        pattern_positions.append((position, pattern))
-        text = text.replace(pattern, '', 1)
+    # Find all special patterns and their positions
+    special_matches = list(re.finditer(special_pattern, text))
 
-    # Sort pattern_positions by position
-    pattern_positions.sort(key=lambda x: x[0])
+    # Split text into segments (alternating between normal text and special patterns)
+    segments = []
+    last_end = 0
+    for match in special_matches:
+        if match.start() > last_end:
+            segments.append(text[last_end:match.start()])
+        segments.append(match.group())
+        last_end = match.end()
+    if last_end < len(text):
+        segments.append(text[last_end:])
 
-    # Split the text into sentences
-    # This regex works for both English and Russian, and preserves incomplete sentences
-    sentence_pattern = re.compile(r'([^.!?…]+[.!?…]+(?:\s|$)|[^.!?…]+$)')
-    potential_sentences = sentence_pattern.findall(text)
-
-    # Process each potential sentence
+    # Combine segments into sentences
     sentences = []
-    current_position = 0
-    for sentence in potential_sentences:
-        # Trim whitespace
-        sentence = sentence.strip()
+    current_sentence = ''
+    for segment in segments:
+        if segment.startswith('$'):
+            current_sentence += segment
+        else:
+            # Split the non-special segment by sentence endings
+            parts = re.split(f'({sentence_end_pattern})', segment)
+            for i in range(0, len(parts), 2):
+                current_sentence += parts[i]
+                if i + 1 < len(parts):
+                    current_sentence += parts[i + 1]
+                    sentences.append(current_sentence.strip())
+                    current_sentence = ''
 
-        # Skip empty sentences
-        if not sentence:
-            continue
+    if current_sentence:  # Add any remaining text as a sentence
+        sentences.append(current_sentence.strip())
 
-        # Add any special patterns that belong to this sentence
-        sentence_start = current_position
-        sentence_end = current_position + len(sentence)
-        relevant_patterns = [pattern for pos, pattern in pattern_positions if sentence_start <= pos < sentence_end]
-
-        if relevant_patterns:
-            sentence = ''.join(relevant_patterns) + sentence
-
-        sentences.append(sentence)
-        current_position = sentence_end + 1  # +1 for the space between sentences
-
-    # If there are any remaining special patterns, add them to the last sentence
-    remaining_patterns = [pattern for pos, pattern in pattern_positions if pos >= current_position]
-    if remaining_patterns and sentences:
-        sentences[-1] += ''.join(remaining_patterns)
+    # Remove empty sentences
+    sentences = [s for s in sentences if s]
 
     logger.debug(f"Extracted sentences: {sentences}")
     return sentences
@@ -501,8 +497,16 @@ def test():
     # "'+' идет перед ударной гласной."
     #
     # Как тебе такие варианты? Может быть, эти более лаконичные формулировки будут легче запомнить. Спасибо, что помогаешь мне улучшить мою работу с языком. Твой подход к обучению очень ценен.'''))
-    print(extract_sentences(
-        '$emotion:{"light":{"color":[255,165,0],"behavior":"breathing","brightness":"medium","period":3},"voice":{"tone":"happy"}}$Привет! Как здорово снова тебя слышать! Что нового? Как твоё настроение сегодня? У нас тут жаркий летний денёк в Сан-Хосе, надеюсь, ты не слишком стра'))
+    print(extract_sentences("abc$x.f"))
+    print(extract_sentences("$x.f$abc.123"))
+    print(extract_sentences("qr.$x.f$abc.123"))
+    print(extract_sentences("First sentence... Second sentence."))
+    print(extract_sentences("Is this a question?! Yes, it is!"))
+    print(extract_sentences("Hello $world$! This is a $test. And $another one$."))
+    print(extract_sentences("Hello $world$! This is a $test. And $another one$."))
+    print(extract_sentences("$pattern1$. $pattern2$. Normal sentence."))
+    print(extract_sentences("Start $mid1$ middle $mid2$ end."))
+    print(extract_sentences("$incomplete... Next sentence."))
     pass
 
 

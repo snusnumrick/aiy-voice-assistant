@@ -70,7 +70,7 @@ def extract_facts(text: str, timezone: str) -> Tuple[str, List[str]]:
     return modified_text, extracted_facts
 
 
-def extract_rules(text: str, current_timezone: str) -> Tuple[str, List[str]]:
+def extract_rules(text: str) -> Tuple[str, List[str]]:
     """
     Extract rules from the input text and return the modified text and a list of extracted rules.
 
@@ -91,7 +91,7 @@ def extract_rules(text: str, current_timezone: str) -> Tuple[str, List[str]]:
 
     # Process each match
     for match in matches:
-        logger.debug(f"Extracted rule: {match}")
+        logger.info(f"Extracted rule: {match}")
         # rule = get_current_date_time_for_facts(current_timezone) + " : " + match
         rule = match
         extracted_rules.append(rule)
@@ -247,7 +247,7 @@ class ConversationManager:
             if facts:
                 logger.info(f"Extracted facts: {facts}")
 
-            response_text, rules = extract_rules(response_text, self.timezone)
+            response_text, rules = extract_rules(response_text)
             self.rules += rules
             self.save_rules(self.rules)
 
