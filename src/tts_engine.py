@@ -37,7 +37,7 @@ from pydub import AudioSegment
 from speechkit import model_repository
 
 from src.config import Config
-from src.tools import retry_async
+from src.tools import retry_async, time_string_ms
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -283,12 +283,13 @@ class YandexTTSEngine(TTSEngine):
     Implementation of TTSEngine using Yandex SpeechKit via the speechkit module.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, timezone: str = ""):
         """
         Initialize the Yandex TTS engine.
 
         Args:
             config (Config): The application configuration object.
+            timezone (str): The timezone to use.
         """
         from speechkit import configure_credentials, creds
 
@@ -309,6 +310,7 @@ class YandexTTSEngine(TTSEngine):
         self.role_plain = config.get('yandex_tts_role_plain', 'neutral')
         self.role_happy = config.get('yandex_tts_role_happy', 'good')
         self.speed = config.get('yandex_tts_speed', 1.0)
+        self.timezone = timezone
 
     def voice_model(self, tone=Tone.PLAIN, lang=Language.RUSSIAN):
         model = model_repository.synthesis_model()
@@ -352,10 +354,12 @@ class YandexTTSEngine(TTSEngine):
 
         loop = asyncio.get_event_loop()
         args = {"model": self.voice_model(tone=tone, lang=lang), "text": text}
-        logger.debug(f"Synthesizing text: {text[:50]}...")
+        time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        logger.info(f"{time_str}Synthesizing text: {text[:50]}...")
         result = await loop.run_in_executor(None, synthesize_wrapper, args)
 
-        logger.debug(f"Audio content being written to file {filename}")
+        time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        logger.info(f"{time_str}Audio content being written to file {filename}")
         async with aiofiles.open(filename, "wb") as out:
             await out.write(result)
 
