@@ -314,8 +314,8 @@ class YandexTTSEngine(TTSEngine):
 
         # cache
         self.voice_models = {}
-        self.voice_model(tone=Tone.PLAIN, lnag=Language.RUSSIAN)
-        self.voice_model(tone=Tone.HAPPY, lnag=Language.RUSSIAN)
+        self.voice_model(tone=Tone.PLAIN, lang=Language.RUSSIAN)
+        self.voice_model(tone=Tone.HAPPY, lang=Language.RUSSIAN)
 
     def voice_model(self, tone=Tone.PLAIN, lang=Language.RUSSIAN):
         if lang in self.voice_models and tone in self.voice_models[lang]:
