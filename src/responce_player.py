@@ -9,7 +9,6 @@ import queue
 import re
 import tempfile
 import threading
-import asyncio
 import time
 from subprocess import Popen
 from typing import List, Tuple, Dict, Optional
@@ -185,7 +184,7 @@ class ResponsePlayer:
         current_light (Optional[Dict]): The current LED behavior.
         lock (threading.Lock): Lock for ensuring thread-safe operations.
         _stopped (bool): Flag indicating whether the player is in a stopped state.
-        # condition (threading.Condition): Condition variable for efficient thread synchronization.
+        condition (threading.Condition): Condition variable for efficient thread synchronization.
     """
 
     def __init__(self, playlist: List[Tuple[Optional[Dict], str]], leds: Leds, timezone: str):
@@ -211,6 +210,7 @@ class ResponsePlayer:
         self.current_light = None
         self.lock = threading.Lock()
         self._stopped = False
+        self.condition = threading.Condition(self.lock)
         for item in playlist:
             self.add(item)
 
@@ -233,8 +233,9 @@ class ResponsePlayer:
         light_item = (light, file)
         logger.info(f"({time_string_ms(self.timezone)}) Adding {light_item} to merge queue.")
 
-        with self.lock:
+        with self.condition:
             self.merge_queue.put(light_item)
+            self.condition.notify()  # Notify waiting threads that a new item is available
 
         if self.merge_thread is None or not self.merge_thread.is_alive():
             self.merge_thread = threading.Thread(target=self._merge_audio_files)
@@ -253,27 +254,26 @@ class ResponsePlayer:
         while self._should_play or not self.merge_queue.empty():
             try:
                 light, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
-                logger.debug(f"({time_string_ms(self.timezone)}) merging {light} {wav} {self.current_light} {self.wav_list}")
+                logger.info(f"({time_string_ms(self.timezone)}) merging {light} {wav} {self.current_light} {self.wav_list}")
                 with self.lock:
                     if self.current_light is None:
                         self.current_light = light if light is not None else {}
                         self.wav_list = [wav]
-                        logger.debug(f"1 {self.current_light} {self.wav_list}")
+                        logger.info(f"1 {self.current_light} {self.wav_list}")
                     elif light is None or light == self.current_light:
                         self.wav_list.append(wav)
-                        logger.debug(f"2 {self.current_light} {self.wav_list}")
+                        logger.info(f"2 {self.current_light} {self.wav_list}")
                     else:
                         self._process_wav_list()
                         self.current_light = light
                         self.wav_list = [wav]
-                        logger.debug(f"3 {self.current_light} {self.wav_list}")
-
+                        logger.info(f"3 {self.current_light} {self.wav_list}")
             except queue.Empty:
                 if self.wav_list:
                     self._process_wav_list()
                     self.wav_list = []
                     self.current_light = None
-                    logger.debug(f"4 {self.current_light} {self.wav_list}")
+                    logger.info(f"4 {self.current_light} {self.wav_list}")
         logger.info("Merge process ended")
 
     def _process_wav_list(self):
@@ -320,10 +320,12 @@ class ResponsePlayer:
         """
         logger.info("_play_sequence started")
         while self._should_play:
-            with self.lock:
+            with self.condition:
                 while self._should_play and self.playlist.empty() and self.merge_queue.empty():
                     # Wait for an item to be added or for stop to be called
-                    time.sleep(0.1)
+                    logger.info(f"({time_string_ms(self.timezone)}) wait for condition")
+                    self.condition.wait()
+                    logger.info(f"{self._should_play} and {self.playlist.empty()} and {self.merge_queue.empty()}")
 
                 logger.info(f"({time_string_ms(self.timezone)}) ready to play")
                 if not self._should_play:
@@ -372,9 +374,10 @@ class ResponsePlayer:
         The use of condition variables ensures that waiting threads are immediately notified of the stop request.
         """
         logger.info("Stopping playback and clearing all queues")
-        with self.lock:
+        with self.condition:
             self._should_play = False
             self._stopped = True
+            self.condition.notify_all()  # Wake up all waiting threads
 
         # Terminate current playback
         if self.current_process:
