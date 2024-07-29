@@ -158,7 +158,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             process_tasks.append(process_task)
 
                             # Yield control to allow tasks to start executing
-                            await asyncio.sleep(0)
+                            await asyncio.sleep(0.1)
 
                     # Wait for all synthesis tasks to complete
                     logger.debug("Waiting for all synthesis tasks to complete")
