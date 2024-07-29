@@ -328,6 +328,7 @@ class ResponsePlayer:
                     logger.info(f"({time_string_ms(self.timezone)}) condition")
 
                 if not self._should_play:
+                    logger.info(f"should_play: False")
                     break
 
                 try:
@@ -371,7 +372,7 @@ class ResponsePlayer:
 
         The use of condition variables ensures that waiting threads are immediately notified of the stop request.
         """
-        logger.debug("Stopping playback and clearing all queues")
+        logger.info("Stopping playback and clearing all queues")
         with self.condition:
             self._should_play = False
             self._stopped = True
