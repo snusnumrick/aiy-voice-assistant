@@ -363,20 +363,21 @@ class YandexTTSEngine(TTSEngine):
             """Wrapper method to call synthesize with the correct parameters."""
             return par["model"].synthesize(par["text"], raw_format=True)
 
-        logger.info(f"({time_string_ms(self.timezone)}) Starting synthesize_async for {text}: {filename}")
+        # time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        # logger.debug(f"{time_str}Starting synthesize_async for {text}: {filename}")
 
         loop = asyncio.get_event_loop()
-        time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
-        logger.info(f"({time_str}) Creating voice_model for {tone}: {lang}")
+        # time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        # logger.debug(f"{time_str}Creating voice_model for {tone}: {lang}")
         args = {"model": self.voice_model(tone=tone, lang=lang), "text": text}
-        time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
-        logger.info(f"({time_str}) Created voice_model for {tone}: {lang}")
+        # time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        # logger.debug(f"({time_str}) Created voice_model for {tone}: {lang}")
         time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
         logger.info(f"{time_str}Synthesizing text: {text[:50]}...")
         result = await loop.run_in_executor(None, synthesize_wrapper, args)
 
-        time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
-        logger.info(f"{time_str}Audio content being written to file {filename}")
+        # time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        # logger.debug(f"{time_str}Audio content being written to file {filename}")
         async with aiofiles.open(filename, "wb") as out:
             await out.write(result)
 
