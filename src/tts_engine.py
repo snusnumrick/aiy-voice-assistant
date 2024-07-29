@@ -314,6 +314,8 @@ class YandexTTSEngine(TTSEngine):
 
         # cache
         self.voice_models: Dict[Language: Dict[Tone, model_repository.SynthesisModel]] = {}
+        self.voice_model(tone=Tone.PLAIN, lang=Language.RUSSIAN)
+        self.voice_model(tone=Tone.HAPPY, lang=Language.RUSSIAN)
 
     def voice_model(self, tone=Tone.PLAIN, lang=Language.RUSSIAN):
         if lang in self.voice_models and tone in self.voice_models[lang]:
