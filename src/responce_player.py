@@ -325,8 +325,9 @@ class ResponsePlayer:
                     # Wait for an item to be added or for stop to be called
                     logger.info(f"({time_string_ms(self.timezone)}) wait for condition")
                     self.condition.wait()
-                    logger.info(f"({time_string_ms(self.timezone)}) condition")
+                    logger.info(f"{self._should_play} and {self.playlist.empty()} and {self.merge_queue.empty()}")
 
+                logger.info(f"({time_string_ms(self.timezone)}) ready to play")
                 if not self._should_play:
                     logger.info(f"should_play: False")
                     break
