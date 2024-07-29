@@ -225,7 +225,7 @@ class ResponsePlayer:
             playitem (Tuple[Optional[Dict], str]): A tuple containing the LED behavior (or None) and the audio file path.
         """
         if self._stopped:
-            logger.debug(f"Ignoring add request for {playitem} as player is stopped.")
+            logger.warning(f"Ignoring add request for {playitem} as player is stopped.")
             return
 
         emo, file = playitem
@@ -259,22 +259,22 @@ class ResponsePlayer:
                     if self.current_light is None:
                         self.current_light = light if light is not None else {}
                         self.wav_list = [wav]
-                        logger.debug(f"1 {self.current_light} {self.wav_list}")
+                        logger.info(f"1 {self.current_light} {self.wav_list}")
                     elif light is None or light == self.current_light:
                         self.wav_list.append(wav)
-                        logger.debug(f"2 {self.current_light} {self.wav_list}")
+                        logger.info(f"2 {self.current_light} {self.wav_list}")
                     else:
                         self._process_wav_list()
                         self.current_light = light
                         self.wav_list = [wav]
-                        logger.debug(f"3 {self.current_light} {self.wav_list}")
+                        logger.info(f"3 {self.current_light} {self.wav_list}")
             except queue.Empty:
                 if self.wav_list:
                     self._process_wav_list()
                     self.wav_list = []
                     self.current_light = None
-                    logger.debug(f"4 {self.current_light} {self.wav_list}")
-        logger.debug("Merge process ended")
+                    logger.info(f"4 {self.current_light} {self.wav_list}")
+        logger.info("Merge process ended")
 
     def _process_wav_list(self):
         """
@@ -293,7 +293,7 @@ class ResponsePlayer:
             combine_audio_files(self.wav_list, output_filename)
             self.playlist.put((self.current_light, output_filename))
         self.wav_list = []
-        logger.debug(
+        logger.info(
             f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list}, {self.playlist}")
 
     def play(self):
