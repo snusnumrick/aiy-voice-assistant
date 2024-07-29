@@ -235,7 +235,6 @@ class ResponsePlayer:
 
         with self.condition:
             self.merge_queue.put(light_item)
-            self.condition.notify()  # Notify waiting threads that a new item is available
 
         if self.merge_thread is None or not self.merge_thread.is_alive():
             self.merge_thread = threading.Thread(target=self._merge_audio_files)
@@ -268,6 +267,8 @@ class ResponsePlayer:
                         self.current_light = light
                         self.wav_list = [wav]
                         logger.info(f"3 {self.current_light} {self.wav_list}")
+                    self.condition.notify()  # Notify waiting threads that a new item is available
+
             except queue.Empty:
                 if self.wav_list:
                     self._process_wav_list()
@@ -320,18 +321,18 @@ class ResponsePlayer:
         """
         logger.info("_play_sequence started")
         while self._should_play:
-            while self._should_play and self.playlist.empty() and self.merge_queue.empty():
-                # Wait for an item to be added or for stop to be called
-                logger.info(f"({time_string_ms(self.timezone)}) wait for condition")
-                self.condition.wait()
-                logger.info(f"{self._should_play} and {self.playlist.empty()} and {self.merge_queue.empty()}")
-
-            logger.info(f"({time_string_ms(self.timezone)}) ready to play")
-            if not self._should_play:
-                logger.info(f"should_play: False")
-                break
-
             with self.condition:
+                while self._should_play and self.playlist.empty() and self.merge_queue.empty():
+                    # Wait for an item to be added or for stop to be called
+                    logger.info(f"({time_string_ms(self.timezone)}) wait for condition")
+                    self.condition.wait()
+                    logger.info(f"{self._should_play} and {self.playlist.empty()} and {self.merge_queue.empty()}")
+
+                logger.info(f"({time_string_ms(self.timezone)}) ready to play")
+                if not self._should_play:
+                    logger.info(f"should_play: False")
+                    break
+
                 try:
                     light, audio_file = self.playlist.get_nowait()
                     logger.info(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
