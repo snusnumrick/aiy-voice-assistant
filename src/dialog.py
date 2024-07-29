@@ -105,7 +105,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
 
                     async def process_synthesis_result(num, emo, audio_file_name, task):
                         nonlocal response_player
-                        logger.debug(f"Starting process_synthesis_result for {audio_file_name}")
+                        logger.info(f"({time_string_ms(timezone)}) Starting process_synthesis_result for {audio_file_name}")
                         try:
                             if num > 0:
                                 await asyncio.gather(*synthesis_tasks[:num], return_exceptions=True)

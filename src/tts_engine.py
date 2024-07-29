@@ -352,6 +352,8 @@ class YandexTTSEngine(TTSEngine):
             """Wrapper method to call synthesize with the correct parameters."""
             return par["model"].synthesize(par["text"], raw_format=True)
 
+        logger.info(f"({time_string_ms(self.timezone)}) Starting synthesize_async for {text}: {filename}")
+
         loop = asyncio.get_event_loop()
         args = {"model": self.voice_model(tone=tone, lang=lang), "text": text}
         time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
