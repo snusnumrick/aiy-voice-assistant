@@ -318,12 +318,14 @@ class ResponsePlayer:
         It handles playing audio files and controlling LED behavior. It uses a condition variable
         to efficiently wait for new items to be added to the playlist or for a stop signal.
         """
-        logger.debug("_play_sequence started")
+        logger.info("_play_sequence started")
         while self._should_play:
             with self.condition:
                 while self._should_play and self.playlist.empty() and self.merge_queue.empty():
                     # Wait for an item to be added or for stop to be called
+                    logger.info(f"({time_string_ms(self.timezone)}) wait for condition")
                     self.condition.wait()
+                    logger.info(f"({time_string_ms(self.timezone)}) condition")
 
                 if not self._should_play:
                     break
