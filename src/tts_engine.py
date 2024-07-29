@@ -372,8 +372,8 @@ class YandexTTSEngine(TTSEngine):
         args = {"model": self.voice_model(tone=tone, lang=lang), "text": text}
         # time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
         # logger.debug(f"({time_str}) Created voice_model for {tone}: {lang}")
-        time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
-        logger.info(f"{time_str}Synthesizing text: {text[:50]}...")
+        # time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        # logger.debug(f"{time_str}Synthesizing text: {text[:50]}...")
         result = await loop.run_in_executor(None, synthesize_wrapper, args)
 
         # time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
