@@ -355,7 +355,11 @@ class YandexTTSEngine(TTSEngine):
         logger.info(f"({time_string_ms(self.timezone)}) Starting synthesize_async for {text}: {filename}")
 
         loop = asyncio.get_event_loop()
+        time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        logger.info(f"({time_str}) Creating voice_model for {tone}: {lang}")
         args = {"model": self.voice_model(tone=tone, lang=lang), "text": text}
+        time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        logger.info(f"({time_str}) Created voice_model for {tone}: {lang}")
         time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
         logger.info(f"{time_str}Synthesizing text: {text[:50]}...")
         result = await loop.run_in_executor(None, synthesize_wrapper, args)
