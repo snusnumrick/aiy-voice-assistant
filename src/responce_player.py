@@ -9,7 +9,6 @@ import queue
 import re
 import tempfile
 import threading
-import time
 from subprocess import Popen
 from typing import List, Tuple, Dict, Optional
 
@@ -17,7 +16,7 @@ from aiy.leds import Leds, Pattern
 from aiy.voice.audio import play_wav_async
 from .tools import time_string_ms
 
-from src.tools import combine_audio_files
+from src.tools import combine_audio_files, time_string_ms
 
 logger = logging.getLogger(__name__)
 
@@ -254,7 +253,8 @@ class ResponsePlayer:
         while self._should_play or not self.merge_queue.empty():
             try:
                 light, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
-                logger.info(f"({time_string_ms(self.timezone)}) merging {light} {wav} {self.current_light} {self.wav_list}")
+                logger.info(
+                    f"({time_string_ms(self.timezone)}) merging {light} {wav} {self.current_light} {self.wav_list}")
                 with self.lock:
                     if self.current_light is None:
                         self.current_light = light if light is not None else {}
@@ -303,12 +303,13 @@ class ResponsePlayer:
         This method initiates the playback thread if it's not already running and resets the stopped state.
         """
         logger.debug("Starting playback")
-        if not self._should_play:
-            self._should_play = True
-            self._stopped = False
-            self._playback_completed.clear()
-            self.play_thread = threading.Thread(target=self._play_sequence)
-            self.play_thread.start()
+        with self.condition:
+            if not self._should_play:
+                self._should_play = True
+                self._stopped = False
+                self._playback_completed.clear()
+                self.play_thread = threading.Thread(target=self._play_sequence)
+                self.play_thread.start()
 
     def _play_sequence(self):
         """
@@ -337,7 +338,7 @@ class ResponsePlayer:
                     logger.info(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
                 except queue.Empty:
                     # If playlist is empty, process wav_list and continue
-                    logger.info(" playlist is empty, process wav_list and continue")
+                    logger.info("playlist is empty, process wav_list and continue")
                     self._process_wav_list()
                     continue
 
@@ -373,31 +374,28 @@ class ResponsePlayer:
 
         The use of condition variables ensures that waiting threads are immediately notified of the stop request.
         """
+
+        def clear_queue(q):
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    break
+
         logger.info("Stopping playback and clearing all queues")
         with self.condition:
             self._should_play = False
             self._stopped = True
-            self.condition.notify_all()  # Wake up all waiting threads
+            self.condition.notify_all()
 
-        # Terminate current playback
         if self.current_process:
             self.current_process.terminate()
 
-        # Clear all queues
         with self.lock:
-            while not self.merge_queue.empty():
-                try:
-                    self.merge_queue.get_nowait()
-                except queue.Empty:
-                    break
-            while not self.playlist.empty():
-                try:
-                    self.playlist.get_nowait()
-                except queue.Empty:
-                    break
+            clear_queue(self.merge_queue)
+            clear_queue(self.playlist)
             self.wav_list.clear()
 
-        # Wait for threads to complete
         self._playback_completed.wait(timeout=5.0)
         if self.play_thread and self.play_thread.is_alive():
             self.play_thread.join(timeout=1.0)
