@@ -63,7 +63,7 @@ def main():
             logger.error(f"failed to initialize ElevenLabs: {e}")
         yandex_engine = None
         try:
-            yandex_engine = YandexTTSEngine(config)
+            yandex_engine = YandexTTSEngine(config, timezone=timezone)
         except Exception as e:
             logger.error(f"failed to initialize Yandex: {e}")
         if not elevenlabs_engine and not yandex_engine:
