@@ -253,15 +253,15 @@ class WebSearcher:
         try:
             combined_result = await self.search_providers_async(query, providers)
 
-            logger.debug(f"\n---------\n{query} result: {combined_result}")
+            # logger.debug(f"\n---------\n{query} result: {combined_result}")
+            #
+            # prompt = (f"Answer short. Based on result from internet search below, what is the answer to the question: "
+            #           f"{query}\n\n{combined_result}")
+            # result = self.ai_model.get_response([{"role": "user", "content": prompt}])
+            result = combined_result
 
-            prompt = (f"Answer short. Based on result from internet search below, what is the answer to the question: "
-                      f"{query}\n\n{combined_result}")
-            result = self.ai_model.get_response([{"role": "user", "content": prompt}])
-
-            logger.info(f"Final search result for query '{query}' is: {result}")
             duration = time.time() - start_time
-            logger.debug(f"Web search took {duration:.2f} seconds")
+            logger.info(f"Final search took {duration:.2f} seconds; result for query '{query}' is: {result}")
             return result
 
         except Exception as e:
