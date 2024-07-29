@@ -231,7 +231,7 @@ class ResponsePlayer:
         emo, file = playitem
         light = None if emo is None else emo.get('light', {})
         light_item = (light, file)
-        logger.debug(f"Adding {light_item} to merge queue.")
+        logger.info(f"({time_string_ms(self.timezone)}) Adding {light_item} to merge queue.")
 
         with self.condition:
             self.merge_queue.put(light_item)
