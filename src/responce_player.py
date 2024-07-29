@@ -254,7 +254,7 @@ class ResponsePlayer:
         while self._should_play or not self.merge_queue.empty():
             try:
                 light, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
-                logger.debug(f"merging {light} {wav} {self.current_light} {self.wav_list}")
+                logger.info(f"({time_string_ms(self.timezone)}) merging {light} {wav} {self.current_light} {self.wav_list}")
                 with self.lock:
                     if self.current_light is None:
                         self.current_light = light if light is not None else {}
@@ -285,7 +285,7 @@ class ResponsePlayer:
         """
         if not self.wav_list:
             return
-        logger.debug(f"merging {self.current_light} {self.wav_list} {self.playlist}")
+        logger.info(f"({time_string_ms(self.timezone)}) merging {self.current_light} {self.wav_list} {self.playlist}")
         if len(self.wav_list) == 1:
             self.playlist.put((self.current_light, self.wav_list[0]))
         else:
