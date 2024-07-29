@@ -332,6 +332,7 @@ class ResponsePlayer:
                     light, audio_file = self.playlist.get_nowait()
                 except queue.Empty:
                     # If playlist is empty, process wav_list and continue
+                    logger.info(" playlist is empty, process wav_list and continue")
                     self._process_wav_list()
                     continue
 
