@@ -313,7 +313,7 @@ class YandexTTSEngine(TTSEngine):
         self.timezone = timezone
 
         # cache
-        self.voice_models = {}
+        self.voice_models: Dict[Language: Dict[Tone, model_repository.SynthesisModel]] = {}
 
     def voice_model(self, tone=Tone.PLAIN, lang=Language.RUSSIAN):
         if lang in self.voice_models and tone in self.voice_models[lang]:
@@ -324,7 +324,10 @@ class YandexTTSEngine(TTSEngine):
             model.role = self.roles[tone]
         model.language = self.langs[lang]
         model.speed = self.speed
-        self.voice_models[lang][tone] = model
+        if lang in self.voice_models:
+            self.voice_models[lang][tone] = model
+        else:
+            self.voice_models[lang] = {tone: model}
         return model
 
     def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> None:
