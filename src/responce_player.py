@@ -9,6 +9,7 @@ import queue
 import re
 import tempfile
 import threading
+import asyncio
 import time
 from subprocess import Popen
 from typing import List, Tuple, Dict, Optional
@@ -184,7 +185,7 @@ class ResponsePlayer:
         current_light (Optional[Dict]): The current LED behavior.
         lock (threading.Lock): Lock for ensuring thread-safe operations.
         _stopped (bool): Flag indicating whether the player is in a stopped state.
-        condition (threading.Condition): Condition variable for efficient thread synchronization.
+        # condition (threading.Condition): Condition variable for efficient thread synchronization.
     """
 
     def __init__(self, playlist: List[Tuple[Optional[Dict], str]], leds: Leds, timezone: str):
@@ -210,7 +211,6 @@ class ResponsePlayer:
         self.current_light = None
         self.lock = threading.Lock()
         self._stopped = False
-        self.condition = threading.Condition(self.lock)
         for item in playlist:
             self.add(item)
 
@@ -233,7 +233,7 @@ class ResponsePlayer:
         light_item = (light, file)
         logger.info(f"({time_string_ms(self.timezone)}) Adding {light_item} to merge queue.")
 
-        with self.condition:
+        with self.lock:
             self.merge_queue.put(light_item)
 
         if self.merge_thread is None or not self.merge_thread.is_alive():
@@ -267,7 +267,6 @@ class ResponsePlayer:
                         self.current_light = light
                         self.wav_list = [wav]
                         logger.info(f"3 {self.current_light} {self.wav_list}")
-                    self.condition.notify()  # Notify waiting threads that a new item is available
 
             except queue.Empty:
                 if self.wav_list:
@@ -321,12 +320,12 @@ class ResponsePlayer:
         """
         logger.info("_play_sequence started")
         while self._should_play:
-            with self.condition:
+            with self.lock:
                 while self._should_play and self.playlist.empty() and self.merge_queue.empty():
                     # Wait for an item to be added or for stop to be called
-                    logger.info(f"({time_string_ms(self.timezone)}) wait for condition")
-                    self.condition.wait()
-                    logger.info(f"{self._should_play} and {self.playlist.empty()} and {self.merge_queue.empty()}")
+                    asyncio.sleep(0.1)
+                    # logger.info(f"({time_string_ms(self.timezone)}) wait for condition")
+                    # logger.info(f"{self._should_play} and {self.playlist.empty()} and {self.merge_queue.empty()}")
 
                 logger.info(f"({time_string_ms(self.timezone)}) ready to play")
                 if not self._should_play:
@@ -375,10 +374,9 @@ class ResponsePlayer:
         The use of condition variables ensures that waiting threads are immediately notified of the stop request.
         """
         logger.info("Stopping playback and clearing all queues")
-        with self.condition:
+        with self.lock:
             self._should_play = False
             self._stopped = True
-            self.condition.notify_all()  # Wake up all waiting threads
 
         # Terminate current playback
         if self.current_process:
