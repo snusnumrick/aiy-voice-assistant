@@ -312,13 +312,21 @@ class YandexTTSEngine(TTSEngine):
         self.speed = config.get('yandex_tts_speed', 1.0)
         self.timezone = timezone
 
+        # cache
+        self.voice_models = {}
+        self.voice_model(tone=Tone.PLAIN, lnag=Language.RUSSIAN)
+        self.voice_model(tone=Tone.HAPPY, lnag=Language.RUSSIAN)
+
     def voice_model(self, tone=Tone.PLAIN, lang=Language.RUSSIAN):
+        if lang in self.voice_models and tone in self.voice_models[lang]:
+            return self.voice_models[lang][tone]
         model = model_repository.synthesis_model()
         model.voice = self.lang_voices[lang]
         if lang == Language.RUSSIAN:
             model.role = self.roles[tone]
         model.language = self.langs[lang]
         model.speed = self.speed
+        self.voice_models[lang][tone] = model
         return model
 
     def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> None:
