@@ -253,27 +253,27 @@ class ResponsePlayer:
         while self._should_play or not self.merge_queue.empty():
             try:
                 light, wav = self.merge_queue.get(timeout=1.0)  # Wait for 1 second for new items
-                logger.info(f"({time_string_ms(self.timezone)}) merging {light} {wav} {self.current_light} {self.wav_list}")
+                logger.debug(f"({time_string_ms(self.timezone)}) merging {light} {wav} {self.current_light} {self.wav_list}")
                 with self.lock:
                     if self.current_light is None:
                         self.current_light = light if light is not None else {}
                         self.wav_list = [wav]
-                        logger.info(f"1 {self.current_light} {self.wav_list}")
+                        logger.debug(f"1 {self.current_light} {self.wav_list}")
                     elif light is None or light == self.current_light:
                         self.wav_list.append(wav)
-                        logger.info(f"2 {self.current_light} {self.wav_list}")
+                        logger.debug(f"2 {self.current_light} {self.wav_list}")
                     else:
                         self._process_wav_list()
                         self.current_light = light
                         self.wav_list = [wav]
-                        logger.info(f"3 {self.current_light} {self.wav_list}")
+                        logger.debug(f"3 {self.current_light} {self.wav_list}")
 
             except queue.Empty:
                 if self.wav_list:
                     self._process_wav_list()
                     self.wav_list = []
                     self.current_light = None
-                    logger.info(f"4 {self.current_light} {self.wav_list}")
+                    logger.debug(f"4 {self.current_light} {self.wav_list}")
         logger.info("Merge process ended")
 
     def _process_wav_list(self):
@@ -323,9 +323,7 @@ class ResponsePlayer:
             with self.lock:
                 while self._should_play and self.playlist.empty() and self.merge_queue.empty():
                     # Wait for an item to be added or for stop to be called
-                    asyncio.sleep(0.1)
-                    # logger.info(f"({time_string_ms(self.timezone)}) wait for condition")
-                    # logger.info(f"{self._should_play} and {self.playlist.empty()} and {self.merge_queue.empty()}")
+                    time.sleep(0.1)
 
                 logger.info(f"({time_string_ms(self.timezone)}) ready to play")
                 if not self._should_play:
