@@ -72,7 +72,7 @@ def main():
                        Language.ENGLISH: elevenlabs_engine if elevenlabs_engine else yandex_engine,
                        Language.GERMAN: elevenlabs_engine if elevenlabs_engine else yandex_engine}
         # ai_model = OpenRouterModel(config)
-        ai_model = ClaudeAIModelWithTools(config, tools)
+        ai_model = ClaudeAIModelWithTools(config, tools, timezone=timezone)
         conversation_manager = ConversationManager(config, ai_model, timezone)
 
         # Start the main conversation loop

@@ -137,7 +137,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         Yields:
            str: Complete sentences from the AI model's response.
         """
-        logger.info(f"{self._time_str()}AI get_response_async: {messages}")
+        logger.info(f"{self._time_str()}AI get_response_async: {messages[-2:]}")
         streaming = self.config.get("llm_streaming", False)
         if streaming:
             async for response in self._get_response_async_streaming(messages):
