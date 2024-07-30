@@ -224,10 +224,10 @@ class ConversationManager:
             new_message_history = await summarize_and_compress_history(self.message_history, self.summarize_model,
                                                                        self.config)
             if new_message_history != self.message_history:
+                self.message_history = new_message_history
                 newline_str = "\n\n"
                 logger.info(
                     f'Compressed  conversation:  {(newline_str + self.formatted_message_history(150) + newline_str)}')
-                self.message_history = new_message_history
 
         logger.debug(f"Message history: \n{self.formatted_message_history()}")
 

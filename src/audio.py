@@ -246,14 +246,18 @@ class SpeechTranscriber:
             record_more = 0
             breathing_on = False
 
-            def start_idle():
+            def start_idle() -> bool:
                 nonlocal status, time_breathing_started, breathing_on, player_process
-                logger.info(f'({time_string_ms(self.timezone)}) Ready to listen...')
                 if player_process is None or not player_process.is_playing():
+                    logger.info(f'({time_string_ms(self.timezone)}) Ready to listen...')
                     self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
                     self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
                     time_breathing_started = time.time()
                     breathing_on = True
+                    return True
+                else:
+                    logger.info("still paying")
+                    return False
 
             def start_listening():
                 nonlocal status, breathing_on, recoding_started_at
@@ -277,22 +281,25 @@ class SpeechTranscriber:
 
             def stop_playing():
                 nonlocal player_process
-                if player_process and player_process.is_playing():
+                if player_process:
                     try:
-                        logger.debug("Terminating player process")
+                        logger.info("Stopping player process")
                         chunks_deque.clear()
                         player_process.stop()
-                        logger.debug("Player process terminated")
+                        logger.info("Player process stopped")
                     except Exception as e:
-                        logger.error(f"Error terminating player process: {str(e)}")
+                        logger.error(f"Error stopping player process: {str(e)}")
 
             chunks = []
-            start_idle()
+            idle = start_idle()
             status = RecordingStatus.NOT_STARTED
 
             recoding_started_at = time.time()
             time_breathing_started = time.time()
             for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
+
+                if status == RecordingStatus.NOT_STARTED and not idle:
+                    idle = start_idle()
 
                 if self.cleaning_routine:
                     await self.check_and_schedule_cleaning()
