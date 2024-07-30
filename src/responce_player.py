@@ -293,14 +293,19 @@ class ResponsePlayer:
         into a single file, or add a single WAV file directly to the playlist.
         """
         with self.lock:
+            logger.info(f"process wav list {self.wav_list}")
+
             if not self.wav_list:
                 return
+
             last_text = self.wav_list[-1][1]
             if last_text and not last_text[-1] in ".!?":
                 logger.info(f"wav list does not end with sentence ending: {self.wav_list}")
                 return
-            logger.debug(
+
+            logger.info(
                 f"({time_string_ms(self.timezone)}) merging {self.current_light} {self.wav_list} {self.playlist}")
+
             if len(self.wav_list) == 1:
                 self.playlist.put((self.current_light, self.wav_list[0][0]))
             else:
@@ -308,7 +313,8 @@ class ResponsePlayer:
                 combine_audio_files([w[0] for w in self.wav_list], output_filename)
                 self.playlist.put((self.current_light, output_filename))
             self.wav_list = []
-            logger.debug(
+
+            logger.info(
                 f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list}, {self.playlist}")
 
     def play(self):
