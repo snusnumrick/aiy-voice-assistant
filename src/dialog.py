@@ -103,7 +103,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                     process_tasks = []
                     synthesis_tasks = []
 
-                    async def process_synthesis_result(num, emo, audio_file_name, task):
+                    async def process_synthesis_result(num: int, emo, audio_file_name, task, response_text: str):
                         nonlocal response_player
                         logger.debug(f"({time_string_ms(timezone)}) Starting process_synthesis_result for {audio_file_name}")
                         try:
@@ -116,10 +116,11 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             if result:
                                 logger.info(f"({time_string_ms(timezone)}) Synthesis {audio_file_name} completed")
                                 if response_player is None:
-                                    response_player = ResponsePlayer([(emo, audio_file_name)], leds, timezone)
+                                    response_player = ResponsePlayer([(emo, audio_file_name, response_text)],
+                                                                     leds, timezone)
                                     response_player.play()
                                 else:
-                                    response_player.add((emo, audio_file_name))
+                                    response_player.add((emo, audio_file_name, response_text))
                             else:
                                 logger.error(f"Speech synthesis failed for file: {audio_file_name}")
                                 error_visual(leds)

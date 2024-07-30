@@ -147,7 +147,8 @@ class ConversationManager:
                                    "ударной гласной буквой в слове. "
                                    "Например: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
                                    "Этот знак никогда не ставится в конце слова или перед согласными. "
-                                   "Его единственная функция - указать на ударный гласный звук."
+                                   "Его единственная функция - указать на ударный гласный звук. "
+                                   "Исаользуй знак + только в русском языке. "
                                    "Если я прошу тебя как-то поменятся (например, не используй обсценную лексику); "
                                    "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
                                    "$rule: <текст нового правила>$. "
@@ -160,7 +161,7 @@ class ConversationManager:
                                    "the stressed vowel letter in the word. "
                                    "For example: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
                                    "This sign is never placed at the end of a word or before consonants. "
-                                   "Its sole function is to indicate the stressed vowel sound.")
+                                   "Its sole function is to indicate the stressed vowel sound. Use it only in Russian")
         self.hard_rules = self.hard_rules_russian
         self.default_system_prompt_russian = (
             "Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
