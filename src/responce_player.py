@@ -230,7 +230,7 @@ class ResponsePlayer:
             emo, file = playitem
             light = None if emo is None else emo.get('light', {})
             light_item = (light, file)
-            logger.info(f"({time_string_ms(self.timezone)}) Adding {light_item} to merge queue.")
+            logger.debug(f"({time_string_ms(self.timezone)}) Adding {light_item} to merge queue.")
             self.merge_queue.put(light_item)
 
         with self.condition:
@@ -256,7 +256,7 @@ class ResponsePlayer:
                     break
                 try:
                     light, wav = self.merge_queue.get_nowait()
-                    logger.info(
+                    logger.debug(
                         f"({time_string_ms(self.timezone)}) merging {light} {wav} {self.current_light} {self.wav_list}")
                     if self.current_light is None:
                         self.current_light = light if light is not None else {}
@@ -287,7 +287,7 @@ class ResponsePlayer:
         with self.lock:
             if not self.wav_list:
                 return
-            logger.info(
+            logger.debug(
                 f"({time_string_ms(self.timezone)}) merging {self.current_light} {self.wav_list} {self.playlist}")
             if len(self.wav_list) == 1:
                 self.playlist.put((self.current_light, self.wav_list[0]))
@@ -296,7 +296,7 @@ class ResponsePlayer:
                 combine_audio_files(self.wav_list, output_filename)
                 self.playlist.put((self.current_light, output_filename))
             self.wav_list = []
-            logger.info(
+            logger.debug(
                 f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list}, {self.playlist}")
 
     def play(self):
@@ -322,7 +322,7 @@ class ResponsePlayer:
         It handles playing audio files and controlling LED behavior. It uses a condition variable
         to efficiently wait for new items to be added to the playlist or for a stop signal.
         """
-        logger.info("_play_sequence started")
+        logger.debug("_play_sequence started")
         while True:
             with self.condition:
                 while self._should_play and self.playlist.empty() and self.merge_queue.empty():
@@ -333,7 +333,7 @@ class ResponsePlayer:
                     break
                 try:
                     light, audio_file = self.playlist.get_nowait()
-                    logger.info(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
+                    logger.debug(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
                 except queue.Empty:
                     # If playlist is empty, process wav_list and continue
                     logger.info("playlist is empty, process wav_list and continue")
