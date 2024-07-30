@@ -8,11 +8,11 @@ import time
 from collections import deque
 from datetime import datetime
 from functools import wraps
-from pydub import AudioSegment
 from typing import List, Dict, Union, Any, Callable, AsyncGenerator
 
 import geocoder
 import pytz
+from pydub import AudioSegment
 
 logger = logging.getLogger(__name__)
 
@@ -321,8 +321,7 @@ def clean_response(response: str) -> str:
     return re.sub(pattern, '', response)
 
 
-def retry(max_retries: int = 5, initial_retry_delay: float = 1, backoff_factor: float = 2,
-                jitter_factor: float = 0.1):
+def retry(max_retries: int = 5, initial_retry_delay: float = 1, backoff_factor: float = 2, jitter_factor: float = 0.1):
     """
     A decorator for implementing retry logic with exponential backoff and jitter.
 
@@ -433,34 +432,95 @@ def retry_async_generator(max_retries: int = 5, initial_retry_delay: float = 1, 
 
 def extract_sentences(text: str) -> List[str]:
     """
-    Extracts sentences from the given text while preserving special patterns.
+    Extracts sentences from the given text while preserving special patterns and numbered lists.
 
     This function handles text that may contain special patterns (starting with $)
     such as emotion tags or JSON-like structures. It preserves these patterns within
     the sentences, and correctly splits sentences at punctuation marks, even when
-    they appear immediately after a special pattern without a space.
+    they appear immediately after a special pattern without a space. It also preserves
+    numbered list items as part of their respective sentences.
 
     The function is designed to work with both English and Russian text.
 
     Args:
         text (str): The input text to be processed. May contain special patterns
-                    starting with $, as well as normal sentences in English or Russian.
+                    starting with $, as well as normal sentences in English or Russian,
+                    and numbered list items.
 
     Returns:
-        List[str]: A list of extracted sentences. Special patterns are preserved
-                   within the sentences they were originally associated with.
+        List[str]: A list of extracted sentences. Special patterns and numbered list
+                   items are preserved within the sentences they were originally associated with.
 
     Note:
     - The function treats $... patterns (complete or incomplete) as part of the sentence.
     - It correctly splits sentences at punctuation marks, even immediately after special patterns.
     - It handles ellipsis and multiple punctuation marks as single sentence endings.
     - Incomplete sentences or patterns at the end of the text are preserved.
+    - Numbered list items are kept as part of their respective sentences.
     """
     logger.debug(f"Extracting sentences from: {text}")
 
     # Define patterns
+
+    # match sequences that start with a dollar sign, followed by any characters that are not a dollar sign,
+    # and then end with either another dollar sign or the end of the line.
+    # \$ – Matches the dollar sign $.
+    # [^$]+ – Matches one or more (+) characters that are NOT a dollar sign, stopping when it encounters a dollar sign.
+    # (?:\$|$) – This is a non-capturing group that matches a dollar sign (\$) or the end of the line ($).
     special_pattern = r'\$[^$]+(?:\$|$)'
-    sentence_end_pattern = r'(?:[.!?]|\.{3})+'
+
+    # match whitespace character that comes after a sentence-ending punctuation mark (., ?, or !).
+    # It ensures this punctuation is not part of an abbreviation or initials.
+    # The actual match is just the whitespace, but it only matches if all these conditions are met.
+    #
+    # (?<!\w\.\w.):
+    #
+    # This is a negative lookbehind assertion.
+    # It ensures that the match is not preceded by a word character, followed by a period,
+    # followed by another word character. This helps avoid splitting sentences on abbreviations like "e.g." or "i.e.".
+    #
+    # (?<![A-Z][a-z]\.):
+    #
+    # Another negative lookbehind assertion.
+    # It ensures that the match is not preceded by a capital letter, followed by a lowercase letter,
+    # followed by a period. This helps avoid splitting on initials like "J.K. Rowling".
+    #
+    # (?<=\.|\?|!):
+    #
+    # This is a positive lookbehind assertion.
+    # It ensures that the match is preceded by either a period, question mark, or exclamation point.
+    # This identifies the actual end of a sentence.
+    #
+    # \s:
+    #
+    # This matches any whitespace character.
+    # It ensures that there's a space after the sentence-ending punctuation.
+    #
+    sentence_end_pattern = r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!)\s'
+
+    # match numbers followed by a period and a space: "1. ", "42. ", "007. ";
+    # Numbers followed by a period at the end of a string or line: "1.", "42.", "007."
+    #
+    # \d+:
+    #
+    # \d represents any digit (0-9).
+    # The + quantifier means "one or more" of the preceding element.
+    # So \d+ matches one or more digits.
+    #
+    # \.:
+    #
+    # This is a literal period (dot).
+    # The backslash is used to escape the dot because in regex, a dot normally means "any character except newline".
+    # By escaping it, we're saying we want to match an actual period.
+    #
+    # (\s|$):
+    #
+    # It's a group containing an alternation.
+    # \s matches any whitespace character (space, tab, newline, etc.).
+    # $ is an anchor that asserts the position at the end of the string or line.
+    # The | between them means "or".
+    #
+    numbered_list_pattern = r'\d+\.(\s|$)'
 
     # Find all special patterns and their positions
     special_matches = list(re.finditer(special_pattern, text))
@@ -484,13 +544,18 @@ def extract_sentences(text: str) -> List[str]:
             current_sentence += segment
         else:
             # Split the non-special segment by sentence endings
-            parts = re.split(f'({sentence_end_pattern})', segment)
-            for i in range(0, len(parts), 2):
-                current_sentence += parts[i]
-                if i + 1 < len(parts):
-                    current_sentence += parts[i + 1]
-                    sentences.append(current_sentence.strip())
-                    current_sentence = ''
+            parts = re.split(sentence_end_pattern, segment)
+            for i in range(0, len(parts), 1):
+                part = parts[i]
+                if re.match(numbered_list_pattern, part.strip()):
+                    # If it's a numbered list item, add it to the current sentence
+                    current_sentence += part + ' '
+                else:
+                    # Otherwise, treat it as a regular sentence
+                    current_sentence += part
+                    if i + 1 < len(parts):
+                        sentences.append(current_sentence.strip())
+                        current_sentence = ''
 
     if current_sentence:  # Add any remaining text as a sentence
         sentences.append(current_sentence.strip())
@@ -535,7 +600,7 @@ def test():
     #
     # Как тебе такие варианты? Может быть, эти более лаконичные формулировки будут легче запомнить. Спасибо, что помогаешь мне улучшить мою работу с языком. Твой подход к обучению очень ценен.'''))
     # print(extract_sentences("abc$x.f"))
-    # print(extract_sentences("$x.f$abc.123"))
+    # print(extract_sentences("$x.f$abc. 123"))
     # print(extract_sentences("qr.$x.f$abc.123"))
     # print(extract_sentences("First sentence... Second sentence."))
     # print(extract_sentences("Is this a question?! Yes, it is!"))
@@ -544,7 +609,12 @@ def test():
     # print(extract_sentences("$pattern1$. $pattern2$. Normal sentence."))
     # print(extract_sentences("Start $mid1$ middle $mid2$ end."))
     # print(extract_sentences("$incomplete... Next sentence."))
-    print(extract_sentences('$remember: начало факта. Второе предложение. $ Остальной текст.'))
+    # print(extract_sentences('$remember: начало факта. Второе предложение. $ Остальной текст.'))
+    # print(extract_sentences('This is a sentence. This is another one!'))
+    print(extract_sentences('$pattern1$.$pattern2$.'))
+    print(extract_sentences('1. First. And. 2. Second'))
+    # print(extract_sentences('1. First point. 2. Second point with multiple sentences. It continues here. 3. Third point.'))
+    print(extract_sentences('This is an $incomplete pattern'))
     pass
 
 

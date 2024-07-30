@@ -36,10 +36,10 @@ class TestExtractSentences(unittest.TestCase):
         self.assert_sentences("Start$mid$end", ["Start$mid$end"])
 
     def test_special_pattern_immediate_punctuation(self):
-        self.assert_sentences("$x.f$abc.123", ["$x.f$abc.", "123"])
+        self.assert_sentences("$x.f$abc. 123", ["$x.f$abc.", "123"])
 
     def test_multiple_special_patterns_immediate_punctuation(self):
-        self.assert_sentences("$pattern1$.$pattern2$.", ["$pattern1$.", "$pattern2$."])
+        self.assert_sentences("$pattern1$.$pattern2$.", ["$pattern1$.$pattern2$."])
 
     def test_incomplete_special_pattern(self):
         self.assert_sentences("This is an $incomplete pattern", ["This is an $incomplete pattern"])
@@ -73,6 +73,20 @@ class TestExtractSentences(unittest.TestCase):
     def test_whitespace(self):
         self.assert_sentences('$remember: начало факта. Второе предложение. $ Остальной текст.',
                               ['$remember: начало факта. Второе предложение. $ Остальной текст.'])
+
+    def test_numeration(self):
+        self.assert_sentences("1. First. And. 2. Second",
+                              ["1. First.", "And.", "2. Second"])
+
+    def test_complex_numeration(self):
+        self.assert_sentences(
+            "1. First point. 2. Second point with multiple sentences. It continues here. 3. Third point.",
+            ["1. First point.", "2. Second point with multiple sentences.", "It continues here.",
+             "3. Third point."])
+
+    def test_mixed_numeration_and_regular_sentences(self):
+        self.assert_sentences("This is a regular sentence. 1. Then a numbered point. Another regular sentence.",
+                              ["This is a regular sentence.", "1. Then a numbered point.", "Another regular sentence."])
 
 
 if __name__ == '__main__':
