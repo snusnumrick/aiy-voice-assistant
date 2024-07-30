@@ -25,11 +25,11 @@ from aiy.board import Button
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import AudioFormat, Recorder
 from google.cloud import speech
-from pydub import AudioSegment
 
 from src.config import Config
 from src.responce_player import ResponsePlayer
 from src.tts_engine import TTSEngine
+from src.tools import time_string_ms, get_timezone, combine_audio_files
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +169,8 @@ class SpeechTranscriber:
         streaming_config (speech.StreamingRecognitionConfig): Configuration for streaming recognition.
     """
 
-    def __init__(self, button: Button, leds: Leds, config, cleaning: Optional[Callable] = None):
+    def __init__(self, button: Button, leds: Leds, config, cleaning: Optional[Callable] = None,
+                 timezone: Optional[str] = None) -> None:
         """
         Initialize the SpeechTranscriber.
 
@@ -177,6 +178,8 @@ class SpeechTranscriber:
             button (Button): The AIY Kit button object.
             leds (Leds): The AIY Kit LED object.
             config (Config): The application configuration object.
+            cleaning (Optional[Callable]): Optional callback function to clean the audio stream.
+            timezone (Optional[str]): The timezone of the current location.
         """
         self.button = button
         self.leds = leds
@@ -197,6 +200,8 @@ class SpeechTranscriber:
         self.cleaning_routine: Callable = cleaning
         self.cleaning_task = None
         self.last_clean_date: Optional[datetime.date] = None
+        self.timezone: str = get_timezone() if timezone is None else timezone
+
 
     async def check_and_schedule_cleaning(self) -> None:
         now: datetime.datetime = datetime.datetime.now()
@@ -243,7 +248,7 @@ class SpeechTranscriber:
 
             def start_idle():
                 nonlocal status, time_breathing_started, breathing_on, player_process
-                logger.debug('Ready to listen...')
+                logger.info(f'({time_string_ms(self.timezone)}) Ready to listen...')
                 if player_process is None or not player_process.is_playing():
                     self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
                     self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
@@ -252,14 +257,14 @@ class SpeechTranscriber:
 
             def start_listening():
                 nonlocal status, breathing_on, recoding_started_at
-                logger.debug('Recording audio...')
+                logger.info(f'({time_string_ms(self.timezone)}) Recording audio...')
                 self.leds.update(Leds.rgb_on(self.led_recording_color))
                 breathing_on = False
                 recoding_started_at = time.time()
 
             def start_processing():
                 nonlocal status, record_more
-                logger.debug('Processing audio...')
+                logger.info(f'({time_string_ms(self.timezone)}) Processing audio...')
                 self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_processing_color))
                 record_more = self.number_of_chuncks_to_record_after_button_depressed
@@ -430,24 +435,6 @@ def split_text(text: str, max_length: int) -> List[str]:
         chunks.append(current_chunk.strip())
 
     return chunks
-
-
-def combine_audio_files(file_list: List[str], output_filename: str) -> None:
-    """
-    Combine multiple audio files into a single file.
-
-    Args:
-        file_list (List[str]): List of audio file paths to combine.
-        output_filename (str): Path to save the combined audio file.
-    """
-    logger.debug(f"Combining {len(file_list)} audio files into {output_filename}")
-    combined = AudioSegment.empty()
-    for file in file_list:
-        audio = AudioSegment.from_wav(file)
-        combined += audio
-    logger.debug(f"Exporting combined audio to {output_filename}")
-    combined.export(output_filename, format="wav")
-    logger.debug(f"Exported combined audio to {output_filename}")
 
 
 def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Config) -> bool:

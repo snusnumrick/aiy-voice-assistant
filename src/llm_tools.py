@@ -23,7 +23,7 @@ async def summarize_and_compress_history(message_history: Deque, ai_model: AIMod
     """
     min_number_of_messages_to_summarize = config.get('min_number_of_messages_to_summarize', 20)
     if len(message_history) - 1 < min_number_of_messages_to_summarize:
-        logger.warning('Message history is shorter than min_number_of_messages_to_summarize')
+        logger.debug('Message history is shorter than min_number_of_messages_to_summarize')
         return message_history
     summary_prompt = config.get('summary_prompt',
                                 'Обобщи основные моменты разговора, '

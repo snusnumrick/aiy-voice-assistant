@@ -15,6 +15,7 @@ import aiohttp
 import requests
 
 from src.config import Config
+from src.tools import time_string_ms
 
 
 class AIModel(ABC):
@@ -76,18 +77,24 @@ class ClaudeAIModel(AIModel):
     Implementation of AIModel using Anthropic's Claude model.
     """
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, timezone: str = ""):
         """
         Initialize the Claude AI model.
 
         Args:
             config (Config): The application configuration object.
+            timezone (str): The timezone to use.
         """
         self.model = config.get('claude_model', 'claude-3-5-sonnet-20240620')
         self.max_tokens = config.get('max_tokens', 1000)
         self.url = "https://api.anthropic.com/v1/messages"
         self.headers = {"content-type": "application/json", "x-api-key": os.getenv('ANTHROPIC_API_KEY'),
                         "anthropic-version": "2023-06-01"}
+        self.config = config
+        self.timezone = timezone
+
+    def _time_str(self) -> str:
+        return f"({time_string_ms(self.timezone)}) " if self.timezone else ""
 
     def _get_response(self, messages: List[Dict[str, str]]) -> dict:
         system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])

@@ -5,14 +5,17 @@ patterns, and managing a playlist of audio files with corresponding LED behavior
 """
 import json
 import logging
+import queue
 import re
+import tempfile
 import threading
-import time
 from subprocess import Popen
 from typing import List, Tuple, Dict, Optional
 
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import play_wav_async
+
+from src.tools import combine_audio_files, time_string_ms
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +35,7 @@ def emotions_prompt() -> str:
             'Empty emotion or emotion with empty voice reset tone to plain.')
 
 
-def extract_emotions(text: str) -> List[Tuple[dict, str]]:
+def extract_emotions(text: str) -> List[Tuple[Optional[dict], str]]:
     """
         This function parses the given text and extracts 'emotion' dictionaries (if any) and the associated text following them.
         The structured data is returned as a list of tuples, each containing the dictionary and the corresponding text.
@@ -55,11 +58,11 @@ def extract_emotions(text: str) -> List[Tuple[dict, str]]:
         if not match:
             remaining_text = text[pos:].strip()
             if remaining_text:
-                results.append(({}, remaining_text))
+                results.append((None, remaining_text))
             break
         preceding_text = match.group(1).strip()
         if preceding_text:
-            results.append(({}, preceding_text))
+            results.append((None, preceding_text))
 
         emotion_dict_str = match.group(2) if match.group(2) else '{}'
         associated_text = match.group(3).strip()
@@ -67,7 +70,7 @@ def extract_emotions(text: str) -> List[Tuple[dict, str]]:
             emotion_dict = json.loads(emotion_dict_str)
             results.append((emotion_dict, associated_text))
         except json.JSONDecodeError:
-            results.append(({}, associated_text))
+            results.append((None, associated_text))
         pos = match.end()
 
     return results
@@ -159,71 +162,253 @@ def change_light_behavior(behaviour: dict, leds: Leds) -> None:
 class ResponsePlayer:
     """
     A class for playing a sequence of audio files with corresponding LED behaviors.
+
+    This class manages a playlist of audio files and their associated LED behaviors.
+    It handles merging of audio files, queueing of playback items, and coordination
+    of audio playback with LED control in a thread-safe manner. It uses condition
+    variables for efficient thread synchronization.
+
+    Attributes:
+        timezone (str): The timezone used for logging timestamps.
+        playlist (queue.Queue): A queue of audio files and their associated LED behaviors ready for playback.
+        wav_list (list): A list of WAV files to be merged.
+        current_process (Optional[Popen]): The currently playing audio process.
+        _should_play (bool): Flag indicating whether playback should continue.
+        play_thread (Optional[threading.Thread]): Thread for audio playback.
+        leds (Leds): An instance of the Leds class for controlling LED behavior.
+        merge_thread (Optional[threading.Thread]): Thread for merging audio files.
+        merge_queue (queue.Queue): A queue of audio files and LED behaviors to be merged.
+        _playback_completed (threading.Event): Event to signal when playback is completed.
+        current_light (Optional[Dict]): The current LED behavior.
+        lock (threading.Lock): Lock for ensuring thread-safe operations.
+        _stopped (bool): Flag indicating whether the player is in a stopped state.
+        condition (threading.Condition): Condition variable for efficient thread synchronization.
     """
 
-    def __init__(self, playlist: List[Tuple[Dict, str]], leds: Leds):
+    def __init__(self, playlist: List[Tuple[Optional[Dict], str]], leds: Leds, timezone: str):
         """
-        Initializes the ResponsePlayer.
+        Initialize the ResponsePlayer.
 
         Args:
-            playlist (List[Tuple[Dict, str]]): A list of tuples containing LED behavior and audio file path.
-            leds (Leds): An instance of the Leds class to control.
+            playlist (List[Tuple[Optional[Dict], str]]): Initial playlist of audio files and LED behaviors.
+            leds (Leds): An instance of the Leds class for controlling LED behavior.
+            timezone (str): The timezone used for logging timestamps.
         """
-
-        self.playlist = playlist
-        self.current_process: Optional[Popen] = None
-        self._is_playing = False
-        self.play_thread: Optional[threading.Thread] = None
+        self.timezone = timezone
         self.leds = leds
+        self.playlist = queue.Queue()
+        self.merge_queue = queue.Queue()
+        self.current_process: Optional[Popen] = None
+        self.play_thread: Optional[threading.Thread] = None
+        self.merge_thread: Optional[threading.Thread] = None
+        self._playback_completed = threading.Event()
+        self.lock = threading.RLock()  # Use RLock for nested locking
+        self.condition = threading.Condition(self.lock)
+        self._should_play = False
+        self._stopped = False
+        self.current_light = None
+        self.wav_list = []
+
+        for item in playlist:
+            self.add(item)
+
+    def add(self, playitem: Tuple[Optional[Dict], str]) -> None:
+        """
+        Add a new item to the merge queue and start merging if necessary.
+
+        If the player is in a stopped state, this method will ignore the add request.
+        When an item is added, it notifies the playback thread to wake up and process the new item.
+
+        Args:
+            playitem (Tuple[Optional[Dict], str]): A tuple containing the LED behavior (or None) and the audio file path.
+        """
+        with self.lock:
+            if self._stopped:
+                logger.warning(f"Ignoring add request for {playitem} as player is stopped.")
+                return
+
+            emo, file = playitem
+            light = None if emo is None else emo.get('light', {})
+            light_item = (light, file)
+            logger.debug(f"({time_string_ms(self.timezone)}) Adding {light_item} to merge queue.")
+            self.merge_queue.put(light_item)
+
+        with self.condition:
+            self.condition.notify()
+
+        if self.merge_thread is None or not self.merge_thread.is_alive():
+            self.merge_thread = threading.Thread(target=self._merge_audio_files)
+            self.merge_thread.start()
+        if not self._should_play:
+            self.play()
+
+    def _merge_audio_files(self):
+        """
+        Merge audio files with the same LED behavior.
+
+        This method runs in a separate thread and continuously processes items from the merge queue.
+        It groups audio files with the same LED behavior and calls _process_wav_list to merge them.
+        """
+        logger.debug("Starting merge process")
+        while True:
+            with self.lock:
+                if not self._should_play and self.merge_queue.empty():
+                    break
+                try:
+                    light, wav = self.merge_queue.get_nowait()
+                    logger.debug(
+                        f"({time_string_ms(self.timezone)}) merging {light} {wav} {self.current_light} {self.wav_list}")
+                    if self.current_light is None:
+                        self.current_light = light if light is not None else {}
+                        self.wav_list = [wav]
+                    elif light is None or light == self.current_light:
+                        self.wav_list.append(wav)
+                    else:
+                        self._process_wav_list()
+                        self.current_light = light
+                        self.wav_list = [wav]
+                except queue.Empty:
+                    if self.wav_list:
+                        self._process_wav_list()
+                        self.wav_list = []
+                        self.current_light = None
+            with self.condition:
+                if self.merge_queue.empty() and not self._should_play:
+                    self.condition.wait(timeout=1.0)
+        logger.info("Merge process ended")
+
+    def _process_wav_list(self):
+        """
+        Process the current list of WAV files.
+
+        This method is called by _merge_audio_files to combine multiple WAV files with the same LED behavior
+        into a single file, or add a single WAV file directly to the playlist.
+        """
+        with self.lock:
+            if not self.wav_list:
+                return
+            logger.debug(
+                f"({time_string_ms(self.timezone)}) merging {self.current_light} {self.wav_list} {self.playlist}")
+            if len(self.wav_list) == 1:
+                self.playlist.put((self.current_light, self.wav_list[0]))
+            else:
+                output_filename = tempfile.mktemp(suffix=".wav")
+                combine_audio_files(self.wav_list, output_filename)
+                self.playlist.put((self.current_light, output_filename))
+            self.wav_list = []
+            logger.debug(
+                f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list}, {self.playlist}")
 
     def play(self):
-        """Starts playing the playlist in a separate thread."""
+        """
+        Start the playback process.
 
-        self._is_playing = True
-        self.play_thread = threading.Thread(target=self._play_sequence)
-        self.play_thread.start()
+        This method initiates the playback thread if it's not already running and resets the stopped state.
+        """
+        logger.debug("Starting playback")
+        with self.condition:
+            if not self._should_play:
+                self._should_play = True
+                self._stopped = False
+                self._playback_completed.clear()
+                self.play_thread = threading.Thread(target=self._play_sequence)
+                self.play_thread.start()
 
     def _play_sequence(self):
-        """Internal method to play the sequence of audio files and control LED behavior."""
+        """
+        Play the sequence of audio files with their corresponding LED behaviors.
 
-        for emotion, audio_file in self.playlist:
-            logger.debug(emotion)
-            if not self._is_playing:
-                break
+        This method runs in a separate thread and continuously processes items from the playlist queue.
+        It handles playing audio files and controlling LED behavior. It uses a condition variable
+        to efficiently wait for new items to be added to the playlist or for a stop signal.
+        """
+        logger.debug("_play_sequence started")
+        while True:
+            with self.condition:
+                while self._should_play and self.playlist.empty() and self.merge_queue.empty():
+                    logger.debug(f"({time_string_ms(self.timezone)}) wait for condition")
+                    self.condition.wait()
+                if not self._should_play:
+                    logger.info(f"should_play: False")
+                    break
+                try:
+                    light, audio_file = self.playlist.get_nowait()
+                    logger.debug(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
+                except queue.Empty:
+                    # If playlist is empty, process wav_list and continue
+                    logger.info("playlist is empty, process wav_list and continue")
+                    self._process_wav_list()
+                    continue
 
-            light_behavior = {}
-            if "light" in emotion:
-                light_behavior = emotion["light"]
+            logger.info(f"({time_string_ms(self.timezone)}) Playing {audio_file} with light {light}")
 
-            change_light_behavior(light_behavior, self.leds)
+            if light is not None:
+                change_light_behavior(light, self.leds)
 
             self.current_process = play_wav_async(audio_file)
-
-            # Wait for the audio to finish
             self.current_process.wait()
+            self.current_process = None
 
-            # switch off led
+            # Switch off LED
             self.leds.update(Leds.rgb_off())
-            time.sleep(1)
 
-        self._is_playing = False
+            logger.debug(f"Finished playing {audio_file}")
+
+        logger.debug("_play_sequence ended")
         self.current_process = None
+        self._playback_completed.set()
 
     def stop(self):
-        """Stops the currently playing audio and LED sequence."""
+        """
+        Stop the playback and merging processes, clear all queues, and ignore further add calls.
 
-        self._is_playing = False
+        This method:
+        1. Sets the stop flags
+        2. Notifies all waiting threads to wake up
+        3. Terminates any current playback
+        4. Clears all queues (merge_queue, playlist, wav_list)
+        5. Waits for the playback and merge threads to complete
+        6. Sets the player to a stopped state, ignoring further add calls
+
+        The use of condition variables ensures that waiting threads are immediately notified of the stop request.
+        """
+
+        def clear_queue(q):
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    break
+
+        logger.info("Stopping playback and clearing all queues")
+        with self.condition:
+            self._should_play = False
+            self._stopped = True
+            self.condition.notify_all()
+
         if self.current_process:
             self.current_process.terminate()
+
+        with self.lock:
+            clear_queue(self.merge_queue)
+            clear_queue(self.playlist)
+            self.wav_list.clear()
+
+        self._playback_completed.wait(timeout=5.0)
         if self.play_thread and self.play_thread.is_alive():
-            self.play_thread.join()
+            self.play_thread.join(timeout=1.0)
+        if self.merge_thread and self.merge_thread.is_alive():
+            self.merge_thread.join(timeout=1.0)
+
+        logger.debug("Playback stopped, all queues cleared, and player set to stopped state")
 
     def is_playing(self) -> bool:
         """
-        Checks if the player is currently playing.
+        Check if audio is currently playing or queued for playback.
 
         Returns:
-            bool: True if playing, False otherwise.
+            bool: True if audio is playing or queued, False otherwise.
         """
-
-        return self._is_playing
+        with self.lock:
+            return (self._should_play and not self._stopped and (
+                        not self.playlist.empty() or not self.merge_queue.empty() or self.current_process is not None))

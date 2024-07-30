@@ -19,7 +19,7 @@ from typing import List, Tuple, AsyncGenerator, Deque, Dict
 
 from src.llm_tools import optimize_rules, optimize_facts
 from src.responce_player import extract_emotions, extract_language
-from src.tools import format_message_history, clean_response
+from src.tools import format_message_history, clean_response, time_string_ms
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -70,7 +70,7 @@ def extract_facts(text: str, timezone: str) -> Tuple[str, List[str]]:
     return modified_text, extracted_facts
 
 
-def extract_rules(text: str, current_timezone: str) -> Tuple[str, List[str]]:
+def extract_rules(text: str) -> Tuple[str, List[str]]:
     """
     Extract rules from the input text and return the modified text and a list of extracted rules.
 
@@ -91,7 +91,7 @@ def extract_rules(text: str, current_timezone: str) -> Tuple[str, List[str]]:
 
     # Process each match
     for match in matches:
-        logger.debug(f"Extracted rule: {match}")
+        logger.info(f"Extracted rule: {match}")
         # rule = get_current_date_time_for_facts(current_timezone) + " : " + match
         rule = match
         extracted_rules.append(rule)
@@ -115,13 +115,14 @@ class ConversationManager:
         message_history (deque): A queue of message dictionaries representing the conversation history.
     """
 
-    def __init__(self, config, ai_model: AIModel):
+    def __init__(self, config, ai_model: AIModel, timezone: str):
         """
         Initialize the ConversationManager.
 
         Args:
             config (Config): The application configuration object.
             ai_model (AIModel): The AI model to use for generating responses.
+            timezone (str): Current timezone to store time
         """
         self.config = config
         self.searcher = WebSearcher(config)
@@ -130,7 +131,7 @@ class ConversationManager:
         self.facts = self.load_facts()
         self.rules = self.load_rules()
         self.location = get_location()
-        self.timezone = get_timezone()
+        self.timezone = timezone
         self.current_language_code = "ru"
         self.hard_rules_russian = (""
                                    "Если в ответе на твой запрос указано время без указания часового пояса, "
@@ -207,6 +208,7 @@ class ConversationManager:
             AsyncGenerator[List[Dict[str,any]]: The AI-generated response,
             marked with emotion response and language code
         """
+        logger.debug(f"call to get_response for: {text}")
 
         # update system message
         self.message_history[0] = {"role": "system", "content": self.get_system_prompt()}
@@ -232,7 +234,7 @@ class ConversationManager:
         async for response_text in self.ai_model.get_response_async(list(self.message_history)):
             crt = clean_response(response_text)
 
-            logger.debug(f"AI response: {text} -> {response_text}")
+            logger.debug(f"{time_string_ms(self.timezone)}) AI response: {text} -> {response_text}")
             if self.message_history[-1]["role"] != "assistant":
                 self.message_history.append({"role": "assistant", "content": crt})
             else:
@@ -245,7 +247,7 @@ class ConversationManager:
             if facts:
                 logger.info(f"Extracted facts: {facts}")
 
-            response_text, rules = extract_rules(response_text, self.timezone)
+            response_text, rules = extract_rules(response_text)
             self.rules += rules
             self.save_rules(self.rules)
 

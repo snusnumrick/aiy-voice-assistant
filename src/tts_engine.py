@@ -37,7 +37,7 @@ from pydub import AudioSegment
 from speechkit import model_repository
 
 from src.config import Config
-from src.tools import retry_async
+from src.tools import retry_async, time_string_ms
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -283,12 +283,13 @@ class YandexTTSEngine(TTSEngine):
     Implementation of TTSEngine using Yandex SpeechKit via the speechkit module.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, timezone: str = ""):
         """
         Initialize the Yandex TTS engine.
 
         Args:
             config (Config): The application configuration object.
+            timezone (str): The timezone to use.
         """
         from speechkit import configure_credentials, creds
 
@@ -309,14 +310,26 @@ class YandexTTSEngine(TTSEngine):
         self.role_plain = config.get('yandex_tts_role_plain', 'neutral')
         self.role_happy = config.get('yandex_tts_role_happy', 'good')
         self.speed = config.get('yandex_tts_speed', 1.0)
+        self.timezone = timezone
+
+        # cache
+        self.voice_models: Dict[Language: Dict[Tone, model_repository.SynthesisModel]] = {}
+        self.voice_model(tone=Tone.PLAIN, lang=Language.RUSSIAN)
+        self.voice_model(tone=Tone.HAPPY, lang=Language.RUSSIAN)
 
     def voice_model(self, tone=Tone.PLAIN, lang=Language.RUSSIAN):
+        if lang in self.voice_models and tone in self.voice_models[lang]:
+            return self.voice_models[lang][tone]
         model = model_repository.synthesis_model()
         model.voice = self.lang_voices[lang]
         if lang == Language.RUSSIAN:
             model.role = self.roles[tone]
         model.language = self.langs[lang]
         model.speed = self.speed
+        if lang in self.voice_models:
+            self.voice_models[lang][tone] = model
+        else:
+            self.voice_models[lang] = {tone: model}
         return model
 
     def synthesize(self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN) -> None:
@@ -350,10 +363,21 @@ class YandexTTSEngine(TTSEngine):
             """Wrapper method to call synthesize with the correct parameters."""
             return par["model"].synthesize(par["text"], raw_format=True)
 
+        # time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        # logger.debug(f"{time_str}Starting synthesize_async for {text}: {filename}")
+
         loop = asyncio.get_event_loop()
+        # time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        # logger.debug(f"{time_str}Creating voice_model for {tone}: {lang}")
         args = {"model": self.voice_model(tone=tone, lang=lang), "text": text}
+        # time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        # logger.debug(f"({time_str}) Created voice_model for {tone}: {lang}")
+        # time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        # logger.debug(f"{time_str}Synthesizing text: {text[:50]}...")
         result = await loop.run_in_executor(None, synthesize_wrapper, args)
 
+        # time_str = f"({time_string_ms(self.timezone)}) " if self.timezone else ""
+        # logger.debug(f"{time_str}Audio content being written to file {filename}")
         async with aiofiles.open(filename, "wb") as out:
             await out.write(result)
 

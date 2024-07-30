@@ -4,10 +4,12 @@ import logging
 import os
 import random
 import re
+import time
 from collections import deque
 from datetime import datetime
 from functools import wraps
-from typing import List, Dict, Union
+from pydub import AudioSegment
+from typing import List, Dict, Union, Any, Callable, AsyncGenerator
 
 import geocoder
 import pytz
@@ -80,6 +82,11 @@ def get_timezone() -> str:
     timezone = gmaps.timezone(g.latlng, time.time())
 
     return timezone["timeZoneId"]
+
+
+def time_string_ms(timezone_string: str) -> str:
+    # 07:00.989
+    return datetime.now(pytz.utc).astimezone(pytz.timezone(timezone_string)).strftime("%M:%S.%f")[:-3]
 
 
 def get_current_date_time_location(timezone_string: str) -> str:
@@ -314,10 +321,55 @@ def clean_response(response: str) -> str:
     return re.sub(pattern, '', response)
 
 
-def retry_async(max_retries: int = 1, initial_retry_delay: float = 1, backoff_factor: float = 2,
+def retry(max_retries: int = 5, initial_retry_delay: float = 1, backoff_factor: float = 2,
                 jitter_factor: float = 0.1):
     """
     A decorator for implementing retry logic with exponential backoff and jitter.
+
+    Args:
+        max_retries (int): Maximum number of retry attempts.
+        initial_retry_delay (float): Initial delay between retries in seconds.
+        backoff_factor (float): Factor by which the delay increases with each retry.
+        jitter_factor (float): Factor for randomness in retry delay.
+
+    Returns:
+        Callable: Decorated function with retry logic.
+    """
+
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == (max_retries - 1):
+                        logger.error(f"Failed after {max_retries} attempts: {str(e)}")
+                        raise
+                    retry_time = initial_retry_delay * (backoff_factor ** attempt)
+                    jitter = random.uniform(0, jitter_factor * retry_time)
+                    total_delay = retry_time + jitter
+                    logger.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {total_delay:.2f} seconds...")
+                    time.sleep(total_delay)
+
+        return wrapper
+
+    return decorator
+
+
+def retry_async(max_retries: int = 5, initial_retry_delay: float = 1, backoff_factor: float = 2,
+                jitter_factor: float = 0.1):
+    """
+    A decorator for implementing retry logic with exponential backoff and jitter.
+
+    Args:
+        max_retries (int): Maximum number of retry attempts.
+        initial_retry_delay (float): Initial delay between retries in seconds.
+        backoff_factor (float): Factor by which the delay increases with each retry.
+        jitter_factor (float): Factor for randomness in retry delay.
+
+    Returns:
+        Callable: Decorated function with retry logic.
     """
 
     def decorator(func):
@@ -326,6 +378,44 @@ def retry_async(max_retries: int = 1, initial_retry_delay: float = 1, backoff_fa
             for attempt in range(max_retries):
                 try:
                     return await func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == (max_retries - 1):
+                        logger.error(f"Failed after {max_retries} attempts: {str(e)}")
+                        raise
+                    retry_time = initial_retry_delay * (backoff_factor ** attempt)
+                    jitter = random.uniform(0, jitter_factor * retry_time)
+                    total_delay = retry_time + jitter
+                    logger.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {total_delay:.2f} seconds...")
+                    await asyncio.sleep(total_delay)
+
+        return wrapper
+
+    return decorator
+
+
+def retry_async_generator(max_retries: int = 5, initial_retry_delay: float = 1, backoff_factor: float = 2,
+                          jitter_factor: float = 0.1):
+    """
+    A decorator for implementing retry logic with exponential backoff and jitter.
+
+    Args:
+        max_retries (int): Maximum number of retry attempts.
+        initial_retry_delay (float): Initial delay between retries in seconds.
+        backoff_factor (float): Factor by which the delay increases with each retry.
+        jitter_factor (float): Factor for randomness in retry delay.
+
+    Returns:
+        Callable: Decorated function with retry logic.
+    """
+
+    def decorator(func: Callable[..., AsyncGenerator[Any, None]]) -> Callable[..., AsyncGenerator[Any, None]]:
+        @wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> AsyncGenerator[Any, None]:
+            for attempt in range(max_retries):
+                try:
+                    async for item in func(*args, **kwargs):
+                        yield item
+                    return
                 except Exception as e:
                     if attempt == max_retries - 1:
                         logger.error(f"Failed after {max_retries} attempts: {str(e)}")
@@ -341,20 +431,121 @@ def retry_async(max_retries: int = 1, initial_retry_delay: float = 1, backoff_fa
     return decorator
 
 
+def extract_sentences(text: str) -> List[str]:
+    """
+    Extracts sentences from the given text while preserving special patterns.
+
+    This function handles text that may contain special patterns (starting with $)
+    such as emotion tags or JSON-like structures. It preserves these patterns within
+    the sentences, and correctly splits sentences at punctuation marks, even when
+    they appear immediately after a special pattern without a space.
+
+    The function is designed to work with both English and Russian text.
+
+    Args:
+        text (str): The input text to be processed. May contain special patterns
+                    starting with $, as well as normal sentences in English or Russian.
+
+    Returns:
+        List[str]: A list of extracted sentences. Special patterns are preserved
+                   within the sentences they were originally associated with.
+
+    Note:
+    - The function treats $... patterns (complete or incomplete) as part of the sentence.
+    - It correctly splits sentences at punctuation marks, even immediately after special patterns.
+    - It handles ellipsis and multiple punctuation marks as single sentence endings.
+    - Incomplete sentences or patterns at the end of the text are preserved.
+    """
+    logger.debug(f"Extracting sentences from: {text}")
+
+    # Define patterns
+    special_pattern = r'\$[^$]+(?:\$|$)'
+    sentence_end_pattern = r'(?:[.!?]|\.{3})+'
+
+    # Find all special patterns and their positions
+    special_matches = list(re.finditer(special_pattern, text))
+
+    # Split text into segments (alternating between normal text and special patterns)
+    segments = []
+    last_end = 0
+    for match in special_matches:
+        if match.start() > last_end:
+            segments.append(text[last_end:match.start()])
+        segments.append(match.group())
+        last_end = match.end()
+    if last_end < len(text):
+        segments.append(text[last_end:])
+
+    # Combine segments into sentences
+    sentences = []
+    current_sentence = ''
+    for segment in segments:
+        if segment.startswith('$'):
+            current_sentence += segment
+        else:
+            # Split the non-special segment by sentence endings
+            parts = re.split(f'({sentence_end_pattern})', segment)
+            for i in range(0, len(parts), 2):
+                current_sentence += parts[i]
+                if i + 1 < len(parts):
+                    current_sentence += parts[i + 1]
+                    sentences.append(current_sentence.strip())
+                    current_sentence = ''
+
+    if current_sentence:  # Add any remaining text as a sentence
+        sentences.append(current_sentence.strip())
+
+    # Remove empty sentences
+    sentences = [s for s in sentences if s]
+
+    logger.debug(f"Extracted sentences: {sentences}")
+    return sentences
+
+
+def combine_audio_files(file_list: List[str], output_filename: str) -> None:
+    """
+    Combine multiple audio files into a single file.
+
+    Args:
+        file_list (List[str]): List of audio file paths to combine.
+        output_filename (str): Path to save the combined audio file.
+    """
+    logger.debug(f"Combining {len(file_list)} audio files into {output_filename}")
+    combined = AudioSegment.empty()
+    for file in file_list:
+        audio = AudioSegment.from_wav(file)
+        combined += audio
+    logger.debug(f"Exporting combined audio to {output_filename}")
+    combined.export(output_filename, format="wav")
+    logger.debug(f"Exported combined audio to {output_filename}")
+
+
 def test():
     # tz = get_timezone()
     # print(tz)
     # print(get_current_datetime_english(tz) + " " + get_location())
     # print(get_current_date_time_for_facts(tz))
-    print(indent_content('''Спасибо за предложение, Антон. Ты прав, возможно, другая формулировка поможет мне лучше усвоить это правило. Давай попробую:
-
-"Знак ударения '+' всегда ставится непосредственно перед ударной гласной в слове."
-
-Или еще короче:
-
-"'+' идет перед ударной гласной."
-
-Как тебе такие варианты? Может быть, эти более лаконичные формулировки будут легче запомнить. Спасибо, что помогаешь мне улучшить мою работу с языком. Твой подход к обучению очень ценен.'''))
+    #     print(indent_content('''Спасибо за предложение, Антон. Ты прав, возможно, другая формулировка поможет мне лучше усвоить это правило. Давай попробую:
+    #
+    # "Знак ударения '+' всегда ставится непосредственно перед ударной гласной в слове."
+    #
+    # Или еще короче:
+    #
+    # "'+' идет перед ударной гласной."
+    #
+    # Как тебе такие варианты? Может быть, эти более лаконичные формулировки будут легче запомнить. Спасибо, что помогаешь мне улучшить мою работу с языком. Твой подход к обучению очень ценен.'''))
+    # print(extract_sentences("abc$x.f"))
+    # print(extract_sentences("$x.f$abc.123"))
+    # print(extract_sentences("qr.$x.f$abc.123"))
+    # print(extract_sentences("First sentence... Second sentence."))
+    # print(extract_sentences("Is this a question?! Yes, it is!"))
+    # print(extract_sentences("Hello $world$! This is a $test. And $another one$."))
+    # print(extract_sentences("Hello $world$! This is a $test. And $another one$."))
+    # print(extract_sentences("$pattern1$. $pattern2$. Normal sentence."))
+    # print(extract_sentences("Start $mid1$ middle $mid2$ end."))
+    # print(extract_sentences("$incomplete... Next sentence."))
+    print(extract_sentences('$remember: начало факта. Второе предложение. $ Остальной текст.'))
+    pass
 
 
 if __name__ == '__main__':
