@@ -44,7 +44,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
     various tools during the conversation process.
     """
 
-    def __init__(self, config: Config, tools: List[Tool]) -> None:
+    def __init__(self, config: Config, timezone: str = "", tools: List[Tool] = []) -> None:
         """
         Initialize the ClaudeAIModelWithTools instance.
 
@@ -52,7 +52,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             config (Config): Configuration object for the AI model.
             tools (List[Tool]): List of Tool objects available to the model.
         """
-        super().__init__(config)
+        super().__init__(config, timezone=timezone)
         self.tools_description = [{'name': t.name, 'description': t.description, 'input_schema': {'type': 'object',
                                                                                                   'properties': {
                                                                                                       p.name: {
