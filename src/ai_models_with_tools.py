@@ -137,13 +137,15 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         Yields:
            str: Complete sentences from the AI model's response.
         """
-        logger.debug(f"get_response_async: {messages}")
+        logger.info(f"{self._time_str()}AI get_response_async: {messages}")
         streaming = self.config.get("llm_streaming", False)
         if streaming:
             async for response in self._get_response_async_streaming(messages):
+                logger.info(f"{self._time_str()}AI response: {response}")
                 yield response
         else:
             async for response in self._get_response_async_plain(messages):
+                logger.info(f"{self._time_str()}AI response: {response}")
                 yield response
 
     async def _get_response_async_plain(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:

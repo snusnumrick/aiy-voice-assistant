@@ -326,7 +326,7 @@ class ResponsePlayer:
         while True:
             with self.condition:
                 while self._should_play and self.playlist.empty() and self.merge_queue.empty():
-                    logger.info(f"({time_string_ms(self.timezone)}) wait for condition")
+                    logger.debug(f"({time_string_ms(self.timezone)}) wait for condition")
                     self.condition.wait()
                 if not self._should_play:
                     logger.info(f"should_play: False")
