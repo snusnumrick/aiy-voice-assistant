@@ -20,7 +20,7 @@ class TestExtractSentences(unittest.TestCase):
 
     def test_basic_sentences(self):
         self.assert_sentences("This is a sentence. This is another one!",
-            ["This is a sentence.", "This is another one!"])
+                              ["This is a sentence.", "This is another one!"])
 
     def test_special_pattern_middle(self):
         self.assert_sentences("Hello $world$! This is a test.", ["Hello $world$!", "This is a test."])
@@ -30,7 +30,7 @@ class TestExtractSentences(unittest.TestCase):
 
     def test_multiple_special_patterns(self):
         self.assert_sentences("Hello $world$! This is a $test. And $another one$.",
-            ["Hello $world$!", "This is a $test. And $another one$."])
+                              ["Hello $world$!", "This is a $test. And $another one$."])
 
     def test_special_pattern_no_punctuation(self):
         self.assert_sentences("Start$mid$end", ["Start$mid$end"])
@@ -49,7 +49,7 @@ class TestExtractSentences(unittest.TestCase):
 
     def test_multiple_sentences_with_special_patterns(self):
         self.assert_sentences("First $special$. Second $special$! Third $special$?",
-            ["First $special$.", "Second $special$!", "Third $special$?"])
+                              ["First $special$.", "Second $special$!", "Third $special$?"])
 
     def test_empty_input(self):
         self.assert_sentences("", [])
@@ -62,13 +62,17 @@ class TestExtractSentences(unittest.TestCase):
 
     def test_mixed_languages(self):
         self.assert_sentences("This is English. Это русский. $pattern$ Again English.",
-            ["This is English.", "Это русский.", "$pattern$ Again English."])
+                              ["This is English.", "Это русский.", "$pattern$ Again English."])
 
     def test_ellipsis(self):
         self.assert_sentences("First sentence... Second sentence.", ["First sentence...", "Second sentence."])
 
     def test_multiple_punctuation(self):
         self.assert_sentences("Is this a question?! Yes, it is!", ["Is this a question?!", "Yes, it is!"])
+
+    def test_whitespace(self):
+        self.assert_sentences('$remember: начало факта. Второе предложение. $ Остальной текст.',
+                              ['$remember: начало факта. Второе предложение. $ Остальной текст.'])
 
 
 if __name__ == '__main__':

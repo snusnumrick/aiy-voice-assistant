@@ -459,7 +459,7 @@ def extract_sentences(text: str) -> List[str]:
     logger.debug(f"Extracting sentences from: {text}")
 
     # Define patterns
-    special_pattern = r'\$[^$\s]+(?:\$|\s|$)'
+    special_pattern = r'\$[^$]+(?:\$|$)'
     sentence_end_pattern = r'(?:[.!?]|\.{3})+'
 
     # Find all special patterns and their positions
@@ -534,16 +534,17 @@ def test():
     # "'+' идет перед ударной гласной."
     #
     # Как тебе такие варианты? Может быть, эти более лаконичные формулировки будут легче запомнить. Спасибо, что помогаешь мне улучшить мою работу с языком. Твой подход к обучению очень ценен.'''))
-    print(extract_sentences("abc$x.f"))
-    print(extract_sentences("$x.f$abc.123"))
-    print(extract_sentences("qr.$x.f$abc.123"))
-    print(extract_sentences("First sentence... Second sentence."))
-    print(extract_sentences("Is this a question?! Yes, it is!"))
-    print(extract_sentences("Hello $world$! This is a $test. And $another one$."))
-    print(extract_sentences("Hello $world$! This is a $test. And $another one$."))
-    print(extract_sentences("$pattern1$. $pattern2$. Normal sentence."))
-    print(extract_sentences("Start $mid1$ middle $mid2$ end."))
-    print(extract_sentences("$incomplete... Next sentence."))
+    # print(extract_sentences("abc$x.f"))
+    # print(extract_sentences("$x.f$abc.123"))
+    # print(extract_sentences("qr.$x.f$abc.123"))
+    # print(extract_sentences("First sentence... Second sentence."))
+    # print(extract_sentences("Is this a question?! Yes, it is!"))
+    # print(extract_sentences("Hello $world$! This is a $test. And $another one$."))
+    # print(extract_sentences("Hello $world$! This is a $test. And $another one$."))
+    # print(extract_sentences("$pattern1$. $pattern2$. Normal sentence."))
+    # print(extract_sentences("Start $mid1$ middle $mid2$ end."))
+    # print(extract_sentences("$incomplete... Next sentence."))
+    print(extract_sentences('$remember: начало факта. Второе предложение. $ Остальной текст.'))
     pass
 
 
