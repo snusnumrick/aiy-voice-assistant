@@ -187,36 +187,36 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         assistant_message = ""
 
         async for event in self._get_response_async(message_list, streaming=True):
-            logger.debug(f"Received event: {event}")
+            logger.info(f"{self._time_str()}Received event: {event}")
             event_type = event.get('type')
 
             if event_type == 'error':
-                logger.error(f"Error: {event['error']}")
+                logger.error(f"{self._time_str()}Error: {event['error']}")
                 continue
 
             if event_type == 'content_block_delta':
                 delta = event.get('delta', {})
                 if delta.get('type') == 'text_delta':
                     text = delta.get('text', '')
-                    logger.debug(f"Received text delta: {text}")
+                    logger.info(f"{self._time_str()}Received text delta: {text}")
                     current_text += text
-                    logger.debug(f"Current text: {current_text}")
+                    logger.info(f"{self._time_str()}Current text: {current_text}")
                     sentences = extract_sentences(current_text)
 
                     # If we have any complete sentences, yield them
                     if len(sentences) > 1:
-                        logger.debug(f"{len(sentences) - 1} sentences extracted")
+                        logger.info(f"{self._time_str()}{len(sentences) - 1} sentences extracted")
                         for sentence in sentences[:-1]:
-                            logger.debug(f"Yielding sentence: {sentence}")
+                            logger.info(f"{self._time_str()}Yielding sentence: {sentence}")
                             assistant_message += f"{sentence} "
                             yield sentence
 
                         # Keep the last (potentially incomplete) sentence
                         current_text = sentences[-1]
-                        logger.debug(f"Remaining text: {current_text}")
+                        logger.info(f"{self._time_str()}Remaining text: {current_text}")
 
                 elif delta.get('type') == 'input_json_delta':
-                    logger.debug(f"Received input JSON delta: {delta.get('partial_json', '')}")
+                    logger.info(f"{self._time_str()}Received input JSON delta: {delta.get('partial_json', '')}")
                     if current_tool_use is None:
                         current_tool_use = {}
                     current_tool_use['input'] = current_tool_use.get('input', '') + delta.get('partial_json', '')
@@ -224,14 +224,14 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             elif event_type == 'content_block_start':
                 content_block = event.get('content_block', {})
                 if content_block.get('type') == 'tool_use':
-                    logger.debug(f"Tool use started: {content_block}")
+                    logger.info(f"{self._time_str()}Tool use started: {content_block}")
                     current_tool_use = {'type': 'tool_use', 'name': content_block.get('name'),
                                         'id': content_block.get('id'), 'input': ''}
 
             elif event_type == 'content_block_stop':
-                logger.debug("Content block stopped")
+                logger.info("Content block stopped")
                 for sentence in sentences:
-                    logger.debug(f"Yielding sentence: {sentence}")
+                    logger.info(f"{self._time_str()}Yielding sentence: {sentence}")
                     assistant_message += f"{sentence} "
                     yield sentence
                 sentences = []
@@ -243,29 +243,29 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                         message_list.append({"role": "assistant", "content": [current_tool_use]})
                         tool_name = current_tool_use['name']
                         tool_use_id = current_tool_use['id']
-                        logger.debug(f"Processing tool use: {tool_name}, {tool_use_id}")
+                        logger.info(f"{self._time_str()}Processing tool use: {tool_name}, {tool_use_id}")
                         tool_processor = self.tools_processors[tool_name]
                         tool_result = await tool_processor(tool_input)
-                        logger.debug(f"tool result: {json.dumps(tool_result, indent=2)}")
+                        logger.info(f"{self._time_str()}tool result: {json.dumps(tool_result, indent=2)}")
                         if self.tools[tool_name].iterative:
                             message_list.append({"role": "user", "content": [
                                 {'type': 'tool_result', 'content': tool_result, "tool_use_id": tool_use_id}]})
                             async for response in self.get_response_async(message_list):
-                                logger.debug(f"Yielding after tool response: {response}")
+                                logger.info(f"Yielding after tool response: {response}")
                                 yield response
                     except json.JSONDecodeError:
-                        logger.error(f"Failed to decode tool input JSON: {current_tool_use['input']}")
+                        logger.error(f"{self._time_str()}Failed to decode tool input JSON: {current_tool_use['input']}")
                     finally:
                         current_tool_use = None
 
             elif event_type == 'message_stop':
-                logger.debug("Message stopped")
+                logger.info(f"{self._time_str()}Message stopped")
                 message_ended = True
 
             # If the message has ended and we have any remaining text, yield it
             if message_ended:
                 if current_text:
-                    logger.debug(f"Yielding final text: {current_text}")
+                    logger.info(f"{self._time_str()}Yielding final text: {current_text}")
                     assistant_message += f"{current_text} "
                     yield current_text
                     current_text = ""  # Clear current_text to prevent duplication
@@ -274,7 +274,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
         # If the message somehow ended without a message_stop event and we still have text, yield it
         if current_text:
-            logger.debug(f"Yielding remaining text: {current_text}")
+            logger.info(f"{self._time_str()}Yielding remaining text: {current_text}")
             yield current_text
 
 
