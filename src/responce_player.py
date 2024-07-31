@@ -181,6 +181,7 @@ class ResponsePlayer:
         timezone (str): The timezone used for logging timestamps.
         playlist (queue.Queue): A queue of audio files and their associated LED behaviors ready for playback.
         wav_list (list): A list of WAV files to be merged.
+        wav_list_light (Dict): Light for wav_list.
         current_process (Optional[Popen]): The currently playing audio process.
         _should_play (bool): Flag indicating whether playback should continue.
         play_thread (Optional[threading.Thread]): Thread for audio playback.
@@ -217,6 +218,7 @@ class ResponsePlayer:
         self._stopped = False
         self.current_light = None
         self.wav_list: List[Tuple[str, str]] = []
+        self.wav_list_light = dict()
 
         for item in playlist:
             self.add(item)
@@ -266,18 +268,16 @@ class ResponsePlayer:
                 try:
                     mi: MergeItem = self.merge_queue.get_nowait()
                     logger.info(
-                        f"({time_string_ms(self.timezone)}) merging {mi.light} {mi.filename} {self.current_light} {self.wav_list}")
-                    if self.current_light is None:
-                        self.current_light = mi.light
-                        logger.info(f"set current light (2) to {self.current_light}")
-                        self.wav_list.append((mi.filename, mi.text))
-                    elif mi.light is None or mi.light == self.current_light:
+                        f"({time_string_ms(self.timezone)}) merging {mi.light} {mi.filename} {self.wav_list_light} {self.wav_list}")
+                    if not self.wav_list:
+                        self.wav_list_light = mi.light
+                        self.wav_list = [(mi.filename, mi.text)]
+                    elif mi.light is None or mi.light == self.wav_list_light:
                         self.wav_list.append((mi.filename, mi.text))
                     else:
                         self._process_wav_list(force=True)
-                        self.current_light = mi.light
-                        logger.info(f"set current light (3) to {self.current_light}")
-                        self.wav_list.append((mi.filename, mi.text))
+                        self.wav_list_light = mi.light
+                        self.wav_list = [(mi.filename, mi.text)]
                 except queue.Empty:
                     if self.wav_list:
                         self._process_wav_list()
@@ -306,17 +306,17 @@ class ResponsePlayer:
             #         return
 
             logger.debug(
-                f"({time_string_ms(self.timezone)}) merging {self.current_light} {self.wav_list} {self.playlist}")
+                f"({time_string_ms(self.timezone)}) merging {self.wav_list_light} {self.wav_list} {self.playlist}")
 
             if len(self.wav_list) == 1:
-                self.playlist.put((self.current_light, self.wav_list[0][0]))
+                self.playlist.put((self.wav_list_light, self.wav_list[0][0]))
             else:
                 output_filename = tempfile.mktemp(suffix=".wav")
                 combine_audio_files([w[0] for w in self.wav_list], output_filename)
-                self.playlist.put((self.current_light, output_filename))
+                self.playlist.put((self.wav_list_light, output_filename))
 
             logger.info(
-                f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list}")
+                f"Processed and added merged audio to playlist: {self.wav_list_light}, {self.wav_list}")
             self.wav_list = []
 
     def play(self):
