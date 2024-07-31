@@ -165,7 +165,12 @@ async def main_loop_async(button: Button, leds: Leds,
                                 break
 
                     button_pressed = False
-                    button.when_pressed = lambda: setattr(globals(), "button_pressed", True)
+
+                    def set_button_pressed():
+                        nonlocal button_pressed
+                        button_pressed = True
+
+                    button.when_pressed = lambda: set_button_pressed()
 
                     async for ai_response in conversation_manager.get_response(text):
                         if button_pressed:
@@ -223,4 +228,3 @@ async def main_loop_async(button: Button, leds: Leds,
                 logger.error(f"An error occurred in the main loop: {str(e)}")
                 logger.error(traceback.format_exc())
                 error_visual(leds)
-
