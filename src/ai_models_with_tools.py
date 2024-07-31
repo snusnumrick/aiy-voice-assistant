@@ -8,7 +8,7 @@ import aiohttp
 
 from src.ai_models import ClaudeAIModel
 from src.config import Config
-from src.tools import extract_sentences, retry_async_generator, get_token_count
+from src.tools import extract_sentences, retry_async, retry_async_generator, get_token_count
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +124,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                                 logger.error(f"Failed to decode JSON: {line}")
                                 continue
 
+    @retry_async()
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
         """
         Asynchronously process responses from the AI model and yield sentences.
@@ -192,7 +193,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
             if event_type == 'error':
                 logger.error(f"{self._time_str()}Error: {event['error']}")
-                continue
+                raise Exception(f"Claude error: {event['error']['message']}")
 
             if event_type == 'content_block_delta':
                 delta = event.get('delta', {})
