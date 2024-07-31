@@ -87,6 +87,9 @@ class TestExtractSentences(unittest.TestCase):
     def test_mixed_numeration_and_regular_sentences(self):
         self.assert_sentences("This is a regular sentence. 1. Then a numbered point. Another regular sentence.",
                               ["This is a regular sentence.", "1. Then a numbered point.", "Another regular sentence."])
+    def test_numeration_after_colon(self):
+        self.assert_sentences("Intro: 1. one. 2. two.",
+                              ['Intro:', '1. one.', '2. two.'])
 
 
 if __name__ == '__main__':
