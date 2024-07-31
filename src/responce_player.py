@@ -225,34 +225,33 @@ class ResponsePlayer:
         if not self._should_play:
             self.play()
 
-    def change_light_behavior(self, behaviour: dict, leds: Leds) -> None:
+    def change_light_behavior(self, behaviour: dict) -> None:
         """
         Changes the LED behavior based on the provided behaviour dictionary.
 
         Args:
             behaviour (dict): A dictionary containing LED behavior parameters.
-            leds (Leds): An instance of the Leds class to control.
         """
         if behaviour is None or behaviour == self.current_light:
             return
         self.current_light = behaviour
         logger.info(f"changing LED behavior: {behaviour}")
         if not behaviour:
-            leds.update(Leds.rgb_off())
+            self.leds.update(Leds.rgb_off())
         else:
             color = adjust_rgb_brightness(behaviour['color'], behaviour['brightness'])
             if behaviour["behavior"] == "breathing":
-                leds.pattern = Pattern.breathe(behaviour["period"] * 1000)
-                leds.update(Leds.rgb_pattern(color))
+                self.leds.pattern = Pattern.breathe(behaviour["period"] * 1000)
+                self.leds.update(Leds.rgb_pattern(color))
                 logger.debug(
                     f"breathing {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['period']} period")
             elif behaviour["behavior"] == "blinking":
-                leds.pattern = Pattern.blink(behaviour["period"] * 1000)
-                leds.update(Leds.rgb_pattern(color))
+                self.leds.pattern = Pattern.blink(behaviour["period"] * 1000)
+                self.leds.update(Leds.rgb_pattern(color))
                 logger.debug(
                     f"blinking {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['period']} period")
             else:
-                leds.update(Leds.rgb_on(color))
+                self.leds.update(Leds.rgb_on(color))
                 logger.debug(f"solid {behaviour['color']} {behaviour['brightness']} ({color}) color")
 
     def _merge_audio_files(self):
@@ -369,8 +368,7 @@ class ResponsePlayer:
             self.current_process = None
 
             # Switch off LED
-            self.leds.update(Leds.rgb_off())
-
+            self.change_light_behavior({})
             logger.debug(f"Finished playing {audio_file}")
 
         logger.debug("_play_sequence ended")
