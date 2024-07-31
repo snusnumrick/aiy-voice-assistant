@@ -141,6 +141,7 @@ def change_light_behavior(behaviour: dict, leds: Leds) -> None:
         behaviour (dict): A dictionary containing LED behavior parameters.
         leds (Leds): An instance of the Leds class to control.
     """
+    logger.info(f"changing LED behavior: {behaviour}")
     if not behaviour:
         leds.update(Leds.rgb_off())
     else:
@@ -351,7 +352,6 @@ class ResponsePlayer:
                     break
                 try:
                     light, audio_file = self.playlist.get_nowait()
-                    self.current_light = light
                     logger.info(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
                 except queue.Empty:
                     # If playlist is empty, process wav_list and continue
@@ -360,8 +360,9 @@ class ResponsePlayer:
 
             logger.info(f"({time_string_ms(self.timezone)}) Playing {audio_file} with light {light}")
 
-            if light is not None:
+            if light is not None and light != self.current_light:
                 change_light_behavior(light, self.leds)
+            self.current_light = light
 
             self.current_process = play_wav_async(audio_file)
             self.current_process.wait()
