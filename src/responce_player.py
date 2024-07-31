@@ -368,9 +368,10 @@ class ResponsePlayer:
             self.current_process.wait()
             self.current_process = None
 
-            # Switch off LED
-            self.change_light_behavior({})
             logger.debug(f"Finished playing {audio_file}")
+
+        # Switch off LED
+        self.change_light_behavior({})
 
         logger.debug("_play_sequence ended")
         self.current_process = None
