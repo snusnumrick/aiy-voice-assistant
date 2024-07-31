@@ -279,7 +279,6 @@ class ResponsePlayer:
                 except queue.Empty:
                     if self.wav_list:
                         self._process_wav_list()
-                        self.current_light = None
             with self.condition:
                 if self.merge_queue.empty() and not self._should_play:
                     self.condition.wait(timeout=1.0)
