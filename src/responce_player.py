@@ -236,7 +236,7 @@ class ResponsePlayer:
                 return
 
             emo, file, text = playitem
-            light = None if emo is None else emo.get('light', {})
+            light = None if emo is None else emo.get('light', None)
             m_item = MergeItem(light=light, filename=file, text=text)
             logger.debug(f"({time_string_ms(self.timezone)}) Adding {m_item} to merge queue.")
             self.merge_queue.put(m_item)
