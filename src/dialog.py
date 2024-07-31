@@ -118,7 +118,6 @@ async def main_loop_async(button: Button, leds: Leds,
             logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
             logger.error(traceback.format_exc())
             return False
-    nonlocal button
 
     async with aiohttp.ClientSession() as session:
         while True:
