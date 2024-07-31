@@ -105,50 +105,6 @@ async def main_loop_async(button: Button, leds: Leds,
                     process_tasks = []
                     synthesis_tasks = []
 
-                    async def process_synthesis_result(num: int, emo, audio_file_name, task, response_text: str,
-                                                       tone: Tone, lang: Language):
-                        nonlocal response_player
-                        logger.debug(
-                            f"({time_string_ms(timezone)}) Starting process_synthesis_result for {audio_file_name}")
-                        try:
-                            if num > 0:
-                                await asyncio.gather(*synthesis_tasks[:num], return_exceptions=True)
-                                logger.debug("previous tasks complete")
-
-                            result = await task
-                            logger.debug(f"Synthesis task completed for {audio_file_name}")
-                            if result:
-                                logger.debug(f"({time_string_ms(timezone)}) Synthesis {audio_file_name} completed")
-                                if response_player is None:
-                                    response_player = ResponsePlayer([(emo, audio_file_name, response_text)],
-                                                                     leds, timezone)
-                                    response_player.play()
-                                else:
-                                    response_player.add((emo, audio_file_name, response_text))
-                            else:
-                                logger.warning(
-                                    f"Primary TTS engine failed for file: {audio_file_name}. Trying fallback engine.")
-                                fallback_result = await fallback_tts_engine.synthesize_async(session, response_text,
-                                                                                             audio_file_name, tone,
-                                                                                             lang)
-                                if fallback_result:
-                                    logger.info(f"Fallback TTS engine succeeded for file: {audio_file_name}")
-                                    if response_player is None:
-                                        response_player = ResponsePlayer([(emo, audio_file_name, response_text)],
-                                                                         leds, timezone)
-                                        response_player.play()
-                                    else:
-                                        response_player.add((emo, audio_file_name, response_text))
-                                else:
-                                    logger.error(
-                                        f"Both primary and fallback TTS engines failed for file: {audio_file_name}")
-                                    error_visual(leds)
-                        except Exception as e:
-                            logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
-                            logger.error(traceback.format_exc())
-                            error_visual(leds)
-                        logger.debug(f"Finished process_synthesis_result for {audio_file_name}")
-
                     async def synthesize_with_fallback(session, tts_engine, fallback_tts_engine, response_text: str,
                                                        audio_file_name: str, tone: Tone, lang: Language) -> bool:
                         try:
@@ -187,6 +143,38 @@ async def main_loop_async(button: Button, leds: Leds,
                                 if text:
                                     response_count = 0
                                     synthesis_tasks: List[Tuple[asyncio.Task, dict]] = []
+                                    next_response_index = 0
+
+                                    async def process_completed_tasks():
+                                        nonlocal next_response_index, response_player
+                                        while next_response_index < len(synthesis_tasks):
+                                            task, response_info = synthesis_tasks[next_response_index]
+                                            if task.done():
+                                                try:
+                                                    result = task.result()
+                                                    if result:
+                                                        if response_player is None:
+                                                            response_player = ResponsePlayer([(response_info["emo"],
+                                                                                               response_info[
+                                                                                                   "audio_file_name"],
+                                                                                               response_info[
+                                                                                                   "response_text"])],
+                                                                                             leds, timezone)
+                                                            response_player.play()
+                                                        else:
+                                                            response_player.add((response_info["emo"],
+                                                                                 response_info["audio_file_name"],
+                                                                                 response_info["response_text"]))
+                                                    else:
+                                                        logger.error(
+                                                            f"Speech synthesis failed for file: {response_info['audio_file_name']}")
+                                                        error_visual(leds)
+                                                except Exception as e:
+                                                    logger.error(f"Error occurred during synthesis: {str(e)}")
+                                                    error_visual(leds)
+                                                next_response_index += 1
+                                            else:
+                                                break
 
                                     async for ai_response in conversation_manager.get_response(text):
                                         logger.info(f"ai response: {ai_response}")
@@ -219,30 +207,16 @@ async def main_loop_async(button: Button, leds: Leds,
                                                                     {"emo": emo, "audio_file_name": audio_file_name,
                                                                      "response_text": response_text}))
 
-                                    # Wait for all synthesis tasks to complete
-                                    results = await asyncio.gather(*[task for task, _ in synthesis_tasks],
-                                                                   return_exceptions=True)
+                                            # Process any completed tasks
+                                            await process_completed_tasks()
 
-                                    # Process results in order
-                                    for (_, response_info), result in zip(synthesis_tasks, results):
-                                        if isinstance(result, Exception):
-                                            logger.error(f"Error occurred during synthesis: {str(result)}")
-                                            error_visual(leds)
-                                        elif result:
-                                            if response_player is None:
-                                                response_player = ResponsePlayer([(response_info["emo"],
-                                                                                   response_info["audio_file_name"],
-                                                                                   response_info["response_text"])],
-                                                                                 leds, timezone)
-                                                response_player.play()
-                                            else:
-                                                response_player.add((response_info["emo"],
-                                                                     response_info["audio_file_name"],
-                                                                     response_info["response_text"]))
-                                        else:
-                                            logger.error(
-                                                f"Speech synthesis failed for file: {response_info['audio_file_name']}")
-                                            error_visual(leds)
+                                            # Yield control to allow other tasks to run
+                                            await asyncio.sleep(0)
+
+                                    # Wait for any remaining tasks to complete
+                                    while next_response_index < len(synthesis_tasks):
+                                        await process_completed_tasks()
+                                        await asyncio.sleep(0.1)
 
                                     # Ensure all audio has finished playing
                                     while (response_player is not None) and response_player.is_playing():
