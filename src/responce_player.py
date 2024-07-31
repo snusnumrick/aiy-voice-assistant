@@ -297,11 +297,11 @@ class ResponsePlayer:
             if not self.wav_list:
                 return
 
-            if not force:
-                last_text = self.wav_list[-1][1]
-                if last_text and not last_text[-1] in ".!?:":
-                    logger.info(f"wav list does not end with sentence ending: {self.wav_list} - waiting for completion")
-                    return
+            # if not force:
+            #     last_text = self.wav_list[-1][1]
+            #     if last_text and not last_text[-1] in ".!?:":
+            #         logger.info(f"wav list does not end with sentence ending: {self.wav_list} - waiting for completion")
+            #         return
 
             logger.debug(
                 f"({time_string_ms(self.timezone)}) merging {self.current_light} {self.wav_list} {self.playlist}")
