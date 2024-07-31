@@ -362,7 +362,7 @@ class ResponsePlayer:
             logger.info(
                 f"({time_string_ms(self.timezone)}) Playing {audio_file} with light {light}, with current light {self.current_light}")
 
-            self.change_light_behavior(light, self.leds)
+            self.change_light_behavior(light)
             self.current_process = play_wav_async(audio_file)
             self.current_process.wait()
             self.current_process = None
