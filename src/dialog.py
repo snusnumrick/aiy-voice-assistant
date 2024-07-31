@@ -171,6 +171,7 @@ async def main_loop_async(button: Button, leds: Leds,
                         button_pressed = True
 
                     button.when_pressed = lambda: set_button_pressed()
+                    logger.info("set button callback")
 
                     async for ai_response in conversation_manager.get_response(text):
                         if button_pressed:
@@ -182,7 +183,7 @@ async def main_loop_async(button: Button, leds: Leds,
                         logger.info(f"ai response: {ai_response}")
                         for response in ai_response:
                             response_count += 1
-                            logger.info(f'({time_string_ms(timezone)}) AI says: {response["text"]}')
+                            logger.debug(f'({time_string_ms(timezone)}) AI says: {response["text"]}')
 
                             emo = response["emotion"]
                             response_text = response["text"]
@@ -217,6 +218,11 @@ async def main_loop_async(button: Button, leds: Leds,
 
                     # Wait for any remaining tasks to complete
                     while next_response_index < len(synthesis_tasks):
+                        if button_pressed:
+                            logger.info("button pressed (2), stopping processing")
+                            if response_player:
+                                response_player.stop()
+                            break
                         await process_completed_tasks()
                         await asyncio.sleep(0.1)
 

@@ -272,7 +272,7 @@ class ResponsePlayer:
                     break
                 try:
                     mi: MergeItem = self.merge_queue.get_nowait()
-                    logger.info(
+                    logger.debug(
                         f"({time_string_ms(self.timezone)}) merging {mi.light} {mi.filename} {self.wav_list_light} {self.wav_list}")
                     if not self.wav_list:
                         self.wav_list_light = mi.light
@@ -289,7 +289,7 @@ class ResponsePlayer:
             with self.condition:
                 if self.merge_queue.empty() and not self._should_play:
                     self.condition.wait(timeout=1.0)
-        logger.info("Merge process ended")
+        logger.debug("Merge process ended")
 
     def _process_wav_list(self, force=False):
         """
@@ -299,7 +299,7 @@ class ResponsePlayer:
         into a single file, or add a single WAV file directly to the playlist.
         """
         with self.lock:
-            logger.info(f"process wav list {self.wav_list}")
+            logger.debug(f"process wav list {self.wav_list}")
 
             if not self.wav_list:
                 return
@@ -307,7 +307,7 @@ class ResponsePlayer:
             # if not force:
             #     last_text = self.wav_list[-1][1]
             #     if last_text and not last_text[-1] in ".!?:":
-            #         logger.info(f"wav list does not end with sentence ending: {self.wav_list} - waiting for completion")
+            #         logger.debug(f"wav list does not end with sentence ending: {self.wav_list} - waiting for completion")
             #         return
 
             logger.debug(
@@ -321,7 +321,7 @@ class ResponsePlayer:
                 combine_audio_files([w[0] for w in self.wav_list], output_filename)
                 self.playlist.put((light, output_filename))
 
-            logger.info(f"Processed and added merged audio to playlist: {self.wav_list_light}, {self.wav_list}")
+            logger.debug(f"Processed and added merged audio to playlist: {self.wav_list_light}, {self.wav_list}")
             self.wav_list = []
 
     def play(self):
@@ -354,17 +354,17 @@ class ResponsePlayer:
                     logger.debug(f"({time_string_ms(self.timezone)}) wait for condition")
                     self.condition.wait()
                 if not self._should_play:
-                    logger.info(f"should_play: False")
+                    logger.debug(f"should_play: False")
                     break
                 try:
                     light, audio_file = self.playlist.get_nowait()
-                    logger.info(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
+                    logger.debug(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
                 except queue.Empty:
                     # If playlist is empty, process wav_list and continue
                     self._process_wav_list()
                     continue
 
-            logger.info(
+            logger.debug(
                 f"({time_string_ms(self.timezone)}) Playing {audio_file} with light {light}, with current light {self.current_light}")
 
             self.change_light_behavior(light)
