@@ -165,6 +165,9 @@ async def main_loop_async(button: Button, leds: Leds,
                                 break
 
                     async for ai_response in conversation_manager.get_response(text):
+                        if transcriber.button_is_pressed:
+                            logger.info("button pressed, stopping processing")
+                            break
                         logger.info(f"ai response: {ai_response}")
                         for response in ai_response:
                             response_count += 1

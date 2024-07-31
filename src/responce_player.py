@@ -192,6 +192,9 @@ class ResponsePlayer:
         self.wav_list: List[Tuple[str, str]] = []
         self.wav_list_light = dict()
 
+        # start with light off
+        self.change_light_behavior({})
+
         for item in playlist:
             self.add(item)
 
