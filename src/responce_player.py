@@ -358,7 +358,7 @@ class ResponsePlayer:
                     self._process_wav_list()
                     continue
 
-            logger.info(f"({time_string_ms(self.timezone)}) Playing {audio_file} with light {light}")
+            logger.info(f"({time_string_ms(self.timezone)}) Playing {audio_file} with light {light}, with current light {self.current_light}")
 
             if light is not None and light != self.current_light:
                 change_light_behavior(light, self.leds)
