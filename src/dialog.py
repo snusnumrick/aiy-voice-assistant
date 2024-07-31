@@ -62,7 +62,8 @@ def append_suffix(file_name: str, suffix: str) -> str:
     return new_path
 
 
-async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language, TTSEngine],
+async def main_loop_async(button: Button, leds: Leds,
+                          tts_engines: Dict[Language, TTSEngine], fallback_tts_engine: TTSEngine,
                           conversation_manager: ConversationManager, config: Config, timezone: str) -> None:
     """
     The main conversation loop of the AI assistant with truly interleaved AI response generation and speech synthesis.
@@ -77,6 +78,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
         button (Button): The AIY Kit button object.
         leds (Leds): The AIY Kit LED object for visual feedback.
         tts_engines (Dict[Language, TTSEngine]): Dictionary of TTS engines for each supported language.
+        fallback_tts_engine (TTSEngine): Fallback TTS engine.
         conversation_manager (ConversationManager): The conversation manager object.
         config (Config): The application configuration object.
         timezone (str): The timezone to use for the conversation loop.
@@ -103,9 +105,11 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                     process_tasks = []
                     synthesis_tasks = []
 
-                    async def process_synthesis_result(num: int, emo, audio_file_name, task, response_text: str):
+                    async def process_synthesis_result(num: int, emo, audio_file_name, task, response_text: str,
+                                                       tone: Tone, lang: Language):
                         nonlocal response_player
-                        logger.debug(f"({time_string_ms(timezone)}) Starting process_synthesis_result for {audio_file_name}")
+                        logger.debug(
+                            f"({time_string_ms(timezone)}) Starting process_synthesis_result for {audio_file_name}")
                         try:
                             if num > 0:
                                 await asyncio.gather(*synthesis_tasks[:num], return_exceptions=True)
@@ -122,8 +126,23 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                                 else:
                                     response_player.add((emo, audio_file_name, response_text))
                             else:
-                                logger.error(f"Speech synthesis failed for file: {audio_file_name}")
-                                error_visual(leds)
+                                logger.warning(
+                                    f"Primary TTS engine failed for file: {audio_file_name}. Trying fallback engine.")
+                                fallback_result = await fallback_tts_engine.synthesize_async(session, response_text,
+                                                                                             audio_file_name, tone,
+                                                                                             lang)
+                                if fallback_result:
+                                    logger.info(f"Fallback TTS engine succeeded for file: {audio_file_name}")
+                                    if response_player is None:
+                                        response_player = ResponsePlayer([(emo, audio_file_name, response_text)],
+                                                                         leds, timezone)
+                                        response_player.play()
+                                    else:
+                                        response_player.add((emo, audio_file_name, response_text))
+                                else:
+                                    logger.error(
+                                        f"Both primary and fallback TTS engines failed for file: {audio_file_name}")
+                                    error_visual(leds)
                         except Exception as e:
                             logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
                             logger.error(traceback.format_exc())
@@ -148,7 +167,6 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             tts_engine = tts_engines.get(lang, tts_engines[Language.RUSSIAN])
                             logger.debug(f"Tone: {tone}, language = {lang}, tts_engine = {tts_engine}")
 
-                            # Create and start the task immediately
                             logger.debug(f"({time_string_ms(timezone)}) Created task for synthesis {audio_file_name} "
                                          f"from {response_text[:50]}")
                             synthesis_task = asyncio.create_task(
@@ -156,10 +174,9 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             synthesis_tasks.append(synthesis_task)
                             process_task = asyncio.create_task(
                                 process_synthesis_result(len(process_tasks), emo, audio_file_name, synthesis_task,
-                                                         response_text))
+                                                         response_text, tone, lang))
                             process_tasks.append(process_task)
 
-                            # Yield control to allow tasks to start executing
                             await asyncio.sleep(0.1)
 
                     # Wait for all synthesis tasks to complete

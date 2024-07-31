@@ -71,13 +71,14 @@ def main():
         tts_engines = {Language.RUSSIAN: yandex_engine if yandex_engine else elevenlabs_engine,
                        Language.ENGLISH: elevenlabs_engine if elevenlabs_engine else yandex_engine,
                        Language.GERMAN: elevenlabs_engine if elevenlabs_engine else yandex_engine}
+        fallback_tts_engine = yandex_engine if yandex_engine else elevenlabs_engine
         # ai_model = OpenRouterModel(config)
         ai_model = ClaudeAIModelWithTools(config, tools=tools, timezone=timezone)
         conversation_manager = ConversationManager(config, ai_model, timezone)
 
         # Start the main conversation loop
         # main_loop(board.button, leds, tts_engine, conversation_manager, config)
-        asyncio.run(main_loop_async(board.button, leds, tts_engines, conversation_manager, config, timezone))
+        asyncio.run(main_loop_async(board.button, leds, tts_engines, fallback_tts_engine, conversation_manager, config, timezone))
 
 
 if __name__ == '__main__':
