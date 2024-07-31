@@ -118,6 +118,7 @@ async def main_loop_async(button: Button, leds: Leds,
             logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
             logger.error(traceback.format_exc())
             return False
+    nonlocal button
 
     async with aiohttp.ClientSession() as session:
         while True:
@@ -164,10 +165,14 @@ async def main_loop_async(button: Button, leds: Leds,
                             else:
                                 break
 
+                    button_pressed = False
+                    button.when_pressed = lambda: setattr(globals(), "button_pressed", True)
+
                     async for ai_response in conversation_manager.get_response(text):
-                        if transcriber.button_is_pressed:
+                        if button_pressed:
                             logger.info("button pressed, stopping processing")
                             break
+
                         logger.info(f"ai response: {ai_response}")
                         for response in ai_response:
                             response_count += 1
