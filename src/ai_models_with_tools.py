@@ -124,7 +124,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                                 logger.error(f"Failed to decode JSON: {line}")
                                 continue
 
-    @retry_async()
+    @retry_async_generator()
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
         """
         Asynchronously process responses from the AI model and yield sentences.
