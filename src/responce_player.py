@@ -309,12 +309,13 @@ class ResponsePlayer:
             logger.debug(
                 f"({time_string_ms(self.timezone)}) merging {self.wav_list_light} {self.wav_list} {self.playlist}")
 
+            light = self.wav_list_light if self.wav_list_light is not None else self.current_light
             if len(self.wav_list) == 1:
-                self.playlist.put((self.wav_list_light, self.wav_list[0][0]))
+                self.playlist.put((light, self.wav_list[0][0]))
             else:
                 output_filename = tempfile.mktemp(suffix=".wav")
                 combine_audio_files([w[0] for w in self.wav_list], output_filename)
-                self.playlist.put((self.wav_list_light, output_filename))
+                self.playlist.put((light, output_filename))
 
             logger.info(f"Processed and added merged audio to playlist: {self.wav_list_light}, {self.wav_list}")
             self.wav_list = []
