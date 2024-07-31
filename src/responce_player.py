@@ -9,8 +9,8 @@ import queue
 import re
 import tempfile
 import threading
+from dataclasses import dataclass
 from subprocess import Popen
-from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Optional
 
 from aiy.leds import Leds, Pattern
@@ -133,34 +133,6 @@ def adjust_rgb_brightness(rgb: List[int], brightness: str) -> Tuple[int, int, in
     return r, g, b
 
 
-def change_light_behavior(behaviour: dict, leds: Leds) -> None:
-    """
-    Changes the LED behavior based on the provided behaviour dictionary.
-
-    Args:
-        behaviour (dict): A dictionary containing LED behavior parameters.
-        leds (Leds): An instance of the Leds class to control.
-    """
-    logger.info(f"changing LED behavior: {behaviour}")
-    if not behaviour:
-        leds.update(Leds.rgb_off())
-    else:
-        color = adjust_rgb_brightness(behaviour['color'], behaviour['brightness'])
-        if behaviour["behavior"] == "breathing":
-            leds.pattern = Pattern.breathe(behaviour["period"] * 1000)
-            leds.update(Leds.rgb_pattern(color))
-            logger.debug(
-                f"breathing {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['period']} period")
-        elif behaviour["behavior"] == "blinking":
-            leds.pattern = Pattern.blink(behaviour["period"] * 1000)
-            leds.update(Leds.rgb_pattern(color))
-            logger.debug(
-                f"blinking {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['period']} period")
-        else:
-            leds.update(Leds.rgb_on(color))
-            logger.debug(f"solid {behaviour['color']} {behaviour['brightness']} ({color}) color")
-
-
 @dataclass
 class MergeItem:
     light: dict
@@ -253,6 +225,36 @@ class ResponsePlayer:
         if not self._should_play:
             self.play()
 
+    def change_light_behavior(self, behaviour: dict, leds: Leds) -> None:
+        """
+        Changes the LED behavior based on the provided behaviour dictionary.
+
+        Args:
+            behaviour (dict): A dictionary containing LED behavior parameters.
+            leds (Leds): An instance of the Leds class to control.
+        """
+        if behaviour is None or behaviour == self.current_light:
+            return
+        self.current_light = behaviour
+        logger.info(f"changing LED behavior: {behaviour}")
+        if not behaviour:
+            leds.update(Leds.rgb_off())
+        else:
+            color = adjust_rgb_brightness(behaviour['color'], behaviour['brightness'])
+            if behaviour["behavior"] == "breathing":
+                leds.pattern = Pattern.breathe(behaviour["period"] * 1000)
+                leds.update(Leds.rgb_pattern(color))
+                logger.debug(
+                    f"breathing {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['period']} period")
+            elif behaviour["behavior"] == "blinking":
+                leds.pattern = Pattern.blink(behaviour["period"] * 1000)
+                leds.update(Leds.rgb_pattern(color))
+                logger.debug(
+                    f"blinking {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['period']} period")
+            else:
+                leds.update(Leds.rgb_on(color))
+                logger.debug(f"solid {behaviour['color']} {behaviour['brightness']} ({color}) color")
+
     def _merge_audio_files(self):
         """
         Merge audio files with the same LED behavior.
@@ -315,8 +317,7 @@ class ResponsePlayer:
                 combine_audio_files([w[0] for w in self.wav_list], output_filename)
                 self.playlist.put((self.wav_list_light, output_filename))
 
-            logger.info(
-                f"Processed and added merged audio to playlist: {self.wav_list_light}, {self.wav_list}")
+            logger.info(f"Processed and added merged audio to playlist: {self.wav_list_light}, {self.wav_list}")
             self.wav_list = []
 
     def play(self):
@@ -359,13 +360,10 @@ class ResponsePlayer:
                     self._process_wav_list()
                     continue
 
-            logger.info(f"({time_string_ms(self.timezone)}) Playing {audio_file} with light {light}, with current light {self.current_light}")
+            logger.info(
+                f"({time_string_ms(self.timezone)}) Playing {audio_file} with light {light}, with current light {self.current_light}")
 
-            if light is not None and light != self.current_light:
-                change_light_behavior(light, self.leds)
-            self.current_light = light
-            logger.info(f"set current light (1) to {self.current_light}")
-
+            self.change_light_behavior(light, self.leds)
             self.current_process = play_wav_async(audio_file)
             self.current_process.wait()
             self.current_process = None
