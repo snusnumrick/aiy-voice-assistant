@@ -351,6 +351,7 @@ class ResponsePlayer:
                     break
                 try:
                     light, audio_file = self.playlist.get_nowait()
+                    self.current_light = light
                     logger.info(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
                 except queue.Empty:
                     # If playlist is empty, process wav_list and continue
