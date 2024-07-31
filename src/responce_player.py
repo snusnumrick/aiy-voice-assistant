@@ -299,11 +299,11 @@ class ResponsePlayer:
                 return
 
             last_text = self.wav_list[-1][1]
-            if last_text and not last_text[-1] in ".!?":
+            if last_text and not last_text[-1] in ".!?:":
                 logger.info(f"wav list does not end with sentence ending: {self.wav_list}")
                 return
 
-            logger.info(
+            logger.debug(
                 f"({time_string_ms(self.timezone)}) merging {self.current_light} {self.wav_list} {self.playlist}")
 
             if len(self.wav_list) == 1:
@@ -312,11 +312,10 @@ class ResponsePlayer:
                 output_filename = tempfile.mktemp(suffix=".wav")
                 combine_audio_files([w[0] for w in self.wav_list], output_filename)
                 self.playlist.put((self.current_light, output_filename))
-            logger.info(f"updated playlist {self.playlist}")
-            self.wav_list = []
 
             logger.info(
-                f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list}, {self.playlist}")
+                f"Processed and added merged audio to playlist: {self.current_light}, {self.wav_list}")
+            self.wav_list = []
 
     def play(self):
         """

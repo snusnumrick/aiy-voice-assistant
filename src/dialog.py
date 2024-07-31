@@ -114,7 +114,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                             result = await task
                             logger.debug(f"Synthesis task completed for {audio_file_name}")
                             if result:
-                                logger.info(f"({time_string_ms(timezone)}) Synthesis {audio_file_name} completed")
+                                logger.debug(f"({time_string_ms(timezone)}) Synthesis {audio_file_name} completed")
                                 if response_player is None:
                                     response_player = ResponsePlayer([(emo, audio_file_name, response_text)],
                                                                      leds, timezone)
@@ -131,7 +131,7 @@ async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language
                         logger.debug(f"Finished process_synthesis_result for {audio_file_name}")
 
                     async for ai_response in conversation_manager.get_response(text):
-                        logger.debug(f"ai response: {ai_response}")
+                        logger.info(f"ai response: {ai_response}")
                         for response in ai_response:
                             response_count += 1
                             logger.info(f'({time_string_ms(timezone)}) AI says: {response["text"]}')
