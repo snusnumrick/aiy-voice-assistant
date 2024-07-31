@@ -31,9 +31,11 @@ def error_visual(leds: Leds):
         Display a visual error indicator using the LED.
         Blinks the LED red once to indicate an error has occurred.
     """
+    logger.info("error... LED blinking")
     leds.update(Leds.rgb_on(Color.RED))
     time.sleep(0.3)
     leds.update(Leds.rgb_off())
+    logger.info("error... LED off")
 
 
 def append_suffix(file_name: str, suffix: str) -> str:

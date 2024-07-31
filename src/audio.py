@@ -249,7 +249,7 @@ class SpeechTranscriber:
             def start_idle() -> bool:
                 nonlocal status, time_breathing_started, breathing_on, player_process
                 if player_process is None or not player_process.is_playing():
-                    logger.info(f'({time_string_ms(self.timezone)}) Ready to listen...')
+                    logger.info(f'({time_string_ms(self.timezone)}) Ready to listen...  LED: breathing')
                     self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
                     self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
                     time_breathing_started = time.time()
@@ -260,21 +260,21 @@ class SpeechTranscriber:
 
             def start_listening():
                 nonlocal status, breathing_on, recoding_started_at
-                logger.info(f'({time_string_ms(self.timezone)}) Recording audio...')
+                logger.info(f'({time_string_ms(self.timezone)}) Recording audio... LED solid')
                 self.leds.update(Leds.rgb_on(self.led_recording_color))
                 breathing_on = False
                 recoding_started_at = time.time()
 
             def start_processing():
                 nonlocal status, record_more
-                logger.info(f'({time_string_ms(self.timezone)}) Processing audio...')
+                logger.info(f'({time_string_ms(self.timezone)}) Processing audio... LED blinking')
                 self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_processing_color))
                 record_more = self.number_of_chuncks_to_record_after_button_depressed
 
             def stop_breathing():
                 nonlocal breathing_on
-                logger.debug('Breathing off')
+                logger.info('Breathing off LED OFF')
                 self.leds.update(Leds.rgb_off())
                 breathing_on = False
 
@@ -409,10 +409,12 @@ class SpeechTranscriber:
         """
         Wait for the button to be pressed, with visual LED feedback.
         """
+        logger.info('Waiting for button press... LED solid')
         self.leds.pattern = Pattern.breathe(10000)
         self.leds.update(Leds.rgb_pattern((0, 1, 0)))
         self.button.wait_for_press()
         self.leds.update(Leds.rgb_off())
+        logger.info('Button pressed LED OFF')
 
 
 def split_text(text: str, max_length: int) -> List[str]:

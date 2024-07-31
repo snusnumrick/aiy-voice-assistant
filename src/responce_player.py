@@ -237,6 +237,7 @@ class ResponsePlayer:
         self.current_light = behaviour
         logger.info(f"changing LED behavior: {behaviour}")
         if not behaviour:
+            logger.info("empty behaviour, LED OFF")
             self.leds.update(Leds.rgb_off())
         else:
             color = adjust_rgb_brightness(behaviour['color'], behaviour['brightness'])
