@@ -312,6 +312,7 @@ class ResponsePlayer:
                 output_filename = tempfile.mktemp(suffix=".wav")
                 combine_audio_files([w[0] for w in self.wav_list], output_filename)
                 self.playlist.put((self.current_light, output_filename))
+            logger.info(f"updated playlist {self.playlist}")
             self.wav_list = []
 
             logger.info(
@@ -351,7 +352,7 @@ class ResponsePlayer:
                     break
                 try:
                     light, audio_file = self.playlist.get_nowait()
-                    logger.debug(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
+                    logger.info(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
                 except queue.Empty:
                     # If playlist is empty, process wav_list and continue
                     logger.info("playlist is empty, process wav_list and continue")
