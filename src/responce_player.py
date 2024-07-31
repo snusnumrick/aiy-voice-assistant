@@ -268,13 +268,13 @@ class ResponsePlayer:
                         f"({time_string_ms(self.timezone)}) merging {mi.light} {mi.filename} {self.current_light} {self.wav_list}")
                     if self.current_light is None:
                         self.current_light = mi.light if mi.light is not None else {}
-                        self.wav_list = [(mi.filename, mi.text)]
+                        self.wav_list.append((mi.filename, mi.text))
                     elif mi.light is None or mi.light == self.current_light:
                         self.wav_list.append((mi.filename, mi.text))
                     else:
                         self._process_wav_list(force=True)
                         self.current_light = mi.light
-                        self.wav_list = [(mi.filename, mi.text)]
+                        self.wav_list.append((mi.filename, mi.text))
                 except queue.Empty:
                     if self.wav_list:
                         self._process_wav_list()

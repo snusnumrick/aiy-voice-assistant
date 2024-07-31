@@ -256,7 +256,6 @@ class SpeechTranscriber:
                     breathing_on = True
                     return True
                 else:
-                    logger.info("still paying")
                     return False
 
             def start_listening():
