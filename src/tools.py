@@ -496,7 +496,7 @@ def extract_sentences(text: str) -> List[str]:
     # This matches any whitespace character.
     # It ensures that there's a space after the sentence-ending punctuation.
     #
-    sentence_end_pattern = r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!|:)\s'
+    sentence_end_pattern = r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!|:|\))\s'
 
     # match numbers followed by a period and a space: "1. ", "42. ", "007. ";
     # Numbers followed by a period at the end of a string or line: "1.", "42.", "007."
@@ -611,6 +611,7 @@ def test():
     # print(extract_sentences("$incomplete... Next sentence."))
     # print(extract_sentences('$remember: начало факта. Второе предложение. $ Остальной текст.'))
     # print(extract_sentences('This is a sentence. This is another one!'))
+    print(extract_sentences('text) 1. one. 2. two.'))
     print(extract_sentences('Intro: 1. one. 2. two.'))
     # print(extract_sentences('$pattern1$.$pattern2$.'))
     # print(extract_sentences('1. First. And. 2. Second'))
