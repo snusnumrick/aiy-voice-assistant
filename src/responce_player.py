@@ -263,18 +263,18 @@ class ResponsePlayer:
                 if not self._should_play and self.merge_queue.empty():
                     break
                 try:
-                    light, wav, text = self.merge_queue.get_nowait()
+                    mi: MergeItem = self.merge_queue.get_nowait()
                     logger.debug(
-                        f"({time_string_ms(self.timezone)}) merging {light} {wav} {self.current_light} {self.wav_list}")
+                        f"({time_string_ms(self.timezone)}) merging {mi.light} {mi.filename} {self.current_light} {self.wav_list}")
                     if self.current_light is None:
-                        self.current_light = light if light is not None else {}
-                        self.wav_list = [(wav, text)]
-                    elif light is None or light == self.current_light:
-                        self.wav_list.append((wav, text))
+                        self.current_light = mi.light if mi.light is not None else {}
+                        self.wav_list = [(mi.filename, mi.text)]
+                    elif mi.light is None or mi.light == self.current_light:
+                        self.wav_list.append((mi.filename, mi.text))
                     else:
                         self._process_wav_list()
-                        self.current_light = light
-                        self.wav_list = [(wav, text)]
+                        self.current_light = mi.light
+                        self.wav_list = [(mi.filename, mi.text)]
                 except queue.Empty:
                     if self.wav_list:
                         self._process_wav_list()
@@ -355,7 +355,6 @@ class ResponsePlayer:
                     logger.info(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
                 except queue.Empty:
                     # If playlist is empty, process wav_list and continue
-                    logger.info("playlist is empty, process wav_list and continue")
                     self._process_wav_list()
                     continue
 
