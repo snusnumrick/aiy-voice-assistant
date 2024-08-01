@@ -213,13 +213,12 @@ class DialogManager:
             response_info (dict): Information about the synthesized response.
         """
         if self.response_player is None:
-            self.response_player = ResponsePlayer([(response_info["emo"],
-                                                    response_info["audio_file_name"],
-                                                    response_info["response_text"])], self.leds, self.timezone)
+            self.response_player = ResponsePlayer(
+                [(response_info["emo"], response_info["audio_file_name"], response_info["response_text"])], self.leds,
+                self.timezone)
         else:
-            self.response_player.add_to_merge_queue((response_info["emo"],
-                                                    response_info["audio_file_name"],
-                                                    response_info["response_text"]))
+            self.response_player.add(
+                (response_info["emo"], response_info["audio_file_name"], response_info["response_text"]))
         logger.debug(f"Added to merge queue: {response_info['audio_file_name']}")
 
     async def main_loop_async(self):
@@ -284,7 +283,8 @@ class DialogManager:
 
                 # Process completed tasks, but only play if it's the next in order
                 next_response_index, first_response_processed = await self.process_completed_tasks(synthesis_tasks,
-                    next_response_index, first_response_processed)
+                                                                                                   next_response_index,
+                                                                                                   first_response_processed)
 
                 await asyncio.sleep(0)
 
@@ -295,13 +295,11 @@ class DialogManager:
                 if self.response_player:
                     self.response_player.stop()
                 break
-            next_response_index, _ = await self.process_completed_tasks(synthesis_tasks, next_response_index,
-                first_response_processed)
+            next_response_index = await self.process_completed_tasks(synthesis_tasks, next_response_index)
             await asyncio.sleep(0.1)
 
-        # Ensure all audio has finished playing
-        if self.response_player:
-            await self.response_player.wait_until_done()
+        while (self.response_player is not None) and self.response_player.is_playing():
+            await asyncio.sleep(0.1)
 
         self.response_player = None
 
