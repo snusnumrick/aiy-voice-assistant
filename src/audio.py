@@ -390,7 +390,7 @@ class SpeechTranscriber:
         """
         self.button.when_pressed = self.button_pressed
         self.button.when_released = self.button_released
-        logger.info("set button callback")
+        logger.debug("set button callback")
 
     def button_pressed(self):
         """

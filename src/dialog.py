@@ -180,10 +180,10 @@ async def main_loop_async(button: Button, leds: Leds,
                                 response_player.stop()
                             break
 
-                        logger.info(f"ai response: {ai_response}")
+                        logger.debug(f"ai response: {ai_response}")
                         for response in ai_response:
                             response_count += 1
-                            logger.debug(f'({time_string_ms(timezone)}) AI says: {response["text"]}')
+                            logger.info(f'({time_string_ms(timezone)}) AI: {response["text"]}')
 
                             emo = response["emotion"]
                             response_text = response["text"]

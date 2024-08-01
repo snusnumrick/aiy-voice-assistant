@@ -238,9 +238,9 @@ class ResponsePlayer:
         if behaviour is None or behaviour == self.current_light:
             return
         self.current_light = behaviour
-        logger.info(f"changing LED behavior: {behaviour}")
+        logger.debug(f"changing LED behavior: {behaviour}")
         if not behaviour:
-            logger.info("empty behaviour, LED OFF")
+            logger.debug("empty behaviour, LED OFF")
             self.leds.update(Leds.rgb_off())
         else:
             color = adjust_rgb_brightness(behaviour['color'], behaviour['brightness'])
@@ -364,8 +364,8 @@ class ResponsePlayer:
                     self._process_wav_list()
                     continue
 
-            logger.debug(
-                f"({time_string_ms(self.timezone)}) Playing {audio_file} with light {light}, with current light {self.current_light}")
+            logger.info(
+                f"({time_string_ms(self.timezone)}) Playing {audio_file} with {light}")
 
             self.change_light_behavior(light)
             self.current_process = play_wav_async(audio_file)
