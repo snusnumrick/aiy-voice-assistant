@@ -213,11 +213,13 @@ class DialogManager:
             response_info (dict): Information about the synthesized response.
         """
         if self.response_player is None:
-            self.response_player = ResponsePlayer(self.leds, self.timezone)
-
-        self.response_player.add_to_merge_queue(
-            MergeItem(light=response_info["emo"], filename=response_info["audio_file_name"],
-                      text=response_info["response_text"]))
+            self.response_player = ResponsePlayer([(response_info["emo"],
+                                                    response_info["audio_file_name"],
+                                                    response_info["response_text"])], self.leds, self.timezone)
+        else:
+            self.response_player.add_to_merge_queue((response_info["emo"],
+                                                    response_info["audio_file_name"],
+                                                    response_info["response_text"]))
         logger.debug(f"Added to merge queue: {response_info['audio_file_name']}")
 
     async def main_loop_async(self):
