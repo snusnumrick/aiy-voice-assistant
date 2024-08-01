@@ -161,7 +161,7 @@ class DialogManager:
         await self.conversation_manager.process_and_clean()
 
     async def process_completed_tasks(self, synthesis_tasks: List[Tuple[asyncio.Task, dict]], next_response_index: int,
-                                      first_response_processed: bool) -> Tuple[int, bool]:
+                                      first_response_processed: bool) -> int:
         """
         Process completed speech synthesis tasks and update the response player.
 
@@ -171,7 +171,7 @@ class DialogManager:
             first_response_processed (bool): Whether the first response has been processed.
 
         Returns:
-            Tuple[int, bool]: Updated index of the next task to process and whether first response was processed.
+            int: Updated index of the next task to process.
         """
         while next_response_index < len(synthesis_tasks):
             task, response_info = synthesis_tasks[next_response_index]
@@ -185,9 +185,6 @@ class DialogManager:
 
                     if await asyncio.wait_for(task, timeout=10.0):  # 10 second timeout
                         self.handle_successful_synthesis(response_info)
-                        if not first_response_processed:
-                            await self.response_player.play_next()
-                            first_response_processed = True
                         next_response_index += 1
                     else:
                         logger.error(f"Speech synthesis failed for file: {response_info['audio_file_name']}")
@@ -203,7 +200,7 @@ class DialogManager:
             else:
                 # If the next task isn't done, we stop processing to maintain order
                 break
-        return next_response_index, first_response_processed
+        return next_response_index
 
     def handle_successful_synthesis(self, response_info: dict):
         """
@@ -258,7 +255,6 @@ class DialogManager:
         synthesis_tasks = []
         next_response_index = 0
         button_pressed = False
-        first_response_processed = False
 
         def set_button_pressed():
             nonlocal button_pressed
@@ -282,9 +278,7 @@ class DialogManager:
                 synthesis_tasks.append(synthesis_task)
 
                 # Process completed tasks, but only play if it's the next in order
-                next_response_index, first_response_processed = await self.process_completed_tasks(synthesis_tasks,
-                                                                                                   next_response_index,
-                                                                                                   first_response_processed)
+                next_response_index = await self.process_completed_tasks(synthesis_tasks, next_response_index)
 
                 await asyncio.sleep(0)
 
