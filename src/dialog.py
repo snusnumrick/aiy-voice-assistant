@@ -22,11 +22,11 @@ Dependencies:
     - Custom modules for speech transcription, conversation management, and TTS
 """
 
+import asyncio
 import logging
 import os
 import time
 import traceback
-import asyncio
 from typing import Dict, List, Tuple
 
 import aiohttp
@@ -74,12 +74,8 @@ def append_suffix(file_name: str, suffix: str) -> str:
     return os.path.join(dir_name, new_name)
 
 
-async def synthesize_with_fallback(session: aiohttp.ClientSession,
-                                   tts_engine: TTSEngine,
-                                   fallback_tts_engine: TTSEngine,
-                                   response_text: str,
-                                   audio_file_name: str,
-                                   tone: Tone,
+async def synthesize_with_fallback(session: aiohttp.ClientSession, tts_engine: TTSEngine,
+                                   fallback_tts_engine: TTSEngine, response_text: str, audio_file_name: str, tone: Tone,
                                    lang: Language) -> bool:
     """
     Attempt to synthesize speech, falling back to a secondary engine if necessary.
@@ -135,8 +131,8 @@ class DialogManager:
     """
 
     def __init__(self, button: Button, leds: Leds, tts_engines: Dict[Language, TTSEngine],
-                 fallback_tts_engine: TTSEngine, conversation_manager: ConversationManager,
-                 config: Config, timezone: str):
+                 fallback_tts_engine: TTSEngine, conversation_manager: ConversationManager, config: Config,
+                 timezone: str):
         """
         Initialize the DialogManager with necessary components.
 
@@ -164,34 +160,50 @@ class DialogManager:
         """Perform cleanup tasks for the conversation manager."""
         await self.conversation_manager.process_and_clean()
 
-    async def process_completed_tasks(self, synthesis_tasks: List[Tuple[asyncio.Task, dict]],
-                                      next_response_index: int) -> int:
+    async def process_completed_tasks(self, synthesis_tasks: List[Tuple[asyncio.Task, dict]], next_response_index: int,
+                                      first_response_processed: bool) -> Tuple[int, bool]:
         """
         Process completed speech synthesis tasks and update the response player.
 
         Args:
             synthesis_tasks (List[Tuple[asyncio.Task, dict]]): List of synthesis tasks and their info.
             next_response_index (int): Index of the next task to process.
+            first_response_processed (bool): Whether the first response has been processed.
 
         Returns:
-            int: Updated index of the next task to process.
+            Tuple[int, bool]: Updated index of the next task to process and whether first response was processed.
         """
         while next_response_index < len(synthesis_tasks):
             task, response_info = synthesis_tasks[next_response_index]
             if task.done():
                 try:
-                    if task.result():
+                    completion_time = time.time()
+                    creation_time = getattr(task, 'creation_time', None)
+                    if creation_time:
+                        logger.debug(
+                            f"Task {next_response_index} took {completion_time - creation_time:.2f} seconds to complete")
+
+                    if await asyncio.wait_for(task, timeout=10.0):  # 10 second timeout
                         self.handle_successful_synthesis(response_info)
+                        if not first_response_processed:
+                            await self.response_player.play_next()
+                            first_response_processed = True
+                        next_response_index += 1
                     else:
                         logger.error(f"Speech synthesis failed for file: {response_info['audio_file_name']}")
                         error_visual(self.leds)
+                        next_response_index += 1
+                except asyncio.TimeoutError:
+                    logger.error(f"Synthesis task {next_response_index} timed out")
+                    next_response_index += 1
                 except Exception as e:
                     logger.error(f"Error occurred during synthesis: {str(e)}")
                     error_visual(self.leds)
-                next_response_index += 1
+                    next_response_index += 1
             else:
+                # If the next task isn't done, we stop processing to maintain order
                 break
-        return next_response_index
+        return next_response_index, first_response_processed
 
     def handle_successful_synthesis(self, response_info: dict):
         """
@@ -201,15 +213,12 @@ class DialogManager:
             response_info (dict): Information about the synthesized response.
         """
         if self.response_player is None:
-            self.response_player = ResponsePlayer([(response_info["emo"],
-                                                    response_info["audio_file_name"],
-                                                    response_info["response_text"])],
-                                                  self.leds, self.timezone)
-            self.response_player.play()
-        else:
-            self.response_player.add((response_info["emo"],
-                                      response_info["audio_file_name"],
-                                      response_info["response_text"]))
+            self.response_player = ResponsePlayer(self.leds, self.timezone)
+
+        self.response_player.add_to_merge_queue(
+            MergeItem(light=response_info["emo"], filename=response_info["audio_file_name"],
+                      text=response_info["response_text"]))
+        logger.debug(f"Added to merge queue: {response_info['audio_file_name']}")
 
     async def main_loop_async(self):
         """
@@ -248,6 +257,7 @@ class DialogManager:
         synthesis_tasks = []
         next_response_index = 0
         button_pressed = False
+        first_response_processed = False
 
         def set_button_pressed():
             nonlocal button_pressed
@@ -270,7 +280,10 @@ class DialogManager:
                 synthesis_task = self.create_synthesis_task(session, response, response_count)
                 synthesis_tasks.append(synthesis_task)
 
-                next_response_index = await self.process_completed_tasks(synthesis_tasks, next_response_index)
+                # Process completed tasks, but only play if it's the next in order
+                next_response_index, first_response_processed = await self.process_completed_tasks(synthesis_tasks,
+                    next_response_index, first_response_processed)
+
                 await asyncio.sleep(0)
 
         # Process any remaining tasks
@@ -280,17 +293,18 @@ class DialogManager:
                 if self.response_player:
                     self.response_player.stop()
                 break
-            next_response_index = await self.process_completed_tasks(synthesis_tasks, next_response_index)
+            next_response_index, _ = await self.process_completed_tasks(synthesis_tasks, next_response_index,
+                first_response_processed)
             await asyncio.sleep(0.1)
 
         # Ensure all audio has finished playing
-        while (self.response_player is not None) and self.response_player.is_playing():
-            await asyncio.sleep(0.1)
+        if self.response_player:
+            await self.response_player.wait_until_done()
 
         self.response_player = None
 
-    def create_synthesis_task(self, session: aiohttp.ClientSession, response: dict, response_count: int) \
-            -> Tuple[asyncio.Task, dict]:
+    def create_synthesis_task(self, session: aiohttp.ClientSession, response: dict, response_count: int) -> Tuple[
+        asyncio.Task, dict]:
         """
         Create a speech synthesis task for an AI response.
 
@@ -313,17 +327,19 @@ class DialogManager:
         tts_engine = self.tts_engines.get(lang, self.tts_engines[Language.RUSSIAN])
         logger.debug(f"Tone: {tone}, language = {lang}, tts_engine = {tts_engine}")
 
-        logger.debug(
-            f"({time_string_ms(self.timezone)}) Created task for synthesis {audio_file_name} from {response_text[:50]}")
+        logger.debug(f"Creating synthesis task for response {response_count}")
         synthesis_task = asyncio.create_task(
-            synthesize_with_fallback(session, tts_engine, self.fallback_tts_engine,
-                                     response_text, audio_file_name, tone, lang))
+            synthesize_with_fallback(session, tts_engine, self.fallback_tts_engine, response_text, audio_file_name,
+                                     tone, lang))
+        setattr(synthesis_task, 'creation_time', time.time())
+        logger.debug(f"Synthesis task created for response {response_count}")
+
         return synthesis_task, {"emo": emo, "audio_file_name": audio_file_name, "response_text": response_text}
 
 
-async def main_loop_async(button: Button, leds: Leds,
-                          tts_engines: Dict[Language, TTSEngine], fallback_tts_engine: TTSEngine,
-                          conversation_manager: ConversationManager, config: Config, timezone: str) -> None:
+async def main_loop_async(button: Button, leds: Leds, tts_engines: Dict[Language, TTSEngine],
+                          fallback_tts_engine: TTSEngine, conversation_manager: ConversationManager, config: Config,
+                          timezone: str) -> None:
     """
     The main entry point for the conversation loop of the AI assistant.
 
