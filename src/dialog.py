@@ -160,15 +160,13 @@ class DialogManager:
         """Perform cleanup tasks for the conversation manager."""
         await self.conversation_manager.process_and_clean()
 
-    async def process_completed_tasks(self, synthesis_tasks: List[Tuple[asyncio.Task, dict]], next_response_index: int,
-                                      first_response_processed: bool) -> int:
+    async def process_completed_tasks(self, synthesis_tasks: List[Tuple[asyncio.Task, dict]], next_response_index: int) -> int:
         """
         Process completed speech synthesis tasks and update the response player.
 
         Args:
             synthesis_tasks (List[Tuple[asyncio.Task, dict]]): List of synthesis tasks and their info.
             next_response_index (int): Index of the next task to process.
-            first_response_processed (bool): Whether the first response has been processed.
 
         Returns:
             int: Updated index of the next task to process.
