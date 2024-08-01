@@ -92,6 +92,7 @@ async def synthesize_with_fallback(session: aiohttp.ClientSession, tts_engine: T
     Returns:
         bool: True if synthesis was successful, False otherwise.
     """
+    logger.info(f"synthesize_with_fallback. text: {response_text}, file: {audio_file_name}, tone: {tone}, lang: {lang}")
     try:
         if await tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang):
             logger.debug(f"Synthesis {audio_file_name} completed")
