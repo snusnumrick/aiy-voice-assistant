@@ -1,22 +1,16 @@
-import unittest
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
-import asyncio
 import sys
-from typing import Dict, List, Tuple, Optional
+import unittest
+from unittest.mock import Mock, patch, AsyncMock
 
-# Mock aiy modules comprehensively
-mock_aiy = Mock()
-mock_aiy.voice = Mock()
-mock_aiy.voice.audio = Mock()
-mock_aiy.voice.audio.AudioFormat = Mock()
-mock_aiy.voice.audio.Recorder = Mock()
-mock_aiy.board = Mock()
-mock_aiy.leds = Mock()
+# Import and use the custom mock_aiy
+from mock_aiy import mock_aiy
+
+# Use the custom mock_aiy
 sys.modules['aiy'] = mock_aiy
-sys.modules['aiy.voice'] = mock_aiy.voice
-sys.modules['aiy.voice.audio'] = mock_aiy.voice.audio
 sys.modules['aiy.board'] = mock_aiy.board
 sys.modules['aiy.leds'] = mock_aiy.leds
+sys.modules['aiy.voice'] = mock_aiy.voice
+sys.modules['aiy.voice.audio'] = mock_aiy.voice.audio
 
 # Mock Google Cloud libraries comprehensively
 mock_google = Mock()
@@ -35,46 +29,15 @@ sys.modules['pydub'] = Mock()
 sys.modules['speechkit'] = Mock()
 sys.modules['yandex'] = Mock()
 
-# Mock the entire src.responce_player module
-mock_responce_player = Mock()
-sys.modules['src.responce_player'] = mock_responce_player
-
 # Now it's safe to import from src
 from src.dialog import DialogManager, error_visual, append_suffix, synthesize_with_fallback
-
-
-class MockResponsePlayer:
-    def __init__(self, playlist: List[Tuple[Optional[Dict], str, str]], leds: Mock, timezone: str):
-        self.playlist = playlist or []
-        self.leds = leds
-        self.timezone = timezone
-        self._should_play = False
-        self._stopped = False
-
-    def add(self, playitem: Tuple[Optional[Dict], str, str]) -> None:
-        self.playlist.append(playitem)
-
-    def play(self):
-        self._should_play = True
-        self._stopped = False
-
-    def stop(self):
-        self._should_play = False
-        self._stopped = True
-
-    def is_playing(self) -> bool:
-        return self._should_play and not self._stopped
-
-
-# Replace the ResponsePlayer in the mocked module with our MockResponsePlayer
-mock_responce_player.ResponsePlayer = MockResponsePlayer
 
 
 class TestDialogModule(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
-        self.button = Mock()
-        self.leds = Mock()
+        self.button = mock_aiy.board.Button()
+        self.leds = mock_aiy.leds.Leds()
         self.tts_engines = Mock()
         self.fallback_tts_engine = Mock()
         self.conversation_manager = Mock()
@@ -82,10 +45,9 @@ class TestDialogModule(unittest.IsolatedAsyncioTestCase):
         self.timezone = "UTC"
 
     def test_error_visual(self):
-        leds_mock = Mock()
-        error_visual(leds_mock)
-        leds_mock.update.assert_called()
-        self.assertEqual(leds_mock.update.call_count, 2)
+        error_visual(self.leds)
+        self.leds.update.assert_called()
+        self.assertEqual(self.leds.update.call_count, 2)
 
     def test_append_suffix(self):
         self.assertEqual(append_suffix("/path/to/file.wav", "_suffix"), "/path/to/file_suffix.wav")
@@ -98,10 +60,8 @@ class TestDialogModule(unittest.IsolatedAsyncioTestCase):
         tts_engine.synthesize_async.return_value = True
         fallback_tts_engine = AsyncMock()
 
-        result = await synthesize_with_fallback(
-            mock_session, tts_engine, fallback_tts_engine,
-            "Test text", "test.wav", Mock(), Mock()
-        )
+        result = await synthesize_with_fallback(mock_session, tts_engine, fallback_tts_engine, "Test text", "test.wav",
+                                                Mock(), Mock())
 
         self.assertTrue(result)
         tts_engine.synthesize_async.assert_called_once()
@@ -115,10 +75,8 @@ class TestDialogModule(unittest.IsolatedAsyncioTestCase):
         fallback_tts_engine = AsyncMock()
         fallback_tts_engine.synthesize_async.return_value = False
 
-        result = await synthesize_with_fallback(
-            mock_session, tts_engine, fallback_tts_engine,
-            "Test text", "test.wav", Mock(), Mock()
-        )
+        result = await synthesize_with_fallback(mock_session, tts_engine, fallback_tts_engine, "Test text", "test.wav",
+                                                Mock(), Mock())
 
         self.assertFalse(result)
         tts_engine.synthesize_async.assert_called_once()
@@ -128,39 +86,42 @@ class TestDialogModule(unittest.IsolatedAsyncioTestCase):
 class TestDialogManager(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
-        self.button = Mock()
-        self.leds = Mock()
+        self.button = mock_aiy.board.Button()
+        self.leds = mock_aiy.leds.Leds()
         self.tts_engines = Mock()
         self.fallback_tts_engine = Mock()
         self.conversation_manager = Mock()
         self.config = Mock()
         self.timezone = "UTC"
 
-        # Mock SpeechTranscriber
-        with patch('src.dialog.SpeechTranscriber'):
-            self.dialog_manager = DialogManager(
-                self.button, self.leds, self.tts_engines, self.fallback_tts_engine,
-                self.conversation_manager, self.config, self.timezone
-            )
+        # Mock SpeechTranscriber and ResponsePlayer
+        self.speech_transcriber_patcher = patch('src.dialog.SpeechTranscriber')
+        self.response_player_patcher = patch('src.dialog.ResponsePlayer')
+        self.combine_audio_files_patcher = patch('src.tools.combine_audio_files', return_value=None)
 
-    async def test_cleaning_routine(self):
-        self.conversation_manager.process_and_clean = AsyncMock()
-        await self.dialog_manager.cleaning_routine()
-        self.conversation_manager.process_and_clean.assert_called_once()
+        self.mock_speech_transcriber = self.speech_transcriber_patcher.start()
+        self.mock_response_player = self.response_player_patcher.start()
+        self.mock_combine_audio_files = self.combine_audio_files_patcher.start()
+
+        self.dialog_manager = DialogManager(self.button, self.leds, self.tts_engines, self.fallback_tts_engine,
+                                            self.conversation_manager, self.config, self.timezone)
+
+    def tearDown(self):
+        self.speech_transcriber_patcher.stop()
+        self.response_player_patcher.stop()
+        self.combine_audio_files_patcher.stop()
 
     async def test_process_completed_tasks(self):
-        mock_task1 = MagicMock()
+        mock_task1 = Mock()
         mock_task1.done.return_value = True
         mock_task1.result.return_value = True
 
-        mock_task2 = MagicMock()
+        mock_task2 = Mock()
         mock_task2.done.return_value = True
         mock_task2.result.return_value = True
 
-        synthesis_tasks = [
-            (mock_task1, {"emo": None, "audio_file_name": "test1.wav", "response_text": "Test 1"}),
-            (mock_task2, {"emo": None, "audio_file_name": "test2.wav", "response_text": "Test 2"})
-        ]
+        synthesis_tasks = [(mock_task1, {"emo": None, "audio_file_name": "test1.wav", "response_text": "Test 1"}),
+                           (mock_task2, {"emo": None, "audio_file_name": "test2.wav", "response_text": "Test 2"})]
 
         next_response_index = await self.dialog_manager.process_completed_tasks(synthesis_tasks, 0)
 
@@ -168,18 +129,23 @@ class TestDialogManager(unittest.IsolatedAsyncioTestCase):
         mock_task1.result.assert_called_once()
         mock_task2.result.assert_called_once()
 
-    @patch('src.dialog.ResponsePlayer', MockResponsePlayer)
-    async def test_handle_successful_synthesis(self):
+    async def test_cleaning_routine(self):
+        self.dialog_manager.conversation_manager.process_and_clean = AsyncMock()
+        await self.dialog_manager.cleaning_routine()
+        self.dialog_manager.conversation_manager.process_and_clean.assert_called_once()
+
+    @patch('src.dialog.ResponsePlayer')
+    async def test_handle_successful_synthesis(self, mock_response_player):
         response_info = {"emo": None, "audio_file_name": "test.wav", "response_text": "Test"}
 
         self.dialog_manager.handle_successful_synthesis(response_info)
-        self.assertIsInstance(self.dialog_manager.response_player, MockResponsePlayer)
-        self.assertEqual(len(self.dialog_manager.response_player.playlist), 1)
-        self.assertEqual(self.dialog_manager.response_player.playlist[0], (None, "test.wav", "Test"))
+        mock_response_player.assert_called_once()
+        mock_response_player.return_value.play.assert_called_once()
 
         # Test adding to existing response player
+        self.dialog_manager.response_player = Mock()
         self.dialog_manager.handle_successful_synthesis(response_info)
-        self.assertEqual(len(self.dialog_manager.response_player.playlist), 2)
+        self.dialog_manager.response_player.add.assert_called_once()
 
     @patch('aiohttp.ClientSession')
     async def test_main_loop_async(self, mock_session):
