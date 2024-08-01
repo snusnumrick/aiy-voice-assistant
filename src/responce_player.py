@@ -280,7 +280,7 @@ class ResponsePlayer:
                     elif mi.light is None or mi.light == self.wav_list_light:
                         self.wav_list.append((mi.filename, mi.text))
                     else:
-                        self._process_wav_list(force=True)
+                        self._process_wav_list()
                         self.wav_list_light = mi.light
                         self.wav_list = [(mi.filename, mi.text)]
                 except queue.Empty:
@@ -291,7 +291,7 @@ class ResponsePlayer:
                     self.condition.wait(timeout=1.0)
         logger.debug("Merge process ended")
 
-    def _process_wav_list(self, force=False):
+    def _process_wav_list(self):
         """
         Process the current list of WAV files.
 
@@ -303,12 +303,6 @@ class ResponsePlayer:
 
             if not self.wav_list:
                 return
-
-            # if not force:
-            #     last_text = self.wav_list[-1][1]
-            #     if last_text and not last_text[-1] in ".!?:":
-            #         logger.debug(f"wav list does not end with sentence ending: {self.wav_list} - waiting for completion")
-            #         return
 
             logger.debug(
                 f"({time_string_ms(self.timezone)}) merging {self.wav_list_light} {self.wav_list} {self.playlist}")
