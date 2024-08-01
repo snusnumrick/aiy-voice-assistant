@@ -113,13 +113,14 @@ async def optimize_rules(system_prompt: str, soft_rules: List[str], config: Conf
 
 async def optimize_facts(system_prompt: str, facts: List[str], config: Config) -> List[str]:
     prompt = f"""
-    Проанализируй данную последовательность известных фактов в JSON, учитывая system prompt. 
-    Удали дублирующиеся, устаревшие или противоречивые факты. Объедини факты, 
-    содержащие схожую или дополняющую информацию, в один более полный факт, даже если они имеют разные даты. 
-    Устрани любые повторения информации, даже если она выражена разными словами в разных фактах. 
-    При объединении фактов используй самую позднюю дату. 
+    Проанализируй данную последовательность известных фактов в JSON, учитывая system prompt.
+    Удали дублирующиеся, устаревшие, противоречивые факты или те, которые можно легк найти в интернете. 
+    Объедини факты, содержащие схожую или дополняющую информацию, в один более полный факт, 
+    даже если они имеют разные даты. Устрани любые повторения информации, 
+    даже если она выражена разными словами в разных фактах. При объединении фактов используй самую позднюю дату. 
     Представь результат в том же JSON формате в хронологическом порядке, 
-    сохраняя оригинальное форматирование каждого факта как одну строку: "(date) : fact". 
+    сохраняя оригинальное форматирование каждого факта как одну строку: 
+    "(date) : fact". 
     В финальном списке не должно быть никакой повторяющейся или избыточной информации, включая частичные повторения. 
     Каждый уникальный факт должен быть представлен только один раз в наиболее полной форме. 
     Перед отправкой ответа, тщательно перепроверь список на наличие любых повторений или избыточности и устрани их, 
@@ -128,17 +129,18 @@ async def optimize_facts(system_prompt: str, facts: List[str], config: Config) -
     что некоторые факты все еще содержат повторяющуюся информацию, 
     переработай список еще раз для устранения всех повторений.
 
-    list of known facts in json:
+    последовательность известных фактов в JSON:
     '''
     {json.dumps(facts, indent=2)}
     '''
     """
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
+    logger.info(f"optimizing facts for:\n{format_message_history(messages)}")
     model = ClaudeAIModel(config)
     responses = ""
     async for response in model.get_response_async(messages):
         responses += response
-    second_prompt = "Double check the result and return corrected json."
+    second_prompt = "Проверь результат еще раз и верни исправленный JSON."
     messages += [{"role": "assistant", "content": responses}, {"role": "user", "content": second_prompt}]
     responses = ""
     async for response in model.get_response_async(messages):

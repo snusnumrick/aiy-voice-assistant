@@ -340,14 +340,16 @@ class ConversationManager:
 
     async def process_and_clean(self):
         # form new memories, clean message deque, process existing facts and rules
-        # to be used in night time
+        # to be used at night time
 
         newline = "\n"
 
         # form new memories
-        if self.config.get("form_new_memories_at_night", False):
-            if len(self.message_history) > 1:
-                prompt = self.config.get("form_new_memories_prompt", "Хочешь еще что-нибудь звпомнить из нашего разговора?")
+        if self.config.get("form_new_memories_at_night", True):
+            if len(self.message_history) > 2:
+                prompt = self.config.get("form_new_memories_prompt",
+                                         "Это необязательно, но может хочешь еще что-нибудь запомнить "
+                                         "из нашего разговора перед тем как его удалю?")
                 logger.info(f"form new memory by asking {prompt}")
                 num_facts_begore = len(self.facts)
                 async for ai_response in self.get_response(prompt):
@@ -358,7 +360,7 @@ class ConversationManager:
                 else:
                     logger.info(f"new memories formed:\n{newline.join(self.facts[num_facts_begore:])}")
 
-        if self.config.get("clean_message_history_at_night", False):
+        if self.config.get("clean_message_history_at_night", True):
             # cleanup conversation
             self.message_history: Deque[dict] = deque([{"role": "system", "content": self.get_system_prompt()}])
 
