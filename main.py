@@ -11,6 +11,7 @@ import logging
 import signal
 import sys
 import time
+import argparse
 
 from aiy.board import Board
 from aiy.leds import Leds, Color
@@ -26,21 +27,42 @@ from src.dialog import main_loop_async
 from src.tts_engine import YandexTTSEngine, Language, ElevenLabsTTSEngine
 from src.tools import get_timezone
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 # Set up signal handling for graceful shutdown
 signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
 
 # Load environment variables
 load_dotenv()
 
+def setup_logging(log_level):
+    """
+    Set up logging with the specified log level.
+    """
+    numeric_level = getattr(logging, log_level.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError(f'Invalid log level: {log_level}')
+    logging.basicConfig(level=numeric_level)
+    return logging.getLogger(__name__)
+
+def parse_arguments():
+    """
+    Parse command-line arguments.
+    """
+    parser = argparse.ArgumentParser(description="AI Voice Assistant")
+    parser.add_argument(
+        '--log-level',
+        default='INFO',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        help='Set the logging level (default: INFO)'
+    )
+    return parser.parse_args()
 
 def main():
     """
     Main function to initialize and run the AI Voice Assistant.
     """
+    args = parse_arguments()
+    logger = setup_logging(args.log_level)
+
     config = Config()
     timezone = get_timezone()
 
@@ -77,9 +99,7 @@ def main():
         conversation_manager = ConversationManager(config, ai_model, timezone)
 
         # Start the main conversation loop
-        # main_loop(board.button, leds, tts_engine, conversation_manager, config)
         asyncio.run(main_loop_async(board.button, leds, tts_engines, fallback_tts_engine, conversation_manager, config, timezone))
-
 
 if __name__ == '__main__':
     main()
