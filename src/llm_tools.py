@@ -27,8 +27,8 @@ async def summarize_and_compress_history(message_history: Deque, ai_model: AIMod
         return message_history
     summary_prompt = config.get('summary_prompt',
                                 'Обобщи основные моменты разговора, '
-                                'сосредоточившись на наиболее важных фактах и контексте. '
-                                'Будь лаконичен. Начни ответ с "Ранее мы говорили о ". \nРазговор: \n-----\n')
+                                'сосредоточившись на наиболее важных фактах и контексте. Будь лаконичен. '
+                                'Отвечай от лицв user. Начни ответ с "Ранее мы говорили о ".\nРазговор: \n-----\n')
     min_number_of_messages_to_keep = config.get('min_number_of_messages_to_keep', 10)
     new_history = []
     if message_history[0]["role"] == "system":
@@ -41,11 +41,15 @@ async def summarize_and_compress_history(message_history: Deque, ai_model: AIMod
     pattern = r'\$\w+:[^$]*\$'
     summary_prompt = re.sub(pattern, '', summary_prompt)
 
+    saved_level = logger.getEffectiveLevel()
+    logger.setLevel(logging.DEBUG)
     logger.info(f'Summarizing {len(message_history)} messages. Prompt:\n {summary_prompt}')
     summary = ""
     async  for response_part in ai_model.get_response_async([{"role": "user", "content": summary_prompt}]):
         summary += response_part
     logger.info(f"Summarized  conversation:  {summary}")
+    logger.setLevel(saved_level)
+
     # should be only one (first) system message and user and assistant should follow each other
     if not message_history or message_history[0]["role"] != "user":
         new_history.append({"role": "user", "content": summary})
@@ -424,9 +428,9 @@ async def main():
     $rule: <текст нового правила>$
     . Таких запросов в твоем сообщении тоже может быть несколько."""
 
-    await test_optimize_facts(config, system_prompt)
+    # await test_optimize_facts(config, system_prompt)
     # await test_optimize_rules(config, system_prompt)
-    # await test_summarize(config)
+    await test_summarize(config)
 
 
 
