@@ -1,14 +1,14 @@
 import asyncio
+import aiofiles
 import json
 import logging
 import os
 import random
 import re
 import time
-from collections import deque
 from datetime import datetime
 from functools import wraps
-from typing import List, Dict, Union, Any, Callable, AsyncGenerator
+from typing import List, Dict, Union, Any, Callable, AsyncGenerator, Iterable
 
 import geocoder
 import pytz
@@ -273,7 +273,7 @@ def indent_content(content, max_width=120):
     return '    ' + '\n    '.join(formatted_lines)
 
 
-def format_message_history(message_history: deque, max_width=120) -> str:
+def format_message_history(message_history: Iterable[Dict[str, str]], max_width=120) -> str:
     """
     Format the message history into a formatted string with a specified maximum width.
 
@@ -283,6 +283,14 @@ def format_message_history(message_history: deque, max_width=120) -> str:
 
     """
     return "\n\n".join([f'{msg["role"]}:\n{indent_content(msg["content"], max_width)}' for msg in message_history])
+
+
+async def save_to_conversation(self, role: str, message: str, max_width=120):
+    """Saves the given message to the conversation file."""
+    messages = [{"role": role, "content": message}]
+    formatted = format_message_history(messages, max_width)
+    async with aiofiles.open("conversation.txt", "w+", encoding="utf-8") as f:
+        await f.write(formatted + "\n\n")
 
 
 def extract_json(text):

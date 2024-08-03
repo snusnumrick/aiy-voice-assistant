@@ -37,7 +37,7 @@ from .audio import SpeechTranscriber
 from .config import Config
 from .conversation_manager import ConversationManager
 from .responce_player import ResponsePlayer
-from .tools import time_string_ms
+from .tools import time_string_ms, save_to_conversation
 from .tts_engine import TTSEngine, Tone, Language
 
 logger = logging.getLogger(__name__)
@@ -161,7 +161,8 @@ class DialogManager:
         """Perform cleanup tasks for the conversation manager."""
         await self.conversation_manager.process_and_clean()
 
-    async def process_completed_tasks(self, synthesis_tasks: List[Tuple[asyncio.Task, dict]], next_response_index: int) -> int:
+    async def process_completed_tasks(self, synthesis_tasks: List[Tuple[asyncio.Task, dict]],
+                                      next_response_index: int) -> int:
         """
         Process completed speech synthesis tasks and update the response player.
 
@@ -233,7 +234,10 @@ class DialogManager:
                     self.response_player = None
 
                     if text:
-                        await self.process_ai_response(session, text)
+                        await asyncio.gather(
+                            save_to_conversation("user", text),
+                            self.process_ai_response(session, text),
+                        )
 
                 except Exception as e:
                     logger.error(f"An error occurred in the main loop: {str(e)}")
@@ -262,16 +266,19 @@ class DialogManager:
         self.button.when_pressed = set_button_pressed
         logger.info("Set button callback")
 
+        ai_message = ""
         async for ai_response in self.conversation_manager.get_response(text):
-            if button_pressed:
-                logger.info("Button pressed, stopping processing")
-                if self.response_player:
-                    self.response_player.stop()
-                break
 
             for response in ai_response:
+                if button_pressed:
+                    logger.info("Button pressed, stopping processing")
+                    if self.response_player:
+                        self.response_player.stop()
+                    break
+
                 response_count += 1
                 logger.info(f'({time_string_ms(self.timezone)}) AI: {response["text"]}')
+                ai_message += response["text"]
 
                 synthesis_task = self.create_synthesis_task(session, response, response_count)
                 synthesis_tasks.append(synthesis_task)
@@ -280,6 +287,8 @@ class DialogManager:
                 next_response_index = await self.process_completed_tasks(synthesis_tasks, next_response_index)
 
                 await asyncio.sleep(0)
+
+        save_conversation_task = asyncio.create_task(save_to_conversation("assistant", ai_message))
 
         # Process any remaining tasks
         while next_response_index < len(synthesis_tasks):
@@ -291,10 +300,13 @@ class DialogManager:
             next_response_index = await self.process_completed_tasks(synthesis_tasks, next_response_index)
             await asyncio.sleep(0.1)
 
-        while (self.response_player is not None) and self.response_player.is_playing():
-            await asyncio.sleep(0.1)
+        # while (self.response_player is not None) and self.response_player.is_playing():
+        #     await asyncio.sleep(0.1)
+        #
+        # self.response_player = None
 
-        self.response_player = None
+        # Wait for the save_to_conversation task to finish
+        await save_conversation_task
 
     def create_synthesis_task(self, session: aiohttp.ClientSession, response: dict, response_count: int) -> Tuple[
         asyncio.Task, dict]:

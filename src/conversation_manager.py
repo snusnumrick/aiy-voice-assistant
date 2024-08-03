@@ -358,7 +358,7 @@ class ConversationManager:
                 if num_facts_after_clean == num_facts_begore:
                     logger.info("no new memories formed")
                 else:
-                    logger.info(f"new memories formed:\n{newline.join(self.facts[num_facts_begore:])}")
+                    logger.info(f"{num_facts_after_clean - num_facts_begore} new facts remembered")
 
         if self.config.get("clean_message_history_at_night", True):
             # cleanup conversation
