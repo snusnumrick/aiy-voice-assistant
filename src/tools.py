@@ -326,7 +326,7 @@ def format_message_history(message_history: Iterable[Dict[str, str]], max_width=
     return "\n\n".join([f'{msg["role"]}:\n{indent_content(msg["content"], max_width)}' for msg in message_history])
 
 
-async def save_to_conversation(self, role: str, message: str, timezone: str, max_width=120):
+async def save_to_conversation(role: str, message: str, timezone: str, max_width=120):
     """Saves the given message to the conversation file."""
     date_str, time_str = get_current_date_time_tuple(timezone)
     formatted = f'{role if role == "assistant" else date_str + ", " + time_str}:\n{indent_content(message, max_width)}\n\n'
