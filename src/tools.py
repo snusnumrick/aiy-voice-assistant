@@ -330,7 +330,7 @@ async def save_to_conversation(role: str, message: str, timezone: str, max_width
     """Saves the given message to the conversation file."""
     date_str, time_str = get_current_date_time_tuple(timezone)
     formatted = f'{role if role == "assistant" else date_str + ", " + time_str}:\n{indent_content(message, max_width)}\n\n'
-    async with aiofiles.open("conversation.txt", "w+", encoding="utf-8") as f:
+    async with aiofiles.open("conversation.txt", "a", encoding="utf-8") as f:
         await f.write(formatted)
 
 
