@@ -235,7 +235,7 @@ class DialogManager:
 
                     if text:
                         await asyncio.gather(
-                            save_to_conversation("user", text),
+                            save_to_conversation("user", text, self.timezone),
                             self.process_ai_response(session, text),
                         )
 

@@ -1,5 +1,4 @@
 import asyncio
-import aiofiles
 import json
 import logging
 import os
@@ -8,8 +7,9 @@ import re
 import time
 from datetime import datetime
 from functools import wraps
-from typing import List, Dict, Union, Any, Callable, AsyncGenerator, Iterable
+from typing import List, Dict, Union, Any, Callable, AsyncGenerator, Iterable, Tuple
 
+import aiofiles
 import geocoder
 import pytz
 from pydub import AudioSegment
@@ -89,6 +89,65 @@ def time_string_ms(timezone_string: str) -> str:
     return datetime.now(pytz.utc).astimezone(pytz.timezone(timezone_string)).strftime("%M:%S.%f")[:-3]
 
 
+def get_location_string() -> str:
+    """
+    :return: A string representing the current location.
+
+    Example usage:
+    ```
+    result = get_location_string()
+    print(result)
+    ```
+
+    Expected output:
+    ```
+    San Francisco, CA, United States
+    ```
+    """
+    g = geocoder.ip('me')
+    location_parts = [g.city, g.state, g.country]
+    location = ', '.join([part for part in location_parts if part]) if any(location_parts) else ''
+    return location
+
+
+def get_current_date_time_tuple(timezone_string: str) -> Tuple[str, str]:
+    """
+    :param timezone_string: A string representing the timezone to convert the current date and time to (e.g. 'America/Los_Angeles').
+    :return: A tuple with the current date and time in the specified timezone in Russian.
+
+    This method takes a timezone string as input and returns the current date and time in the specified timezone.
+    The date is formatted with the month as a word, and the time is formatted in 12-hour format with AM/PM and timezone information.
+
+    Example usage:
+    ```
+    timezone = 'America/Los_Angeles'
+    result = get_current_date_time_location(timezone)
+    print(result)
+    ```
+
+    Expected output:
+    ```
+    ("05 мая 2021", "08:30:45 PM, PDT")
+    ```
+    """
+    # Get current date and time in UTC
+    now_utc = datetime.now(pytz.utc)
+
+    # Define the timezone you want to convert to (for example, PST)
+    timezone = pytz.timezone(timezone_string)
+    now_local = now_utc.astimezone(timezone)
+
+    # Format the date with the month as a word
+    months = {1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля', 5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
+              9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'}
+    date_str = now_local.strftime(f"%d {months[now_local.month]} %Y")
+
+    # Format the time in 12-hour format with AM/PM and timezone
+    time_str = now_local.strftime("%I:%M:%S %p, %Z")
+
+    return date_str, time_str
+
+
 def get_current_date_time_location(timezone_string: str) -> str:
     """
     :param timezone_string: A string representing the timezone to convert the current date and time to (e.g. 'America/Los_Angeles').
@@ -108,25 +167,8 @@ def get_current_date_time_location(timezone_string: str) -> str:
     Сегодня 05 мая 2021. Сейчас 08:30:45 PM, PDT. Я нахожусь в San Francisco, CA, United States
     ```
     """
-    # Get current date and time in UTC
-    now_utc = datetime.now(pytz.utc)
-
-    # Define the timezone you want to convert to (for example, PST)
-    timezone = pytz.timezone(timezone_string)
-    now_local = now_utc.astimezone(timezone)
-
-    # Format the date with the month as a word
-    months = {1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля', 5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
-              9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'}
-    date_str = now_local.strftime(f"%d {months[now_local.month]} %Y")
-
-    # Format the time in 12-hour format with AM/PM and timezone
-    time_str = now_local.strftime("%I:%M:%S %p, %Z")
-
-    # Get current location
-    g = geocoder.ip('me')
-    location_parts = [g.city, g.state, g.country]
-    location = ', '.join([part for part in location_parts if part]) if any(location_parts) else ''
+    date_str, time_str = get_current_date_time_tuple(timezone_string)
+    location = get_location_string()
 
     # Prepare the message in Russian
     message = f"Сегодня {date_str}. Сейчас {time_str}."
@@ -280,17 +322,16 @@ def format_message_history(message_history: Iterable[Dict[str, str]], max_width=
     :param message_history: A deque containing the message history.
     :param max_width: An optional parameter specifying the maximum width of the formatted string. Default is 120.
     :return: The formatted message history as a string.
-
     """
     return "\n\n".join([f'{msg["role"]}:\n{indent_content(msg["content"], max_width)}' for msg in message_history])
 
 
-async def save_to_conversation(self, role: str, message: str, max_width=120):
+async def save_to_conversation(self, role: str, message: str, timezone: str, max_width=120):
     """Saves the given message to the conversation file."""
-    messages = [{"role": role, "content": message}]
-    formatted = format_message_history(messages, max_width)
+    date_str, time_str = get_current_date_time_tuple(timezone)
+    formatted = f'{date_str}, {time_str}. {role}:\n{indent_content(message, max_width)}\n\n'
     async with aiofiles.open("conversation.txt", "w+", encoding="utf-8") as f:
-        await f.write(formatted + "\n\n")
+        await f.write(formatted)
 
 
 def extract_json(text):
