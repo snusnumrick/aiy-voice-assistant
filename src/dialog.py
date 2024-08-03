@@ -278,6 +278,8 @@ class DialogManager:
 
                 response_count += 1
                 logger.info(f'({time_string_ms(self.timezone)}) AI: {response["text"]}')
+                if ai_message:
+                    ai_message += " "
                 ai_message += response["text"]
 
                 synthesis_task = self.create_synthesis_task(session, response, response_count)
