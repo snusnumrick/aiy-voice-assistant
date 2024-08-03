@@ -87,7 +87,7 @@ class ClaudeAIModel(AIModel):
             timezone (str): The timezone to use.
         """
         self.model = config.get('claude_model', 'claude-3-5-sonnet-20240620')
-        self.max_tokens = config.get('max_tokens', 1000)
+        self.max_tokens = config.get('max_tokens', 4096)
         self.url = "https://api.anthropic.com/v1/messages"
         self.headers = {"content-type": "application/json", "x-api-key": os.getenv('ANTHROPIC_API_KEY'),
                         "anthropic-version": "2023-06-01"}
