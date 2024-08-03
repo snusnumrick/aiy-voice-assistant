@@ -288,7 +288,7 @@ class DialogManager:
 
                 await asyncio.sleep(0)
 
-        save_conversation_task = asyncio.create_task(save_to_conversation("assistant", ai_message))
+        save_conversation_task = asyncio.create_task(save_to_conversation("assistant", ai_message, self.timezone))
 
         # Process any remaining tasks
         while next_response_index < len(synthesis_tasks):
