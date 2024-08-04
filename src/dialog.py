@@ -310,21 +310,29 @@ class DialogManager:
             except Exception as e:
                 logger.error(f"Error in AI response generation: {str(e)}")
                 logger.error(traceback.format_exc())
+            finally:
+                logger.info("AI response processing loop exited")
 
         async def process_synthesis_tasks():
             nonlocal synthesis_tasks
-            logger.info("Starting synthesis task processing loop")
-            while not button_pressed or synthesis_tasks:
-                if synthesis_tasks:
-                    logger.debug(f"Processing batch of {len(synthesis_tasks)} synthesis tasks")
-                    next_response_index = await self.process_completed_tasks(synthesis_tasks, 0)
-                    processed_tasks = synthesis_tasks[:next_response_index]
-                    synthesis_tasks = synthesis_tasks[next_response_index:]
-                    logger.debug(f"Processed {len(processed_tasks)} tasks, {len(synthesis_tasks)} remaining")
-                else:
-                    logger.debug("No synthesis tasks to process, waiting...")
-                await asyncio.sleep(0.1)
-            logger.info("Synthesis task processing loop completed")
+            try:
+                logger.info("Starting synthesis task processing loop")
+                while not button_pressed or synthesis_tasks:
+                    if synthesis_tasks:
+                        logger.debug(f"Processing batch of {len(synthesis_tasks)} synthesis tasks")
+                        next_response_index = await self.process_completed_tasks(synthesis_tasks, 0)
+                        processed_tasks = synthesis_tasks[:next_response_index]
+                        synthesis_tasks = synthesis_tasks[next_response_index:]
+                        logger.debug(f"Processed {len(processed_tasks)} tasks, {len(synthesis_tasks)} remaining")
+                    else:
+                        logger.debug("No synthesis tasks to process, waiting...")
+                    await asyncio.sleep(0.1)
+                logger.info("Synthesis task processing loop completed")
+            except Exception as e:
+                logger.error(f"Error in synthesis task processing: {str(e)}")
+                logger.error(traceback.format_exc())
+            finally:
+                logger.info("Synthesis task processing loop exited")
 
         try:
             logger.info("Initiating concurrent processing of AI responses and synthesis tasks")
@@ -339,6 +347,16 @@ class DialogManager:
             logger.error(f"Unexpected error in process_ai_response: {str(e)}")
             logger.error(traceback.format_exc())
         finally:
+            # Ensure all tasks are properly cancelled and cleaned up
+            if ai_task and not ai_task.done():
+                ai_task.cancel()
+            if synthesis_task and not synthesis_task.done():
+                synthesis_task.cancel()
+
+            # Wait for tasks to be cancelled
+            if ai_task or synthesis_task:
+                await asyncio.gather(ai_task, synthesis_task, return_exceptions=True)
+
             if self.response_player:
                 logger.info("Stopping response player")
                 self.response_player.stop()
