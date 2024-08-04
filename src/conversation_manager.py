@@ -292,11 +292,15 @@ class ConversationManager:
         if not p.exists():
             return
 
-        cleaning_time_stop = datetime.time(hour=self.config.get("cleaning_time_stop_hour", 4))  # 4 AM
+        cleaning_time_stop_hour = self.config.get("cleaning_time_stop_hour", 4)
         mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(p))
 
+        cutoff = datetime.datetime.now() - datetime.timedelta(days=1)
+        cutoff = cutoff.replace(hour=cleaning_time_stop_hour, minute=0, second=0, microsecond=0)
+
         # if there were no modifications today
-        if mod_time.time() <= cleaning_time_stop:
+        if mod_time < cutoff:
+            logger.debug(f"facts modification time {mod_time} is too old to optimize")
             return
 
         # Asynchronously optimize facts
@@ -319,11 +323,15 @@ class ConversationManager:
         if not p.exists():
             return
 
-        cleaning_time_stop = datetime.time(hour=self.config.get("cleaning_time_stop_hour", 4))  # 4 AM
+        cleaning_time_stop_hour = self.config.get("cleaning_time_stop_hour", 4)
         mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(p))
 
+        cutoff = datetime.datetime.now() - datetime.timedelta(days=1)
+        cutoff = cutoff.replace(hour=cleaning_time_stop_hour, minute=0, second=0, microsecond=0)
+
         # if there were no modifications today
-        if mod_time.time() <= cleaning_time_stop:
+        if mod_time < cutoff:
+            logger.debug(f"rules modification time {mod_time} is too old to optimize")
             return
 
         # Asynchronously optimize rules
