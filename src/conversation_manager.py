@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import sys
+import glob
 from collections import deque
 from pathlib import Path
 from typing import List, Tuple, AsyncGenerator, Deque, Dict
@@ -394,6 +395,17 @@ class ConversationManager:
         new_rules = list(set(self.rules) - existing_rules)
         if new_rules:
             logger.info(f"new rules: \n{newline.join(new_rules)}")
+
+        # remove temp wav files
+        num_removed = 0
+        for filepath in glob.glob("/tmp/*.wav"):
+            try:
+                os.remove(filepath)
+                logger.debug(f"File {filepath} has been removed successfully")
+                num_removed += 1
+            except Exception as e:
+                logger.warning(f"Error occurred while trying to remove {filepath}. Error: {e}")
+        logger.info(f"removed {num_removed} temp wav files")
 
     @staticmethod
     def load_facts():
