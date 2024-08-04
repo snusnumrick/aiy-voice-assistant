@@ -255,113 +255,104 @@ class DialogManager:
             session (aiohttp.ClientSession): The aiohttp session for making requests.
             text (str): The transcribed user input.
         """
-        # Initialize counters and flags
         response_count = 0
         synthesis_tasks = []
-        next_response_index = 0
         button_pressed = False
         ai_message = ""
 
-        # Define a callback function for button press
         def set_button_pressed():
             nonlocal button_pressed
             button_pressed = True
-            logger.info("Button press detected")
+            logger.info("Button press detected, initiating shutdown sequence")
 
-        # Set up the button press callback
         self.button.when_pressed = set_button_pressed
-        logger.info("Set button callback")
+        logger.info("Button callback set for interruption")
 
-        # Initialize the AI response generator
         conversation_response_generator = self.conversation_manager.get_response(text)
-        logger.info(f"Started conversation response generator for {text}")
+        logger.info(f"Initialized conversation response generator for input: {text}")
 
-        # Define a coroutine to periodically process completed synthesis tasks
-        async def process_completed_tasks_periodically():
-            nonlocal next_response_index
-            while not button_pressed and next_response_index < len(synthesis_tasks):
-                logger.debug(f"Processing completed tasks: index {next_response_index}/{len(synthesis_tasks)}")
-                # Process tasks and update the index
-                next_response_index = await self.process_completed_tasks(synthesis_tasks, next_response_index)
-                await asyncio.sleep(0.1)  # Short sleep to prevent busy-waiting
-            logger.info("Finished processing all completed tasks")
-
-        # Start the periodic task processing as a background task
-        process_tasks_task = asyncio.create_task(process_completed_tasks_periodically())
-        logger.info("Started periodic task processing")
-
-        # Initialize variable for save_to_conversation task
         save_conversation_task = None
 
-        try:
-            while True:
-                # Check if the button was pressed to stop processing
-                if button_pressed:
-                    logger.info("Button pressed, stopping processing")
-                    if self.response_player:
-                        self.response_player.stop()
-                    break
-
-                # Wait for the next AI response chunk with a timeout
-                done, pending = await asyncio.wait([conversation_response_generator.__anext__()], timeout=0.1)
-                if done:
-                    logger.debug(f"Processing {len(done)} completed tasks")
-                    # Process the received AI response chunk
-                    ai_response = done.pop().result()
+        async def process_ai_responses():
+            nonlocal response_count, ai_message, synthesis_tasks, save_conversation_task
+            try:
+                logger.info("Starting AI response processing loop")
+                async for ai_response in conversation_response_generator:
+                    if button_pressed:
+                        logger.info("Button press detected, stopping AI response processing")
+                        break
                     logger.info(f"Received AI response chunk with {len(ai_response)} responses")
                     for response in ai_response:
                         response_count += 1
                         logger.info(
-                            f'({time_string_ms(self.timezone)}) AI response {response_count}: {response["text"][:50]}...')
+                            f'({time_string_ms(self.timezone)}) Processing AI response {response_count}: {response["text"][:50]}...')
 
-                        # Accumulate the AI message
+                        # Accumulate AI message
                         if ai_message:
                             ai_message += " "
                         ai_message += response["text"]
 
-                        logger.debug(f"Creating synthesis task for response {response_count}")
-                        # Create a new synthesis task and add it to the queue
+                        # Create and add synthesis task
                         synthesis_task = self.create_synthesis_task(session, response, response_count)
                         synthesis_tasks.append(synthesis_task)
-                        logger.debug(f"Synthesis task created and added to queue. Total tasks: {len(synthesis_tasks)}")
+                        logger.debug(
+                            f"Created synthesis task {response_count}, total tasks now: {len(synthesis_tasks)}")
 
-                        # Handle saving the conversation
-                        # Cancel the previous save task if it's still running
+                        # Handle conversation saving
                         if save_conversation_task and not save_conversation_task.done():
+                            logger.debug("Cancelling previous save_to_conversation task")
                             save_conversation_task.cancel()
-                            logger.debug("Cancelled previous save_to_conversation task")
 
-                        # Start a new save_to_conversation task
                         save_conversation_task = asyncio.create_task(
                             save_to_conversation("assistant", ai_message, self.timezone))
-                        logger.debug("Started new save_to_conversation task")
+                        logger.debug("Initiated new save_to_conversation task")
+                logger.info("AI response generation completed normally")
+            except Exception as e:
+                logger.error(f"Error in AI response generation: {str(e)}")
+                logger.error(traceback.format_exc())
+
+        async def process_synthesis_tasks():
+            nonlocal synthesis_tasks
+            logger.info("Starting synthesis task processing loop")
+            while not button_pressed or synthesis_tasks:
+                if synthesis_tasks:
+                    logger.debug(f"Processing batch of {len(synthesis_tasks)} synthesis tasks")
+                    next_response_index = await self.process_completed_tasks(synthesis_tasks, 0)
+                    processed_tasks = synthesis_tasks[:next_response_index]
+                    synthesis_tasks = synthesis_tasks[next_response_index:]
+                    logger.debug(f"Processed {len(processed_tasks)} tasks, {len(synthesis_tasks)} remaining")
                 else:
-                    # No new response received within the timeout period
-                    logger.debug(f"No new AI response chunk received; {len(pending)} pending tasks")
-                    continue
+                    logger.debug("No synthesis tasks to process, waiting...")
+                await asyncio.sleep(0.1)
+            logger.info("Synthesis task processing loop completed")
 
-        except StopAsyncIteration:
-            # AI response generation is complete
-            logger.info("AI response generation complete")
+        try:
+            logger.info("Initiating concurrent processing of AI responses and synthesis tasks")
+            ai_task = asyncio.create_task(process_ai_responses())
+            synthesis_task = asyncio.create_task(process_synthesis_tasks())
+
+            # Wait for both tasks to complete
+            await asyncio.gather(ai_task, synthesis_task)
+            logger.info("Both AI response and synthesis task processing completed")
+
         except Exception as e:
-            # Log any unexpected errors
-            logger.error(f"Error in AI response generation: {str(e)}")
+            logger.error(f"Unexpected error in process_ai_response: {str(e)}")
             logger.error(traceback.format_exc())
+        finally:
+            if self.response_player:
+                logger.info("Stopping response player")
+                self.response_player.stop()
 
-        # Wait for the periodic task to finish processing any remaining tasks
-        logger.info("Waiting for periodic task to finish processing remaining tasks")
-        await process_tasks_task
+            # Ensure final conversation state is saved
+            if save_conversation_task:
+                logger.info("Finalizing conversation save")
+                try:
+                    await save_conversation_task
+                    logger.info("Final conversation save completed successfully")
+                except asyncio.CancelledError:
+                    logger.warning("Final save_to_conversation task was cancelled")
 
-        # Ensure the final conversation state is saved
-        if save_conversation_task:
-            logger.info("Waiting for final save_to_conversation task to complete")
-            try:
-                await save_conversation_task
-                logger.info("Final conversation save completed")
-            except asyncio.CancelledError:
-                logger.info("Final save_to_conversation task was cancelled")
-
-        logger.info("process_ai_response completed")
+        logger.info(f"process_ai_response completed. Processed {response_count} responses in total.")
 
     def create_synthesis_task(self, session: aiohttp.ClientSession, response: dict, response_count: int) -> Tuple[
         asyncio.Task, dict]:
