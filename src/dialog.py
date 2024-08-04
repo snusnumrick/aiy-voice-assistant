@@ -360,13 +360,11 @@ class DialogManager:
             logger.error(traceback.format_exc())
         finally:
             logger.info("Entering final cleanup phase")
-            # Ensure all tasks are properly cancelled and cleaned up
-            if ai_task and not ai_task.done():
-                logger.info("Cancelling AI task")
-                ai_task.cancel()
-            if synthesis_task and not synthesis_task.done():
-                logger.info("Cancelling synthesis task")
-                synthesis_task.cancel()
+            # Cancel AI and synthesis tasks if they're still running
+            for task in [ai_task, synthesis_task]:
+                if task and not task.done():
+                    logger.info(f"Cancelling task: {task}")
+                    task.cancel()
 
             # Wait for tasks to be cancelled
             if ai_task or synthesis_task:
@@ -374,9 +372,13 @@ class DialogManager:
                 await asyncio.gather(ai_task, synthesis_task, return_exceptions=True)
                 logger.info("All tasks cancelled")
 
-            if self.response_player:
-                logger.info("Stopping response player")
-                self.response_player.stop()
+            # Only stop the response player if button was pressed
+            if button_pressed:
+                if self.response_player:
+                    logger.info("Button pressed, stopping response player")
+                    self.response_player.stop()
+            else:
+                logger.info("Button not pressed, leaving response player active")
 
             # Ensure final conversation state is saved
             if save_conversation_task:
