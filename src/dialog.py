@@ -273,8 +273,8 @@ class DialogManager:
         logger.info("Set button callback")
 
         # Initialize the AI response generator
-        ai_response_generator = self.conversation_manager.get_response(text)
-        logger.info("Started AI response generator")
+        conversation_response_generator = self.conversation_manager.get_response(text)
+        logger.info(f"Started conversation response generator for {text}")
 
         # Define a coroutine to periodically process completed synthesis tasks
         async def process_completed_tasks_periodically():
@@ -302,10 +302,10 @@ class DialogManager:
                         self.response_player.stop()
                     break
 
-                logger.debug("Waiting for next AI response chunk")
                 # Wait for the next AI response chunk with a timeout
-                done, _ = await asyncio.wait([ai_response_generator.__anext__()], timeout=0.1)
+                done, pending = await asyncio.wait([conversation_response_generator.__anext__()], timeout=0.1)
                 if done:
+                    logger.debug(f"Processing {len(done)} completed tasks")
                     # Process the received AI response chunk
                     ai_response = done.pop().result()
                     logger.info(f"Received AI response chunk with {len(ai_response)} responses")
@@ -337,7 +337,7 @@ class DialogManager:
                         logger.debug("Started new save_to_conversation task")
                 else:
                     # No new response received within the timeout period
-                    logger.debug("No new AI response chunk received")
+                    logger.debug(f"No new AI response chunk received; {len(pending)} pending tasks")
                     continue
 
         except StopAsyncIteration:
