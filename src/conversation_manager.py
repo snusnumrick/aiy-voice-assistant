@@ -258,11 +258,11 @@ class ConversationManager:
             result = []
             for emo, t in extract_emotions(response_text):
                 logger.debug(f"Emotion: {emo} -> {t}")
-                for lang, text in extract_language(t, default_lang=self.current_language_code):
-                    logger.debug(f"Language: {lang} -> {text}")
+                for lang, clean_text in extract_language(t, default_lang=self.current_language_code):
+                    logger.debug(f"Language: {lang} -> {clean_text}")
                     self.current_language_code = lang
                     if text:
-                        result.append({"emotion": emo, "language": lang, "text": text})
+                        result.append({"emotion": emo, "language": lang, "text": clean_text})
             logger.debug(f"yielding {result}")
             yield result
 

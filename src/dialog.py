@@ -173,9 +173,11 @@ class DialogManager:
         Returns:
             int: Updated index of the next task to process.
         """
+        logger.debug(f"process_completed_tasks {next_response_index}/{len(synthesis_tasks)}")
         while next_response_index < len(synthesis_tasks):
             task, response_info = synthesis_tasks[next_response_index]
             if task.done():
+                logger.debug(f"task {next_response_index} done")
                 try:
                     completion_time = time.time()
                     creation_time = getattr(task, 'creation_time', None)
@@ -184,6 +186,7 @@ class DialogManager:
                             f"Task {next_response_index} took {completion_time - creation_time:.2f} seconds to complete")
 
                     if await asyncio.wait_for(task, timeout=10.0):  # 10 second timeout
+                        logger.debug(f"Task {next_response_index} completed")
                         self.handle_successful_synthesis(response_info)
                         next_response_index += 1
                     else:
@@ -287,8 +290,7 @@ class DialogManager:
 
                 # Process completed tasks, but only play if it's the next in order
                 next_response_index = await self.process_completed_tasks(synthesis_tasks, next_response_index)
-
-                await asyncio.sleep(0)
+                await asyncio.sleep(0.1)
 
         save_conversation_task = asyncio.create_task(save_to_conversation("assistant", ai_message, self.timezone))
 
