@@ -30,6 +30,7 @@ import traceback
 from typing import Dict, List, Tuple
 
 import aiohttp
+import tempfile
 from aiy.board import Button
 from aiy.leds import Leds, Color
 
@@ -128,7 +129,6 @@ class DialogManager:
         timezone (str): The timezone to use for the conversation loop.
         transcriber (SpeechTranscriber): Handles speech-to-text conversion.
         response_player (ResponsePlayer): Plays synthesized speech responses.
-        original_audio_file_name (str): Base name for audio files.
     """
 
     def __init__(self, button: Button, leds: Leds, tts_engines: Dict[Language, TTSEngine],
@@ -155,7 +155,6 @@ class DialogManager:
         self.timezone = timezone
         self.transcriber = SpeechTranscriber(button, leds, config, cleaning=self.cleaning_routine, timezone=timezone)
         self.response_player = None
-        self.original_audio_file_name = config.get('audio_file_name', 'speech.wav')
 
     async def cleaning_routine(self):
         """Perform cleanup tasks for the conversation manager."""
@@ -407,7 +406,7 @@ class DialogManager:
         emo = response["emotion"]
         response_text = response["text"]
         lang_code = response["language"]
-        audio_file_name = append_suffix(self.original_audio_file_name, str(response_count))
+        audio_file_name = tempfile.mktemp(suffix=".wav")
         tone = Tone.HAPPY if emo and 'voice' in emo and 'tone' in emo['voice'] and emo['voice'][
             'tone'] == "happy" else Tone.PLAIN
         lang = {"ru": Language.RUSSIAN, "en": Language.ENGLISH, "de": Language.GERMAN}.get(lang_code, Language.RUSSIAN)
@@ -417,7 +416,7 @@ class DialogManager:
 
         logger.debug(f"Creating synthesis task for response {response_count}")
         synthesis_task = asyncio.create_task(
-            synthesize_with_fallback(session, tts_engine, self.fallback_tts_engine, response_text, audio_file_name,
+            synthesize_with_fallback(session, tts_engine, self.fallback_tts_engine, response_text, ç,
                                      tone, lang))
         setattr(synthesis_task, 'creation_time', time.time())
         logger.debug(f"Synthesis task created for response {response_count}")
