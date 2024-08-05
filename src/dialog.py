@@ -416,7 +416,7 @@ class DialogManager:
 
         logger.debug(f"Creating synthesis task for response {response_count}")
         synthesis_task = asyncio.create_task(
-            synthesize_with_fallback(session, tts_engine, self.fallback_tts_engine, response_text, ç,
+            synthesize_with_fallback(session, tts_engine, self.fallback_tts_engine, response_text, audio_file_name,
                                      tone, lang))
         setattr(synthesis_task, 'creation_time', time.time())
         logger.debug(f"Synthesis task created for response {response_count}")
