@@ -56,7 +56,7 @@ class Google(SearchProvider):
         self.session = httpx.AsyncClient()
 
     async def _fetch_data(self, term, lang):
-        url = f"https://www.google.com/search?q={httpx.utils.quote(term)}&hl={lang}"
+        url = f"https://www.google.com/search?q={requests.utils.quote(term)}&hl={lang}"
         headers = {"User-Agent": random.choice(USER_AGENTS)}
         response = await self.session.get(url, headers=headers)
         return html.fromstring(response.content)
