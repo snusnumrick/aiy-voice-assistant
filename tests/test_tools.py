@@ -96,6 +96,10 @@ class TestExtractSentences(unittest.TestCase):
         self.assert_sentences("text) 1. one. 2. two.",
                               ['text)', '1. one.', '2. two.'])
 
+    def test_numeration_after_time(self):
+        self.assert_sentences("Швеция - 3:56.92 8. Нидерланды - 3:59.52",
+                              ["Швеция - 3:56.92", "8. Нидерланды - 3:59.52"])
+
 
 if __name__ == '__main__':
     unittest.main()
