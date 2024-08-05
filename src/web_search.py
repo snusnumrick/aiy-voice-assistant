@@ -124,7 +124,7 @@ class Perplexity(SearchProvider):
     async def search(self, query: str) -> str:
         start_time = time.time()
         messages = [{"role": "user", "content": (query), }, ]
-        response = "".join([r async for r in self.model.get_response_async()])
+        response = "".join([r async for r in self.model.get_response_async(messages)])
         duration = time.time() - start_time
         logger.debug(f"Perplexity search took {duration:.2f} seconds")
         return response
@@ -268,7 +268,7 @@ class WebSearcher:
             return result
 
         except Exception as e:
-            print(f"Error performing web search: {e}")
+            logger.error(f"Error performing web search: {e}")
             raise
 
 
