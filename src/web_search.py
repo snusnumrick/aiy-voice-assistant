@@ -149,6 +149,11 @@ class Tavily(SearchProvider):
             # Make the POST request to the API
             async with httpx.AsyncClient() as client:
                 response = await client.post(url, json=payload)
+            if response.status_code == 400:
+                try:
+                    logger.error(f"Tavily: {json.loads(response.content)['detail']['error']}")
+                except Exception:
+                    pass
             response.raise_for_status()  # Raise an exception for bad status codes
 
             # Parse and return the JSON response
@@ -236,15 +241,15 @@ class WebSearcher:
     async def search_providers_async(self, query: str, enabled_providers):
 
         tasks = [getattr(self, provider).search(query) for provider in enabled_providers]
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         combined_result = ""
-        joined_results = zip(enabled_providers, ["Result from {}: \n{}\n".format(prov, res) for prov, res in
-                                                 zip(enabled_providers, results)])
-
-        for provider, result in joined_results:
-            logger.info(f"\n---------\n{provider} result: {result}")
-            combined_result += result
+        for provider, result in zip(enabled_providers, results):
+            if isinstance(result, Exception):
+                logger.error(f"Error while searching with provider {provider}: {str(result)}")
+            else:
+                logger.info(f"\n---------\n{provider} result: {result}")
+                combined_result += f"Result from {provider}: \n{result}\n"
 
         return combined_result
 

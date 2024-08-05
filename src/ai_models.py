@@ -220,9 +220,13 @@ class PerplexityModel(AIModel):
         return response.choices[0].message.content.strip()
 
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
-        completions = self.client_async.with_streaming_response.chat.completions
-        async for response in completions.create(model=self.model, messages=messages, max_tokens=self.max_tokens):
-            yield response.choices[0].message.content.strip()
+        stream = await self.client_async.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            stream=True,
+        )
+        async for chunk in stream:
+            yield chunk.choices[0].delta.content or ""
 
 
 async def main_async():
