@@ -51,11 +51,11 @@ def error_visual(leds: Leds) -> None:
     Args:
         leds (Leds): The AIY Kit LED object for visual feedback.
     """
-    logger.info("Error... LED blinking")
+    logger.debug("Error... LED blinking")
     leds.update(Leds.rgb_on(Color.RED))
     time.sleep(0.3)
     leds.update(Leds.rgb_off())
-    logger.info("Error... LED off")
+    logger.debug("Error... LED off")
 
 
 def append_suffix(file_name: str, suffix: str) -> str:
@@ -93,7 +93,7 @@ async def synthesize_with_fallback(session: aiohttp.ClientSession, tts_engine: T
     Returns:
         bool: True if synthesis was successful, False otherwise.
     """
-    logger.info(f"synthesize_with_fallback. text: {response_text}, file: {audio_file_name}, tone: {tone}, lang: {lang}")
+    logger.debug(f"synthesize_with_fallback. text: {response_text}, file: {audio_file_name}, tone: {tone}, lang: {lang}")
     try:
         if await tts_engine.synthesize_async(session, response_text, audio_file_name, tone, lang):
             logger.debug(f"Synthesis {audio_file_name} completed")
@@ -263,30 +263,30 @@ class DialogManager:
         def set_button_pressed():
             nonlocal button_pressed
             button_pressed = True
-            logger.info("Button press detected, initiating shutdown sequence")
+            logger.debug("Button press detected, initiating shutdown sequence")
 
         def set_ai_responses_complete():
             nonlocal ai_responses_complete
             ai_responses_complete = True
-            logger.info("AI response generation marked as complete")
+            logger.debug("AI response generation marked as complete")
 
         self.button.when_pressed = set_button_pressed
-        logger.info("Button callback set for interruption")
+        logger.debug("Button callback set for interruption")
 
         conversation_response_generator = self.conversation_manager.get_response(text)
-        logger.info(f"Initialized conversation response generator for input: {text}")
+        logger.debug(f"Initialized conversation response generator for input: {text}")
 
         save_conversation_task = None
 
         async def process_ai_responses():
             nonlocal response_count, ai_message, synthesis_tasks, save_conversation_task
             try:
-                logger.info("Starting AI response processing loop")
+                logger.debug("Starting AI response processing loop")
                 async for ai_response in conversation_response_generator:
                     if button_pressed:
                         logger.info("Button press detected, stopping AI response processing")
                         break
-                    logger.info(f"Received AI response chunk with {len(ai_response)} responses")
+                    logger.debug(f"Received AI response chunk with {len(ai_response)} responses")
                     for response in ai_response:
                         response_count += 1
                         logger.info(
@@ -311,21 +311,21 @@ class DialogManager:
                         save_conversation_task = asyncio.create_task(
                             save_to_conversation("assistant", ai_message, self.timezone))
                         logger.debug("Initiated new save_to_conversation task")
-                logger.info("AI response generation completed normally")
+                logger.debug("AI response generation completed normally")
             except Exception as e:
                 logger.error(f"Error in AI response generation: {str(e)}")
                 logger.error(traceback.format_exc())
             finally:
                 set_ai_responses_complete()  # Mark AI responses as complete
-                logger.info("AI response processing loop exited")
+                logger.debug("AI response processing loop exited")
 
         async def process_synthesis_tasks():
             nonlocal synthesis_tasks
             try:
-                logger.info("Starting synthesis task processing loop")
+                logger.debug("Starting synthesis task processing loop")
                 while not button_pressed:
                     if ai_responses_complete and not synthesis_tasks:
-                        logger.info("AI responses complete and no more synthesis tasks, exiting loop")
+                        logger.debug("AI responses complete and no more synthesis tasks, exiting loop")
                         break
                     if synthesis_tasks:
                         logger.debug(f"Processing batch of {len(synthesis_tasks)} synthesis tasks")
@@ -338,27 +338,27 @@ class DialogManager:
                     await asyncio.sleep(0.1)
                 if button_pressed:
                     logger.info("Button pressed, immediately exiting synthesis task processing")
-                logger.info("Synthesis task processing loop completed")
+                logger.debug("Synthesis task processing loop completed")
             except Exception as e:
                 logger.error(f"Error in synthesis task processing: {str(e)}")
                 logger.error(traceback.format_exc())
             finally:
-                logger.info("Synthesis task processing loop exited")
+                logger.debug("Synthesis task processing loop exited")
 
         try:
-            logger.info("Initiating concurrent processing of AI responses and synthesis tasks")
+            logger.debug("Initiating concurrent processing of AI responses and synthesis tasks")
             ai_task = asyncio.create_task(process_ai_responses())
             synthesis_task = asyncio.create_task(process_synthesis_tasks())
 
             # Wait for both tasks to complete
             await asyncio.gather(ai_task, synthesis_task)
-            logger.info("Both AI response and synthesis task processing completed")
+            logger.debug("Both AI response and synthesis task processing completed")
 
         except Exception as e:
             logger.error(f"Unexpected error in process_ai_response: {str(e)}")
             logger.error(traceback.format_exc())
         finally:
-            logger.info("Entering final cleanup phase")
+            logger.debug("Entering final cleanup phase")
             # Cancel AI and synthesis tasks if they're still running
             for task in [ai_task, synthesis_task]:
                 if task and not task.done():
@@ -367,28 +367,28 @@ class DialogManager:
 
             # Wait for tasks to be cancelled
             if ai_task or synthesis_task:
-                logger.info("Waiting for tasks to be cancelled")
+                logger.debug("Waiting for tasks to be cancelled")
                 await asyncio.gather(ai_task, synthesis_task, return_exceptions=True)
-                logger.info("All tasks cancelled")
+                logger.debug("All tasks cancelled")
 
             # Only stop the response player if button was pressed
             if button_pressed:
                 if self.response_player:
-                    logger.info("Button pressed, stopping response player")
+                    logger.debug("Button pressed, stopping response player")
                     self.response_player.stop()
             else:
-                logger.info("Button not pressed, leaving response player active")
+                logger.debug("Button not pressed, leaving response player active")
 
             # Ensure final conversation state is saved
             if save_conversation_task:
-                logger.info("Finalizing conversation save")
+                logger.debug("Finalizing conversation save")
                 try:
                     await save_conversation_task
-                    logger.info("Final conversation save completed successfully")
+                    logger.debug("Final conversation save completed successfully")
                 except asyncio.CancelledError:
                     logger.warning("Final save_to_conversation task was cancelled")
 
-            logger.info(f"process_ai_response completed. Processed {response_count} responses in total.")
+            logger.debug(f"process_ai_response completed. Processed {response_count} responses in total.")
 
     def create_synthesis_task(self, session: aiohttp.ClientSession, response: dict, response_count: int) -> Tuple[
         asyncio.Task, dict]:
