@@ -398,13 +398,14 @@ class ConversationManager:
 
         # remove temp wav files
         num_removed = 0
-        for filepath in glob.glob("/tmp/*.wav"):
-            try:
-                os.remove(filepath)
-                logger.debug(f"File {filepath} has been removed successfully")
-                num_removed += 1
-            except Exception as e:
-                logger.warning(f"Error occurred while trying to remove {filepath}. Error: {e}")
+        for dir in ["/tmp", "."]:
+            for filepath in glob.glob(dir + "/*.wav"):
+                try:
+                    os.remove(filepath)
+                    logger.debug(f"File {filepath} has been removed successfully")
+                    num_removed += 1
+                except Exception as e:
+                    logger.warning(f"Error occurred while trying to remove {filepath}. Error: {e}")
         logger.info(f"removed {num_removed} temp wav files")
 
     @staticmethod

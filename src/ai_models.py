@@ -200,8 +200,9 @@ class PerplexityModel(AIModel):
         Args:
             config (Config): The application configuration object.
         """
-        from openai import OpenAI
+        from openai import OpenAI, AsyncOpenAI
         self.client = OpenAI(base_url="https://api.perplexity.ai", api_key=os.getenv("PERPLEXITY_API_KEY"))
+        self.client_async = AsyncOpenAI(base_url="https://api.perplexity.ai", api_key=os.getenv("PERPLEXITY_API_KEY"))
         self.model = config.get('perplexity_model', 'llama-3-sonar-large-32k-online')
         self.max_tokens = config.get('max_tokens', 4096)
 
@@ -217,6 +218,11 @@ class PerplexityModel(AIModel):
         """
         response = self.client.chat.completions.create(model=self.model, messages=messages, max_tokens=self.max_tokens)
         return response.choices[0].message.content.strip()
+
+    async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
+        completions = self.client_async.with_streaming_response.chat.completions
+        async for response in completions.create(model=self.model, messages=messages, max_tokens=self.max_tokens):
+            yield response.choices[0].message.content.strip()
 
 
 async def main_async():
