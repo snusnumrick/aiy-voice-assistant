@@ -6,16 +6,16 @@ interfacing with the Google Cloud Speech-to-Text API and various TTS engines.
 """
 
 import asyncio
-import queue
+import datetime
 import logging
 import os
+import queue
 import re
 import shutil
 import tempfile
 import time
 from abc import ABC, abstractmethod
 from collections import deque
-import datetime
 from enum import Enum
 from typing import Optional, List, Iterator, Callable
 
@@ -28,8 +28,8 @@ from google.cloud import speech
 
 from src.config import Config
 from src.responce_player import ResponsePlayer
-from src.tts_engine import TTSEngine
 from src.tools import time_string_ms, get_timezone, combine_audio_files
+from src.tts_engine import TTSEngine
 
 logger = logging.getLogger(__name__)
 
@@ -202,14 +202,12 @@ class SpeechTranscriber:
         self.last_clean_date: Optional[datetime.date] = None
         self.timezone: str = get_timezone() if timezone is None else timezone
 
-
     async def check_and_schedule_cleaning(self) -> None:
         now: datetime.datetime = datetime.datetime.now()
         cleaning_time_start = datetime.time(hour=self.config.get("cleaning_tine_start_hour", 3))  # 3 AM
         cleaning_time_stop = datetime.time(hour=self.config.get("cleaning_time_stop_hour", 4))  # 4 AM
 
         if cleaning_time_start <= now.time() < cleaning_time_stop:
-            logger.debug(f"Cleaning time: {now.time()}")
             if self.last_clean_date != now.date():
                 logger.debug(f"Cleaning date: {now.date()}")
                 await self.cleaning_routine()
@@ -323,14 +321,14 @@ class SpeechTranscriber:
                 if not chunks_deque:
                     logger.debug("No audio chunk available")
 
-                    import wave
-
-                    with wave.open("recording.wav", 'wb') as wav_file:
-                        wav_file.setnchannels(audio_format.num_channels)
-                        wav_file.setsampwidth(audio_format.bytes_per_sample)
-                        wav_file.setframerate(audio_format.sample_rate_hz)
-                        for chunk in chunks:
-                            wav_file.writeframes(chunk)
+                    # import wave
+                    #
+                    # with wave.open("recording.wav", 'wb') as wav_file:
+                    #     wav_file.setnchannels(audio_format.num_channels)
+                    #     wav_file.setsampwidth(audio_format.bytes_per_sample)
+                    #     wav_file.setframerate(audio_format.sample_rate_hz)
+                    #     for chunk in chunks:
+                    #         wav_file.writeframes(chunk)
 
                     break
 

@@ -355,6 +355,7 @@ class YandexTTSEngine(TTSEngine):
     def max_text_length(self) -> int:
         return -1
 
+    @retry_async()
     async def synthesize_async(self, session: aiohttp.ClientSession, text: str, filename: str, tone: Tone = Tone.PLAIN,
                                lang=Language.RUSSIAN) -> bool:
         # Yandex SpeechKit doesn't have an async API, so we'll run it in an executor

@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import sys
+import glob
 from collections import deque
 from pathlib import Path
 from typing import List, Tuple, AsyncGenerator, Deque, Dict
@@ -258,11 +259,11 @@ class ConversationManager:
             result = []
             for emo, t in extract_emotions(response_text):
                 logger.debug(f"Emotion: {emo} -> {t}")
-                for lang, text in extract_language(t, default_lang=self.current_language_code):
-                    logger.debug(f"Language: {lang} -> {text}")
+                for lang, clean_text in extract_language(t, default_lang=self.current_language_code):
+                    logger.debug(f"Language: {lang} -> {clean_text}")
                     self.current_language_code = lang
                     if text:
-                        result.append({"emotion": emo, "language": lang, "text": text})
+                        result.append({"emotion": emo, "language": lang, "text": clean_text})
             logger.debug(f"yielding {result}")
             yield result
 
@@ -292,15 +293,19 @@ class ConversationManager:
         if not p.exists():
             return
 
-        cleaning_time_stop = datetime.time(hour=self.config.get("cleaning_time_stop_hour", 4))  # 4 AM
+        cleaning_time_stop_hour = self.config.get("cleaning_time_stop_hour", 4)
         mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(p))
 
+        cutoff = datetime.datetime.now() - datetime.timedelta(days=1)
+        cutoff = cutoff.replace(hour=cleaning_time_stop_hour, minute=0, second=0, microsecond=0)
+
         # if there were no modifications today
-        if mod_time.time() <= cleaning_time_stop:
+        if mod_time < cutoff:
+            logger.debug(f"facts modification time {mod_time} is too old to optimize")
             return
 
         # Asynchronously optimize facts
-        optimized_facts = await optimize_facts(self.get_system_prompt(), self.facts, self.config)
+        optimized_facts = await optimize_facts(self.facts, self.config, self.timezone)
 
         if set(optimized_facts) != set(self.facts):
             self.facts = optimized_facts
@@ -319,15 +324,19 @@ class ConversationManager:
         if not p.exists():
             return
 
-        cleaning_time_stop = datetime.time(hour=self.config.get("cleaning_time_stop_hour", 4))  # 4 AM
+        cleaning_time_stop_hour = self.config.get("cleaning_time_stop_hour", 4)
         mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(p))
 
+        cutoff = datetime.datetime.now() - datetime.timedelta(days=1)
+        cutoff = cutoff.replace(hour=cleaning_time_stop_hour, minute=0, second=0, microsecond=0)
+
         # if there were no modifications today
-        if mod_time.time() <= cleaning_time_stop:
+        if mod_time < cutoff:
+            logger.debug(f"rules modification time {mod_time} is too old to optimize")
             return
 
         # Asynchronously optimize rules
-        optimized_rules = await optimize_rules(self.get_system_prompt(), self.rules, self.config)
+        optimized_rules = await optimize_rules(self.hard_rules, self.rules, self.config)
 
         # Save rules using a separate thread to avoid blocking the event loop
         if set(optimized_rules) != set(self.rules):
@@ -340,14 +349,16 @@ class ConversationManager:
 
     async def process_and_clean(self):
         # form new memories, clean message deque, process existing facts and rules
-        # to be used in night time
+        # to be used at night time
 
         newline = "\n"
 
         # form new memories
-        if self.config.get("form_new_memories_at_night", False):
-            if len(self.message_history) > 1:
-                prompt = self.config.get("form_new_memories_prompt", "Хочешь еще что-нибудь звпомнить из нашего разговора?")
+        if self.config.get("form_new_memories_at_night", True):
+            if len(self.message_history) > 2:
+                prompt = self.config.get("form_new_memories_prompt",
+                                         "Это необязательно, но может хочешь еще что-нибудь запомнить "
+                                         "из нашего разговора перед тем как его удалю?")
                 logger.info(f"form new memory by asking {prompt}")
                 num_facts_begore = len(self.facts)
                 async for ai_response in self.get_response(prompt):
@@ -356,9 +367,9 @@ class ConversationManager:
                 if num_facts_after_clean == num_facts_begore:
                     logger.info("no new memories formed")
                 else:
-                    logger.info(f"new memories formed:\n{newline.join(self.facts[num_facts_begore:])}")
+                    logger.info(f"{num_facts_after_clean - num_facts_begore} new facts remembered")
 
-        if self.config.get("clean_message_history_at_night", False):
+        if self.config.get("clean_message_history_at_night", True):
             # cleanup conversation
             self.message_history: Deque[dict] = deque([{"role": "system", "content": self.get_system_prompt()}])
 
@@ -384,6 +395,18 @@ class ConversationManager:
         new_rules = list(set(self.rules) - existing_rules)
         if new_rules:
             logger.info(f"new rules: \n{newline.join(new_rules)}")
+
+        # remove temp wav files
+        num_removed = 0
+        for dir in ["/tmp", "."]:
+            for filepath in glob.glob(dir + "/*.wav"):
+                try:
+                    os.remove(filepath)
+                    logger.debug(f"File {filepath} has been removed successfully")
+                    num_removed += 1
+                except Exception as e:
+                    logger.warning(f"Error occurred while trying to remove {filepath}. Error: {e}")
+        logger.info(f"removed {num_removed} temp wav files")
 
     @staticmethod
     def load_facts():

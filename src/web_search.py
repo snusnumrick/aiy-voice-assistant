@@ -7,7 +7,7 @@ import sys
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional
+from typing import Optional, Coroutine
 
 import httpx
 import requests
@@ -38,7 +38,7 @@ class SearchProvider(ABC):
     """
 
     @abstractmethod
-    def search(self, query: str) -> str:
+    async def search(self, query: str) -> str:
         """
         Search for the given query.
 
@@ -53,12 +53,12 @@ class SearchProvider(ABC):
 
 class Google(SearchProvider):
     def __init__(self, config: Config):
-        self.session = requests.Session()
+        self.session = httpx.AsyncClient()
 
-    def _fetch_data(self, term, lang):
+    async def _fetch_data(self, term, lang):
         url = f"https://www.google.com/search?q={requests.utils.quote(term)}&hl={lang}"
         headers = {"User-Agent": random.choice(USER_AGENTS)}
-        response = self.session.get(url, headers=headers)
+        response = await self.session.get(url, headers=headers)
         return html.fromstring(response.content)
 
     @staticmethod
@@ -66,17 +66,21 @@ class Google(SearchProvider):
         elements = tree.cssselect(selector)
         return " ".join(element.text_content() for element in elements) if elements else ""
 
-    def search(self, term: str) -> str:
+    async def search(self, term: str) -> str:
         start_time = time.time()
-        tree = self._fetch_data(term, "en")
+        tree = await self._fetch_data(term, "en")
         logger.debug(f"Google search fetch_data time: {time.time() - start_time}")
 
         selectors = [".sXLaOe", ".hgKElc", ".wx62f", ".HwtpBd", ".yxjZuf span"]
         results = [self._get_text(tree, selector) for selector in selectors]
+        await asyncio.sleep(0)
 
         a1 = self._get_text(tree, ".UDZeY span").replace("Описание", "").replace("ЕЩЁ", "")
+        await asyncio.sleep(0)
         a1 += self._get_text(tree, ".LGOjhe span")
+        await asyncio.sleep(0)
         a2 = self._get_text(tree, ".yXK7lf span")
+        await asyncio.sleep(0)
 
         brief_result = "; ".join(filter(None, results))
         result = brief_result or a2 or a1
@@ -91,12 +95,13 @@ class GoogleCustomSearch(SearchProvider):
         self.cs_key = os.environ.get('GOOGLE_CUSTOMSEARCH_KEY')
         self.api_key = os.environ.get('GOOGLE_API_KEY')
 
-    def search(self, term: str) -> str:
+    async def search(self, term: str) -> str:
         start_time = time.time()
         params = {'q': term, 'key': self.api_key, 'cx': self.cs_key, }
 
         try:
-            response = requests.get(self.base_url, params=params)
+            async with httpx.AsyncClient() as client:
+                response = await client.get(self.base_url, params=params)
             response.raise_for_status()  # Raise an exception for bad status codes
 
             results = response.json()
@@ -116,10 +121,10 @@ class Perplexity(SearchProvider):
         from src.ai_models import PerplexityModel
         self.model = PerplexityModel(config)
 
-    def search(self, query: str) -> str:
+    async def search(self, query: str) -> str:
         start_time = time.time()
         messages = [{"role": "user", "content": (query), }, ]
-        response: str = self.model.get_response(messages)
+        response = "".join([r async for r in self.model.get_response_async(messages)])
         duration = time.time() - start_time
         logger.debug(f"Perplexity search took {duration:.2f} seconds")
         return response
@@ -131,7 +136,7 @@ class Tavily(SearchProvider):
         if not self.api_key:
             raise ValueError("Tavily API key is not provided in environment variables")
 
-    def search(self, query: str):
+    async def search(self, query: str):
         url = "https://api.tavily.com/search"
 
         start_time = time.time()
@@ -142,7 +147,13 @@ class Tavily(SearchProvider):
 
         try:
             # Make the POST request to the API
-            response = requests.post(url, json=payload)
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=payload)
+            if response.status_code == 400:
+                try:
+                    logger.error(f"Tavily: {json.loads(response.content)['detail']['error']}")
+                except Exception:
+                    pass
             response.raise_for_status()  # Raise an exception for bad status codes
 
             # Parse and return the JSON response
@@ -192,7 +203,7 @@ class DuckDuckGoSearch(SearchProvider):
             logger.error(f"DDGS search could not be initialized: {e}")
             self.ddgs = None
 
-    def search(self, query: str):
+    async def search(self, query: str) -> str:
         start_time = time.time()
         if not self.ddgs:
             return ""
@@ -203,6 +214,8 @@ class DuckDuckGoSearch(SearchProvider):
         except Exception as e:
             logger.error(f"DDGS dsearch failed: {e}")
             return ""
+
+        await asyncio.sleep(0)
 
         results = "## Search results\n" + "\n\n".join(
             "### \"{}\"\n**URL:** {}  \n**Excerpt:** {}".format(r['title'], r['url'],
@@ -227,21 +240,16 @@ class WebSearcher:
 
     async def search_providers_async(self, query: str, enabled_providers):
 
-        def search_provider(provider, query):
-            return getattr(self, provider).search(query)
-
-        with ThreadPoolExecutor() as executor:
-            loop = asyncio.get_running_loop()
-            tasks = [loop.run_in_executor(executor, search_provider, prov, query) for prov in enabled_providers]
-            results = await asyncio.gather(*tasks)
+        tasks = [getattr(self, provider).search(query) for provider in enabled_providers]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         combined_result = ""
-        joined_results = zip(enabled_providers, ["Result from {}: \n{}\n".format(prov, res) for prov, res in
-                                                 zip(enabled_providers, results)])
-
-        for provider, result in joined_results:
-            logger.info(f"\n---------\n{provider} result: {result}")
-            combined_result += result
+        for provider, result in zip(enabled_providers, results):
+            if isinstance(result, Exception):
+                logger.error(f"Error while searching with provider {provider}: {str(result)}")
+            else:
+                logger.info(f"\n---------\n{provider} result: {result}")
+                combined_result += f"Result from {provider}: \n{result}\n"
 
         return combined_result
 
@@ -265,7 +273,7 @@ class WebSearcher:
             return result
 
         except Exception as e:
-            print(f"Error performing web search: {e}")
+            logger.error(f"Error performing web search: {e}")
             raise
 
 

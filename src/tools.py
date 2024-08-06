@@ -5,11 +5,11 @@ import os
 import random
 import re
 import time
-from collections import deque
 from datetime import datetime
 from functools import wraps
-from typing import List, Dict, Union, Any, Callable, AsyncGenerator
+from typing import List, Dict, Union, Any, Callable, AsyncGenerator, Iterable, Tuple
 
+import aiofiles
 import geocoder
 import pytz
 from pydub import AudioSegment
@@ -89,6 +89,65 @@ def time_string_ms(timezone_string: str) -> str:
     return datetime.now(pytz.utc).astimezone(pytz.timezone(timezone_string)).strftime("%M:%S.%f")[:-3]
 
 
+def get_location_string() -> str:
+    """
+    :return: A string representing the current location.
+
+    Example usage:
+    ```
+    result = get_location_string()
+    print(result)
+    ```
+
+    Expected output:
+    ```
+    San Francisco, CA, United States
+    ```
+    """
+    g = geocoder.ip('me')
+    location_parts = [g.city, g.state, g.country]
+    location = ', '.join([part for part in location_parts if part]) if any(location_parts) else ''
+    return location
+
+
+def get_current_date_time_tuple(timezone_string: str) -> Tuple[str, str]:
+    """
+    :param timezone_string: A string representing the timezone to convert the current date and time to (e.g. 'America/Los_Angeles').
+    :return: A tuple with the current date and time in the specified timezone in Russian.
+
+    This method takes a timezone string as input and returns the current date and time in the specified timezone.
+    The date is formatted with the month as a word, and the time is formatted in 12-hour format with AM/PM and timezone information.
+
+    Example usage:
+    ```
+    timezone = 'America/Los_Angeles'
+    result = get_current_date_time_location(timezone)
+    print(result)
+    ```
+
+    Expected output:
+    ```
+    ("05 мая 2021", "08:30:45 PM, PDT")
+    ```
+    """
+    # Get current date and time in UTC
+    now_utc = datetime.now(pytz.utc)
+
+    # Define the timezone you want to convert to (for example, PST)
+    timezone = pytz.timezone(timezone_string)
+    now_local = now_utc.astimezone(timezone)
+
+    # Format the date with the month as a word
+    months = {1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля', 5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
+              9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'}
+    date_str = now_local.strftime(f"%d {months[now_local.month]} %Y")
+
+    # Format the time in 12-hour format with AM/PM and timezone
+    time_str = now_local.strftime("%I:%M:%S %p, %Z")
+
+    return date_str, time_str
+
+
 def get_current_date_time_location(timezone_string: str) -> str:
     """
     :param timezone_string: A string representing the timezone to convert the current date and time to (e.g. 'America/Los_Angeles').
@@ -108,25 +167,8 @@ def get_current_date_time_location(timezone_string: str) -> str:
     Сегодня 05 мая 2021. Сейчас 08:30:45 PM, PDT. Я нахожусь в San Francisco, CA, United States
     ```
     """
-    # Get current date and time in UTC
-    now_utc = datetime.now(pytz.utc)
-
-    # Define the timezone you want to convert to (for example, PST)
-    timezone = pytz.timezone(timezone_string)
-    now_local = now_utc.astimezone(timezone)
-
-    # Format the date with the month as a word
-    months = {1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля', 5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
-              9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'}
-    date_str = now_local.strftime(f"%d {months[now_local.month]} %Y")
-
-    # Format the time in 12-hour format with AM/PM and timezone
-    time_str = now_local.strftime("%I:%M:%S %p, %Z")
-
-    # Get current location
-    g = geocoder.ip('me')
-    location_parts = [g.city, g.state, g.country]
-    location = ', '.join([part for part in location_parts if part]) if any(location_parts) else ''
+    date_str, time_str = get_current_date_time_tuple(timezone_string)
+    location = get_location_string()
 
     # Prepare the message in Russian
     message = f"Сегодня {date_str}. Сейчас {time_str}."
@@ -150,7 +192,7 @@ def get_location() -> str:
     return f"In {location}."
 
 
-def get_current_datetime_english(timezone_string: str) -> str:
+def get_current_datetime_english(timezone_string: str = "") -> str:
     """Human-readable current date and time in English.
 
     Example of output: 'Today is 13 July 2024. Now 12:20 PM PDT.'
@@ -167,7 +209,7 @@ def get_current_datetime_english(timezone_string: str) -> str:
     Finally, a formatted string is created using the date, time, and timezone abbreviation, and it is returned as the result.
     """
     # Set the timezone
-    tz = pytz.timezone(timezone_string)
+    tz = pytz.timezone(timezone_string) if timezone_string else None
 
     # Get the current time in the timezone
     current_time = datetime.now(tz)
@@ -273,16 +315,24 @@ def indent_content(content, max_width=120):
     return '    ' + '\n    '.join(formatted_lines)
 
 
-def format_message_history(message_history: deque, max_width=120) -> str:
+def format_message_history(message_history: Iterable[Dict[str, str]], max_width=120) -> str:
     """
     Format the message history into a formatted string with a specified maximum width.
 
     :param message_history: A deque containing the message history.
     :param max_width: An optional parameter specifying the maximum width of the formatted string. Default is 120.
     :return: The formatted message history as a string.
-
     """
     return "\n\n".join([f'{msg["role"]}:\n{indent_content(msg["content"], max_width)}' for msg in message_history])
+
+
+async def save_to_conversation(role: str, message: str, timezone: str, max_width=120):
+    """Saves the given message to the conversation file."""
+    date_str, time_str = get_current_date_time_tuple(timezone)
+    indented_msg = indent_content(message.replace("+", ""), max_width)
+    formatted = f'{role if role == "assistant" else date_str + ", " + time_str}:\n{indented_msg}\n\n'
+    async with aiofiles.open("conversation.txt", "a", encoding="utf-8") as f:
+        await f.write(formatted)
 
 
 def extract_json(text):
@@ -438,7 +488,7 @@ def extract_sentences(text: str) -> List[str]:
     such as emotion tags or JSON-like structures. It preserves these patterns within
     the sentences, and correctly splits sentences at punctuation marks, even when
     they appear immediately after a special pattern without a space. It also preserves
-    numbered list items as part of their respective sentences.
+    numbered list items as separate sentences.
 
     The function is designed to work with both English and Russian text.
 
@@ -448,79 +498,31 @@ def extract_sentences(text: str) -> List[str]:
                     and numbered list items.
 
     Returns:
-        List[str]: A list of extracted sentences. Special patterns and numbered list
-                   items are preserved within the sentences they were originally associated with.
+        List[str]: A list of extracted sentences. Special patterns are preserved within
+                   the sentences they were originally associated with, and numbered list
+                   items are treated as separate sentences.
 
     Note:
     - The function treats $... patterns (complete or incomplete) as part of the sentence.
     - It correctly splits sentences at punctuation marks, even immediately after special patterns.
     - It handles ellipsis and multiple punctuation marks as single sentence endings.
     - Incomplete sentences or patterns at the end of the text are preserved.
-    - Numbered list items are kept as part of their respective sentences.
+    - Numbered list items are treated as separate sentences.
+    - The function handles cases where sentence-ending punctuation is not followed by a space.
     """
     logger.debug(f"Extracting sentences from: {text}")
 
     # Define patterns
 
-    # match sequences that start with a dollar sign, followed by any characters that are not a dollar sign,
+    # Match sequences that start with a dollar sign, followed by any characters that are not a dollar sign,
     # and then end with either another dollar sign or the end of the line.
-    # \$ – Matches the dollar sign $.
-    # [^$]+ – Matches one or more (+) characters that are NOT a dollar sign, stopping when it encounters a dollar sign.
-    # (?:\$|$) – This is a non-capturing group that matches a dollar sign (\$) or the end of the line ($).
     special_pattern = r'\$[^$]+(?:\$|$)'
 
-    # match whitespace character that comes after a sentence-ending punctuation mark (., ?, or !).
-    # It ensures this punctuation is not part of an abbreviation or initials.
-    # The actual match is just the whitespace, but it only matches if all these conditions are met.
-    #
-    # (?<!\w\.\w.):
-    #
-    # This is a negative lookbehind assertion.
-    # It ensures that the match is not preceded by a word character, followed by a period,
-    # followed by another word character. This helps avoid splitting sentences on abbreviations like "e.g." or "i.e.".
-    #
-    # (?<![A-Z][a-z]\.):
-    #
-    # Another negative lookbehind assertion.
-    # It ensures that the match is not preceded by a capital letter, followed by a lowercase letter,
-    # followed by a period. This helps avoid splitting on initials like "J.K. Rowling".
-    #
-    # (?<=\.|\?|!|:):
-    #
-    # This is a positive lookbehind assertion.
-    # It ensures that the match is preceded by either a period, question mark, exclamation point or colon.
-    # This identifies the actual end of a sentence.
-    #
-    # \s:
-    #
-    # This matches any whitespace character.
-    # It ensures that there's a space after the sentence-ending punctuation.
-    #
+    # Match sentence-ending punctuation followed by whitespace, avoiding splitting on abbreviations or initials.
     sentence_end_pattern = r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!|:|\))\s'
 
-    # match numbers followed by a period and a space: "1. ", "42. ", "007. ";
-    # Numbers followed by a period at the end of a string or line: "1.", "42.", "007."
-    #
-    # \d+:
-    #
-    # \d represents any digit (0-9).
-    # The + quantifier means "one or more" of the preceding element.
-    # So \d+ matches one or more digits.
-    #
-    # \.:
-    #
-    # This is a literal period (dot).
-    # The backslash is used to escape the dot because in regex, a dot normally means "any character except newline".
-    # By escaping it, we're saying we want to match an actual period.
-    #
-    # (\s|$):
-    #
-    # It's a group containing an alternation.
-    # \s matches any whitespace character (space, tab, newline, etc.).
-    # $ is an anchor that asserts the position at the end of the string or line.
-    # The | between them means "or".
-    #
-    numbered_list_pattern = r'\d+\.(\s|$)'
+    # Match numbered list items, allowing for optional leading whitespace.
+    numbered_list_pattern = r'\s*\d+\.(?:\s|$)'
 
     # Find all special patterns and their positions
     special_matches = list(re.finditer(special_pattern, text))
@@ -543,19 +545,23 @@ def extract_sentences(text: str) -> List[str]:
         if segment.startswith('$'):
             current_sentence += segment
         else:
-            # Split the non-special segment by sentence endings
-            parts = re.split(sentence_end_pattern, segment)
-            for i in range(0, len(parts), 1):
-                part = parts[i]
-                if re.match(numbered_list_pattern, part.strip()):
-                    # If it's a numbered list item, add it to the current sentence
-                    current_sentence += part + ' '
-                else:
-                    # Otherwise, treat it as a regular sentence
-                    current_sentence += part
-                    if i + 1 < len(parts):
+            # Split the non-special segment by sentence endings and numbered list items
+            parts = re.split(f'({sentence_end_pattern})|({numbered_list_pattern})', segment)
+            parts = [p for p in parts if p is not None]
+            for i, part in enumerate(parts):
+                if (re.match(sentence_end_pattern, part) or
+                        (i > 0 and not part.strip() and re.search(sentence_end_pattern, parts[i-1] + part))):
+                    # End the current sentence if we encounter sentence-ending punctuation
+                    # or if we have a space after sentence-ending punctuation
+                    sentences.append(current_sentence.strip())
+                    current_sentence = ''
+                elif re.match(numbered_list_pattern, part.strip()):
+                    # Treat numbered list items as separate sentences
+                    if current_sentence:
                         sentences.append(current_sentence.strip())
-                        current_sentence = ''
+                    current_sentence = part
+                else:
+                    current_sentence += part
 
     if current_sentence:  # Add any remaining text as a sentence
         sentences.append(current_sentence.strip())
@@ -565,7 +571,6 @@ def extract_sentences(text: str) -> List[str]:
 
     logger.debug(f"Extracted sentences: {sentences}")
     return sentences
-
 
 def combine_audio_files(file_list: List[str], output_filename: str) -> None:
     """
@@ -611,11 +616,12 @@ def test():
     # print(extract_sentences("$incomplete... Next sentence."))
     # print(extract_sentences('$remember: начало факта. Второе предложение. $ Остальной текст.'))
     # print(extract_sentences('This is a sentence. This is another one!'))
-    print(extract_sentences('text) 1. one. 2. two.'))
-    print(extract_sentences('Intro: 1. one. 2. two.'))
+    # print(extract_sentences('text) 1. one. 2. two.'))
+    # print(extract_sentences('Intro: 1. one. 2. two.'))
+    # print(extract_sentences('Швеция - 3:56.92 8. Нидерланды - 3:59.52'))
     # print(extract_sentences('$pattern1$.$pattern2$.'))
     # print(extract_sentences('1. First. And. 2. Second'))
-    # print(extract_sentences('1. First point. 2. Second point with multiple sentences. It continues here. 3. Third point.'))
+    print(extract_sentences('1. First point. 2. Second point with multiple sentences. It continues here. 3. Third point.'))
     # print(extract_sentences('This is an $incomplete pattern'))
     pass
 
