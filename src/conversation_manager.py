@@ -305,7 +305,7 @@ class ConversationManager:
             return
 
         # Asynchronously optimize facts
-        optimized_facts = await optimize_facts(self.get_system_prompt(), self.facts, self.config)
+        optimized_facts = await optimize_facts(self.facts, self.config, self.timezone)
 
         if set(optimized_facts) != set(self.facts):
             self.facts = optimized_facts
@@ -336,7 +336,7 @@ class ConversationManager:
             return
 
         # Asynchronously optimize rules
-        optimized_rules = await optimize_rules(self.get_system_prompt(), self.rules, self.config)
+        optimized_rules = await optimize_rules(self.hard_rules, self.rules, self.config)
 
         # Save rules using a separate thread to avoid blocking the event loop
         if set(optimized_rules) != set(self.rules):

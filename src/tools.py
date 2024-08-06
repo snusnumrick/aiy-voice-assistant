@@ -192,7 +192,7 @@ def get_location() -> str:
     return f"In {location}."
 
 
-def get_current_datetime_english(timezone_string: str) -> str:
+def get_current_datetime_english(timezone_string: str = "") -> str:
     """Human-readable current date and time in English.
 
     Example of output: 'Today is 13 July 2024. Now 12:20 PM PDT.'
@@ -209,7 +209,7 @@ def get_current_datetime_english(timezone_string: str) -> str:
     Finally, a formatted string is created using the date, time, and timezone abbreviation, and it is returned as the result.
     """
     # Set the timezone
-    tz = pytz.timezone(timezone_string)
+    tz = pytz.timezone(timezone_string) if timezone_string else None
 
     # Get the current time in the timezone
     current_time = datetime.now(tz)
