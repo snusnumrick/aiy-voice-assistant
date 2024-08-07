@@ -17,7 +17,7 @@ import aiohttp
 import requests
 
 from src.config import Config
-from src.tools import time_string_ms
+from src.tools import time_string_ms, retry_async_generator
 
 
 class AIModel(ABC):
@@ -38,6 +38,7 @@ class AIModel(ABC):
         """
         pass
 
+    @retry_async_generator()
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
         pass
 
@@ -73,6 +74,7 @@ class OpenAIModel(AIModel):
         response = self.client.chat.completions.create(model=self.model, messages=messages, max_tokens=self.max_tokens)
         return response.choices[0].message.content.strip()
 
+    @retry_async_generator()
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
         stream = await self.client_async.chat.completions.create(
             model=self.model,
@@ -147,6 +149,7 @@ class ClaudeAIModel(AIModel):
                 responce_text += content['text']
         return responce_text
 
+    @retry_async_generator()
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
         """
         Generate a response using Anthropic's Claude model.
