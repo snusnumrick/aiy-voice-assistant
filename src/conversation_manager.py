@@ -231,7 +231,7 @@ class ConversationManager:
                 logger.info(
                     f'Compressed  conversation:  {(newline_str + self.formatted_message_history(150) + newline_str)}')
 
-        logger.debug(f"Message history: \n{self.formatted_message_history()}")
+        # logger.debug(f"Message history: \n{self.formatted_message_history()}")
 
         async for response_text in self.ai_model.get_response_async(list(self.message_history)):
             crt = clean_response(response_text)
