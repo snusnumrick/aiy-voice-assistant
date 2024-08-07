@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 AI Models module.
 
@@ -11,7 +12,7 @@ import json
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import List, Dict, AsyncGenerator, Optional, Union, TypeAlias
+from typing import List, Dict, AsyncGenerator, Optional, Union
 from pydantic import BaseModel, Field
 import aiohttp
 import requests
@@ -25,7 +26,7 @@ class MessageModel(BaseModel):
     content: str
 
 
-MessageList: TypeAlias = List[Union[Dict[str, str], MessageModel]]
+MessageList = List[Union[Dict[str, str], MessageModel]]
 
 
 def normalize_messages(messages: MessageList) -> List[Dict[str, str]]:
