@@ -120,8 +120,8 @@ def main():
                        Language.GERMAN: elevenlabs_engine if elevenlabs_engine else yandex_engine}
         fallback_tts_engine = yandex_engine if yandex_engine else elevenlabs_engine
         # ai_model = OpenRouterModel(config)
-        # ai_model = ClaudeAIModelWithTools(config, tools=tools, timezone=timezone)
-        ai_model = OpenAIModelWithTools(config, tools=tools)
+        ai_model = ClaudeAIModelWithTools(config, tools=tools, timezone=timezone)
+        # ai_model = OpenAIModelWithTools(config, tools=tools)
         conversation_manager = ConversationManager(config, ai_model, timezone)
 
         logger.info("All components initialized. Starting main conversation loop.")
