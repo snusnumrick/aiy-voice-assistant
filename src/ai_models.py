@@ -54,10 +54,11 @@ class OpenAIModel(AIModel):
         Args:
             config (Config): The application configuration object.
         """
-        from openai import OpenAI
+        from openai import OpenAI, AsyncOpenAI
         self.client = OpenAI()
         self.model = config.get('openai_model', 'gpt-4o')
         self.max_tokens = config.get('max_tokens', 4096)
+        self.client_async = AsyncOpenAI()
 
     def get_response(self, messages: List[Dict[str, str]]) -> str:
         """
@@ -71,6 +72,15 @@ class OpenAIModel(AIModel):
         """
         response = self.client.chat.completions.create(model=self.model, messages=messages, max_tokens=self.max_tokens)
         return response.choices[0].message.content.strip()
+
+    async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
+        stream = await self.client_async.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            stream=True,
+        )
+        async for chunk in stream:
+            yield chunk.choices[0].delta.content or ""
 
 
 class ClaudeAIModel(AIModel):

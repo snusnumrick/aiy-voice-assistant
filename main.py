@@ -18,7 +18,7 @@ from aiy.board import Board
 from aiy.leds import Leds, Color
 from dotenv import load_dotenv
 
-from src.ai_models_with_tools import ClaudeAIModelWithTools
+from src.ai_models_with_tools import ClaudeAIModelWithTools, OpenAIModelWithTools
 from src.config import Config
 from src.conversation_manager import ConversationManager
 from src.dialog import main_loop_async
@@ -120,7 +120,8 @@ def main():
                        Language.GERMAN: elevenlabs_engine if elevenlabs_engine else yandex_engine}
         fallback_tts_engine = yandex_engine if yandex_engine else elevenlabs_engine
         # ai_model = OpenRouterModel(config)
-        ai_model = ClaudeAIModelWithTools(config, tools=tools, timezone=timezone)
+        # ai_model = ClaudeAIModelWithTools(config, tools=tools, timezone=timezone)
+        ai_model = OpenAIModelWithTools(config, tools=tools, timezone=timezone)
         conversation_manager = ConversationManager(config, ai_model, timezone)
 
         logger.info("All components initialized. Starting main conversation loop.")
