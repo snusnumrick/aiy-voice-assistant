@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Callable, AsyncGenerator, Awaitable, Optional
 import asyncio
 import aiohttp
-from openai.types.chat import ChatCompletionMessage, ChatCompletionMessageToolCall
 
 from src.ai_models import ClaudeAIModel, OpenAIModel
 from src.config import Config
@@ -357,6 +356,7 @@ class OpenAIModelWithTools(OpenAIModel):
         )
         tool_name = ""
         tools: Dict[str, ToolCall] = {}
+        current_text = ""
         async for chunk in stream:
             choice = chunk.choices[0]
             delta = choice.delta
@@ -387,8 +387,16 @@ class OpenAIModelWithTools(OpenAIModel):
                     async for response in self.get_response_async(_messages):
                         yield response
             else:
-                content = chunk.choices[0].delta.content
-                yield content or ""
+                text = chunk.choices[0].delta.content or ""
+                current_text += text
+                sentences = extract_sentences(current_text)
+                # If we have any complete sentences, yield them
+                if len(sentences) > 1:
+                    for sentence in sentences[:-1]:
+                        yield sentence
+
+                    # Keep the last (potentially incomplete) sentence
+                    current_text = sentences[-1]
 
 
 def main():
