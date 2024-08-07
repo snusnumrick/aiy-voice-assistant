@@ -348,6 +348,7 @@ class OpenAIModelWithTools(OpenAIModel):
 
     @retry_async_generator()
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
+        logger.info(f"open ai: Getting response: {messages}")
         stream = await self.client_async.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -360,6 +361,7 @@ class OpenAIModelWithTools(OpenAIModel):
         async for chunk in stream:
             choice = chunk.choices[0]
             delta = choice.delta
+            logger.info(f"reason: {choice.finish_reason}; tools: {choice.delta.tool_calls}")
             if choice.finish_reason is None and choice.delta.tool_calls:
                 for tool_call in delta.tool_calls:
                     tool_name = tool_call.function.name or tool_name
@@ -390,6 +392,7 @@ class OpenAIModelWithTools(OpenAIModel):
                 text = chunk.choices[0].delta.content or ""
                 current_text += text
                 sentences = extract_sentences(current_text)
+                logger.info(f"text: {text}; current text: {current_text}; sentences: {sentences}")
                 # If we have any complete sentences, yield them
                 if len(sentences) > 1:
                     for sentence in sentences[:-1]:
@@ -398,6 +401,8 @@ class OpenAIModelWithTools(OpenAIModel):
                     # Keep the last (potentially incomplete) sentence
                     current_text = sentences[-1]
 
+        if current_text:
+            yield current_text
 
 def main():
     from src.web_search_tool import WebSearchTool
