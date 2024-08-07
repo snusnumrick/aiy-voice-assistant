@@ -11,13 +11,37 @@ import json
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import List, Dict, AsyncGenerator, Optional
-
+from typing import List, Dict, AsyncGenerator, Optional, Union, TypeAlias
+from pydantic import BaseModel, Field
 import aiohttp
 import requests
 
 from src.config import Config
 from src.tools import time_string_ms, retry_async_generator
+
+
+class MessageModel(BaseModel):
+    role: str
+    content: str
+
+
+MessageList: TypeAlias = List[Union[Dict[str, str], MessageModel]]
+
+
+def normalize_messages(messages: MessageList) -> List[Dict[str, str]]:
+    """
+    Normalize messages to ensure they are in the correct format for API calls.
+
+    Args:
+        messages (MessageList): A list of messages.
+
+    Returns:
+        List[Dict[str, str]]: A list of normalized message dictionaries.
+    """
+    return [
+        message.model_dump() if isinstance(message, MessageModel) else message
+        for message in messages
+    ]
 
 
 class AIModel(ABC):
@@ -26,12 +50,12 @@ class AIModel(ABC):
     """
 
     @abstractmethod
-    def get_response(self, messages: List[Dict[str, str]]) -> str:
+    def get_response(self, messages: MessageList) -> str:
         """
         Generate a response based on the conversation history.
 
         Args:
-            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+            messages (MessageList): A list of message models representing the conversation history.
 
         Returns:
             str: The generated response.
@@ -39,12 +63,12 @@ class AIModel(ABC):
         pass
 
     @retry_async_generator()
-    async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
+    async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response based on the conversation history.
 
         Args:
-            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+            messages (MessageList): A list of message models representing the conversation history.
 
         Yields:
             str: Parts of the generated response.
@@ -74,30 +98,37 @@ class OpenAIModel(AIModel):
         self.client = OpenAI(base_url=base_url, api_key=api_key)
         self.client_async = AsyncOpenAI(base_url=base_url, api_key=api_key)
 
-    def get_response(self, messages: List[Dict[str, str]]) -> str:
+    def get_response(self, messages: MessageList) -> str:
         """
         Generate a response using OpenAI's GPT model.
 
         Args:
-            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+            messages (MessageList): A list of message models representing the conversation history.
 
         Returns:
             str: The generated response.
         """
-        response = self.client.chat.completions.create(model=self.model, messages=messages, max_tokens=self.max_tokens)
-        return response.choices[0].message.content.strip()
+        messages = normalize_messages(messages)
+        try:
+            response = self.client.chat.completions.create(model=self.model, messages=messages,
+                                                           max_tokens=self.max_tokens)
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logging.error(f"Error in OpenAI API call: {str(e)}")
+            raise
 
     @retry_async_generator()
-    async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
+    async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response using OpenAI's GPT model.
 
         Args:
-            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+            messages (MessageList): A list of message models representing the conversation history.
 
         Yields:
             str: Parts of the generated response.
         """
+        messages = normalize_messages(messages)
         stream = await self.client_async.chat.completions.create(model=self.model, messages=messages, stream=True)
         async for chunk in stream:
             yield chunk.choices[0].delta.content or ""
@@ -120,7 +151,7 @@ class ClaudeAIModel(AIModel):
         self.max_tokens = config.get('max_tokens', 4096)
         self.url = "https://api.anthropic.com/v1/messages"
         self.headers = {"content-type": "application/json", "x-api-key": os.getenv('ANTHROPIC_API_KEY'),
-            "anthropic-version": "2023-06-01"}
+                        "anthropic-version": "2023-06-01"}
         self.config = config
         self.timezone = timezone
 
@@ -138,7 +169,7 @@ class ClaudeAIModel(AIModel):
         Send a request to the Claude API and get the response.
 
         Args:
-            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+            messages (List[Dict[str, str]]): A list of message models representing the conversation history.
 
         Returns:
             dict: The API response as a dictionary.
@@ -157,7 +188,7 @@ class ClaudeAIModel(AIModel):
         Asynchronously send a request to the Claude API and get the response.
 
         Args:
-            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+            messages (List[Dict[str, str]]): A list of message models representing the conversation history.
 
         Returns:
             dict: The API response as a dictionary.
@@ -174,16 +205,17 @@ class ClaudeAIModel(AIModel):
                 res = await response.text()
                 return json.loads(res)
 
-    def get_response(self, messages: List[Dict[str, str]]) -> str:
+    def get_response(self, messages: MessageList) -> str:
         """
         Generate a response using Anthropic's Claude model.
 
         Args:
-            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+            messages (MessageList): A list of message models representing the conversation history.
 
         Returns:
             str: The generated response.
         """
+        messages = normalize_messages(messages)
         response_dict = self._get_response(messages)
         response_text = ""
         for content in response_dict['content']:
@@ -192,12 +224,12 @@ class ClaudeAIModel(AIModel):
         return response_text
 
     @retry_async_generator()
-    async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
+    async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response using Anthropic's Claude model.
 
         Args:
-            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+            messages (MessageList): A list of message models representing the conversation history.
 
         Yields:
             str: Parts of the generated response.
@@ -205,6 +237,7 @@ class ClaudeAIModel(AIModel):
         Raises:
             Exception: If there's an error in the API response.
         """
+        messages = normalize_messages(messages)
         response_dict = await self._get_response_async(messages)
         if 'error' in response_dict:
             raise Exception(response_dict['error'])

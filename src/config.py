@@ -2,57 +2,46 @@
 Configuration management module.
 
 This module provides a Config class for loading and managing application configuration
-from both JSON files and environment variables.
+from both JSON files and environment variables, using Pydantic V2 for validation and typing.
 """
 
 import os
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+from pydantic import BaseModel, Field
 
 
-class Config:
+class Config(BaseModel):
     """
     A class to manage configuration settings for the application.
 
     This class loads configuration from a JSON file and environment variables,
-    providing a unified interface to access these settings.
+    providing a unified interface to access these settings with type validation.
 
-    Attributes:
-        config (Dict[str, Any]): A dictionary containing all configuration settings.
+    Attributes are dynamically set based on the configuration file and environment variables.
     """
 
-    def __init__(self, config_file: str = "config.json"):
-        """
-        Initialize the Config object.
+    config_file: str = Field(default="config.json")
 
-        Args:
-            config_file (str): Path to the JSON configuration file. Defaults to "config.json".
-        """
-        self.config: Dict[str, Any] = {}
-        self.load_from_file(config_file)
-        self.load_from_env()
+    model_config = {
+        "extra": "allow",
+    }
 
-    def load_from_file(self, config_file: str) -> None:
-        """
-        Load configuration settings from a JSON file.
+    def __init__(self, **data):
+        config_file = data.get('config_file', 'config.json')
 
-        Args:
-            config_file (str): Path to the JSON configuration file.
-        """
+        # Load from JSON file
         if os.path.exists(config_file):
             with open(config_file, 'r') as f:
-                self.config.update(json.load(f))
+                file_config = json.load(f)
+                data.update(file_config)
 
-    def load_from_env(self) -> None:
-        """
-        Load configuration settings from environment variables.
-
-        This method looks for environment variables prefixed with 'APP_' and adds them
-        to the configuration, removing the prefix and converting to lowercase.
-        """
+        # Load from environment variables
         for key, value in os.environ.items():
             if key.startswith('APP_'):
-                self.config[key[4:].lower()] = value
+                data[key[4:].lower()] = value
+
+        super().__init__(**data)
 
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -65,7 +54,7 @@ class Config:
         Returns:
             Any: The value associated with the key, or the default value if not found.
         """
-        return self.config.get(key, default)
+        return getattr(self, key, default)
 
     def __getitem__(self, key: str) -> Any:
         """
@@ -80,7 +69,10 @@ class Config:
         Raises:
             KeyError: If the key is not found in the configuration.
         """
-        return self.config[key]
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            raise KeyError(key)
 
     def __setitem__(self, key: str, value: Any) -> None:
         """
@@ -90,7 +82,7 @@ class Config:
             key (str): The configuration key to set.
             value (Any): The value to associate with the key.
         """
-        self.config[key] = value
+        setattr(self, key, value)
 
     def __contains__(self, key: str) -> bool:
         """
@@ -102,4 +94,4 @@ class Config:
         Returns:
             bool: True if the key exists in the configuration, False otherwise.
         """
-        return key in self.config
+        return hasattr(self, key)
