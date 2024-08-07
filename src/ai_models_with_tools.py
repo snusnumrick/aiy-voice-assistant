@@ -316,8 +316,8 @@ class OpenAIModelWithTools(OpenAIModel):
         self.tools = {t.name: t for t in tools}
 
         self.tools_description = [{"type": "function",
-                       "function": {'name': t.name, 'description': t.description, 'parameters': schema(t),
-                                    'required': t.required}} for t in tools]
+                                   "function": {'name': t.name, 'description': t.description, 'parameters': schema(t),
+                                                'required': t.required}} for t in tools]
 
     def get_response(self, messages: List[Dict[str, str]]) -> str:
         response = self.client.chat.completions.create(model=self.model, messages=messages,
@@ -348,7 +348,7 @@ class OpenAIModelWithTools(OpenAIModel):
 
     @retry_async_generator()
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
-        logger.info(f"open ai: Getting response: {messages}")
+        logger.debug(f"open ai: Getting response: {messages}")
         stream = await self.client_async.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -361,7 +361,7 @@ class OpenAIModelWithTools(OpenAIModel):
         async for chunk in stream:
             choice = chunk.choices[0]
             delta = choice.delta
-            logger.info(f"reason: {choice.finish_reason}; tools: {choice.delta.tool_calls}")
+            logger.debug(f"reason: {choice.finish_reason}; tools: {choice.delta.tool_calls}")
             if choice.finish_reason is None and choice.delta.tool_calls:
                 for tool_call in delta.tool_calls:
                     tool_name = tool_call.function.name or tool_name
@@ -392,7 +392,7 @@ class OpenAIModelWithTools(OpenAIModel):
                 text = chunk.choices[0].delta.content or ""
                 current_text += text
                 sentences = extract_sentences(current_text)
-                logger.info(f"text: {text}; current text: {current_text}; sentences: {sentences}")
+                logger.debug(f"text: {text}; current text: {current_text}; sentences: {sentences}")
                 # If we have any complete sentences, yield them
                 if len(sentences) > 1:
                     for sentence in sentences[:-1]:
@@ -403,6 +403,7 @@ class OpenAIModelWithTools(OpenAIModel):
 
         if current_text:
             yield current_text
+
 
 def main():
     from src.web_search_tool import WebSearchTool
