@@ -1,9 +1,9 @@
-# -*- coding: utf-8 -*-
 """
 AI Models module.
 
 This module provides abstract and concrete implementations of AI models
-for generating responses in conversations, including OpenAI's GPT and Anthropic's Claude.
+for generating responses in conversations, including OpenAI's GPT, Anthropic's Claude,
+OpenRouter, and Perplexity models.
 """
 
 import asyncio
@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import List, Dict, AsyncGenerator
+from typing import List, Dict, AsyncGenerator, Optional
 
 import aiohttp
 import requests
@@ -40,6 +40,15 @@ class AIModel(ABC):
 
     @retry_async_generator()
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
+        """
+        Asynchronously generate a response based on the conversation history.
+
+        Args:
+            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+
+        Yields:
+            str: Parts of the generated response.
+        """
         pass
 
 
@@ -48,18 +57,22 @@ class OpenAIModel(AIModel):
     Implementation of AIModel using OpenAI's GPT model.
     """
 
-    def __init__(self, config):
+    def __init__(self, config: Config, base_url: Optional[str] = None, api_key: Optional[str] = None,
+                 model_id: Optional[str] = None):
         """
         Initialize the OpenAI model.
 
         Args:
             config (Config): The application configuration object.
+            base_url (Optional[str]): The base URL for the API.
+            api_key (Optional[str]): The API key for authentication.
+            model_id (Optional[str]): The specific model ID to use.
         """
         from openai import OpenAI, AsyncOpenAI
-        self.client = OpenAI()
-        self.model = config.get('openai_model', 'gpt-4o')
+        self.model = model_id or config.get('openai_model', 'gpt-4o')
         self.max_tokens = config.get('max_tokens', 4096)
-        self.client_async = AsyncOpenAI()
+        self.client = OpenAI(base_url=base_url, api_key=api_key)
+        self.client_async = AsyncOpenAI(base_url=base_url, api_key=api_key)
 
     def get_response(self, messages: List[Dict[str, str]]) -> str:
         """
@@ -76,11 +89,16 @@ class OpenAIModel(AIModel):
 
     @retry_async_generator()
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
-        stream = await self.client_async.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            stream=True,
-        )
+        """
+        Asynchronously generate a response using OpenAI's GPT model.
+
+        Args:
+            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+
+        Yields:
+            str: Parts of the generated response.
+        """
+        stream = await self.client_async.chat.completions.create(model=self.model, messages=messages, stream=True)
         async for chunk in stream:
             yield chunk.choices[0].delta.content or ""
 
@@ -96,20 +114,35 @@ class ClaudeAIModel(AIModel):
 
         Args:
             config (Config): The application configuration object.
-            timezone (str): The timezone to use.
+            timezone (str): The timezone to use for timestamps.
         """
         self.model = config.get('claude_model', 'claude-3-5-sonnet-20240620')
         self.max_tokens = config.get('max_tokens', 4096)
         self.url = "https://api.anthropic.com/v1/messages"
         self.headers = {"content-type": "application/json", "x-api-key": os.getenv('ANTHROPIC_API_KEY'),
-                        "anthropic-version": "2023-06-01"}
+            "anthropic-version": "2023-06-01"}
         self.config = config
         self.timezone = timezone
 
     def _time_str(self) -> str:
+        """
+        Generate a formatted time string.
+
+        Returns:
+            str: Formatted time string with timezone if available.
+        """
         return f"({time_string_ms(self.timezone)}) " if self.timezone else ""
 
     def _get_response(self, messages: List[Dict[str, str]]) -> dict:
+        """
+        Send a request to the Claude API and get the response.
+
+        Args:
+            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+
+        Returns:
+            dict: The API response as a dictionary.
+        """
         system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
         non_system_message = [m for m in messages if m["role"] != 'system']
         data = {"model": self.model, "max_tokens": self.max_tokens, "messages": non_system_message}
@@ -120,6 +153,15 @@ class ClaudeAIModel(AIModel):
         return json.loads(response.content.decode('utf-8'))
 
     async def _get_response_async(self, messages: List[Dict[str, str]]) -> dict:
+        """
+        Asynchronously send a request to the Claude API and get the response.
+
+        Args:
+            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+
+        Returns:
+            dict: The API response as a dictionary.
+        """
         system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
         non_system_message = [m for m in messages if m["role"] != 'system']
 
@@ -143,22 +185,25 @@ class ClaudeAIModel(AIModel):
             str: The generated response.
         """
         response_dict = self._get_response(messages)
-        responce_text = ""
+        response_text = ""
         for content in response_dict['content']:
             if content['type'] == 'text':
-                responce_text += content['text']
-        return responce_text
+                response_text += content['text']
+        return response_text
 
     @retry_async_generator()
     async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
         """
-        Generate a response using Anthropic's Claude model.
+        Asynchronously generate a response using Anthropic's Claude model.
 
         Args:
             messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
 
-        Returns:
-            str: The generated response.
+        Yields:
+            str: Parts of the generated response.
+
+        Raises:
+            Exception: If there's an error in the API response.
         """
         response_dict = await self._get_response_async(messages)
         if 'error' in response_dict:
@@ -168,81 +213,50 @@ class ClaudeAIModel(AIModel):
                 yield content['text']
 
 
-class OpenRouterModel(AIModel):
+class OpenRouterModel(OpenAIModel):
     """
-    Implementation of AIModel using OpenAI's GPT model.
+    Implementation of AIModel using OpenRouter's API.
     """
 
-    def __init__(self, config, use_simple_model=False):
+    def __init__(self, config: Config, use_simple_model: bool = False):
         """
         Initialize the OpenRouter model.
 
         Args:
             config (Config): The application configuration object.
+            use_simple_model (bool): Whether to use the simple model or not.
         """
-        from openai import OpenAI
-        self.client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.getenv("OPENROUTER_API_KEY"))
-        self.model = config.get('openrouter_model_simple',
-                                'anthropic/claude-3-haiku') if use_simple_model else config.get('openrouter_model',
-                                                                                                'anthropic/claude-3.5-sonnet')
-        self.max_tokens = config.get('max_tokens', 4096)
-
-    def get_response(self, messages: List[Dict[str, str]]) -> str:
-        """
-        Generate a response using OpenRouter model.
-
-        Args:
-            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
-
-        Returns:
-            str: The generated response.
-        """
-        response = self.client.chat.completions.create(model=self.model, messages=messages, max_tokens=self.max_tokens)
-        return response.choices[0].message.content.strip()
+        if use_simple_model:
+            model = config.get('openrouter_model_simple', 'anthropic/claude-3-haiku')
+        else:
+            model = config.get('openrouter_model', 'anthropic/claude-3.5-sonnet')
+        base_url = config.get('openrouter_model_base_url', 'https://openrouter.ai/api/v1')
+        super().__init__(config, base_url=base_url, api_key=os.getenv("OPENROUTER_API_KEY"), model_id=model)
 
 
-class PerplexityModel(AIModel):
+class PerplexityModel(OpenAIModel):
     """
-    Implementation of AIModel using Perplexity.
+    Implementation of AIModel using Perplexity's API.
     """
 
-    def __init__(self, config):
+    def __init__(self, config: Config):
         """
         Initialize the Perplexity model.
 
         Args:
             config (Config): The application configuration object.
         """
-        from openai import OpenAI, AsyncOpenAI
-        self.client = OpenAI(base_url="https://api.perplexity.ai", api_key=os.getenv("PERPLEXITY_API_KEY"))
-        self.client_async = AsyncOpenAI(base_url="https://api.perplexity.ai", api_key=os.getenv("PERPLEXITY_API_KEY"))
-        self.model = config.get('perplexity_model', 'llama-3-sonar-large-32k-online')
-        self.max_tokens = config.get('max_tokens', 4096)
-
-    def get_response(self, messages: List[Dict[str, str]]) -> str:
-        """
-        Generate a response using Perplexity model.
-
-        Args:
-            messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
-
-        Returns:
-            str: The generated response.
-        """
-        response = self.client.chat.completions.create(model=self.model, messages=messages, max_tokens=self.max_tokens)
-        return response.choices[0].message.content.strip()
-
-    async def get_response_async(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
-        stream = await self.client_async.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            stream=True,
-        )
-        async for chunk in stream:
-            yield chunk.choices[0].delta.content or ""
+        model = config.get('perplexity_model', 'llama-3-sonar-large-32k-online')
+        base_url = "https://api.perplexity.ai"
+        api_key = os.getenv("PERPLEXITY_API_KEY")
+        super().__init__(config, base_url=base_url, api_key=api_key, model_id=model)
 
 
+# Debug functions
 async def main_async():
+    """
+    Asynchronous main function for debugging purposes.
+    """
     prompt = """
     Обобщи основные моменты разговора, сосредоточившись на наиболее важных фактах и контексте. Будь лаконичен. Отвечай от лицв user. Начни ответ с "Ранее мы говорили о ".
     Разговор:
@@ -271,11 +285,14 @@ async def main_async():
 
 
 def main():
+    """
+    Main function for debugging purposes.
+    """
     config = Config()
     model = ClaudeAIModel(config)
     messages = [{"role": "user", "content": "who will play at euro 2024 final?"}]
-    responce = model.get_response(messages)
-    print(responce)
+    response = model.get_response(messages)
+    print(response)
 
 
 if __name__ == "__main__":
