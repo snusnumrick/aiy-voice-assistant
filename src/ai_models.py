@@ -177,7 +177,8 @@ class ClaudeAIModel(AIModel):
         """
         system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
         non_system_message = [m for m in messages if m["role"] != 'system']
-        data = {"model": self.model, "max_tokens": self.max_tokens, "messages": non_system_message}
+        data = {"model": self.model, "max_tokens": self.max_tokens, "messages": non_system_message,
+                "tools": self.tools_description}
         if system_message_combined:
             data["system"] = system_message_combined
 

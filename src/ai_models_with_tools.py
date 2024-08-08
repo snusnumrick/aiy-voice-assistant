@@ -66,7 +66,6 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self.tools = {t.name: t for t in tools} if tools else {}
         self.tools_description = self._create_tools_description(tools) if tools else []
         self.tools_processors = {t.name: t.processor for t in tools} if tools else {}
-        self.current_text = ""
 
     @staticmethod
     def _create_tools_description(tools: List[Tool]) -> List[Dict]:
@@ -111,7 +110,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         tool_use_id = content['id']
         tool_parameters = content['input']
         tool_processor = self.tools_processors[tool_name]
-        tool_result = tool_processor(tool_parameters)
+        tool_result = asyncio.run(tool_processor(tool_parameters))
         if self.tools[tool_name].iterative:
             messages.append({"role": "user",
                              "content": [{'type': 'tool_result', 'content': tool_result, "tool_use_id": tool_use_id}]})
@@ -189,87 +188,6 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             logger.error(f"Error in get_response_async: {str(e)}")
             raise
 
-    async def _process_content_block_delta(self, event: Dict, current_tool_use: Optional[Dict] = None) -> \
-            AsyncGenerator[str, None]:
-        """
-        Process a content block delta event.
-
-        Args:
-            event (Dict): The event data.
-            current_tool_use (Optional[Dict]): The current tool use data, if any.
-
-        Yields:
-            str: Complete sentences extracted from the current text.
-        """
-        delta = event.get('delta', {})
-        if delta.get('type') == 'text_delta':
-            text = delta.get('text', '')
-            self.current_text += text
-            sentences = extract_sentences(self.current_text)
-
-            if len(sentences) > 1:
-                for sentence in sentences[:-1]:
-                    yield sentence
-                self.current_text = sentences[-1]
-
-        elif delta.get('type') == 'input_json_delta':
-            if current_tool_use is not None:
-                current_tool_use['input'] = current_tool_use.get('input', '') + delta.get('partial_json', '')
-
-    def _process_content_block_start(self, event: Dict) -> Optional[Dict]:
-        """
-        Process a content block start event.
-
-        Args:
-            event (Dict): The event data.
-
-        Returns:
-            Optional[Dict]: The tool use data if it's a tool use event, None otherwise.
-        """
-        content_block = event.get('content_block', {})
-        if content_block.get('type') == 'tool_use':
-            return {'type': 'tool_use', 'name': content_block.get('name'), 'id': content_block.get('id'), 'input': ''}
-        return None
-
-    async def _process_content_block_stop(self, current_tool_use: Optional[Dict], message_list: List[Dict[str, str]]) -> \
-            AsyncGenerator[str, None]:
-        """
-        Process a content block stop event.
-
-        Args:
-            current_tool_use (Optional[Dict]): The current tool use data, if any.
-            message_list (List[Dict[str, str]]): The list of messages in the conversation.
-
-        Yields:
-            str: Any remaining text and the result of processing tool use, if applicable.
-        """
-        sentences = extract_sentences(self.current_text)
-        for sentence in sentences:
-            yield sentence
-
-        if current_tool_use:
-            async for r in self._process_tool_use_streaming(current_tool_use, message_list):
-                yield r
-
-    async def _process_message_stop(self, message_list: List[Dict[str, str]], assistant_message: str) -> AsyncGenerator[
-        str, None]:
-        """
-        Process a message stop event.
-
-        Args:
-            message_list (List[Dict[str, str]]): The list of messages in the conversation.
-            assistant_message (str): The complete assistant message.
-
-        Yields:
-            str: Any remaining text.
-        """
-        if self.current_text:
-            logger.debug(f"{self._time_str()}Yielding final text: {self.current_text}")
-            assistant_message += f"{self.current_text} "
-            yield self.current_text
-
-        message_list.append({"role": "assistant", "content": assistant_message})
-
     async def _get_response_async_plain(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
         """Generate a plain (non-streaming) response asynchronously."""
         message_list = [m for m in messages]
@@ -319,10 +237,97 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             Exception: If there's an error in processing the AI response.
         """
         message_list = messages.copy()
-        self.current_text = ""
+        current_text = ""
         current_tool_use = None
-        message_ended = False
         assistant_message = ""
+
+        async def process_content_block_delta(event: Dict, current_tool_use: Optional[Dict] = None) -> \
+                AsyncGenerator[str, None]:
+            """
+            Process a content block delta event.
+
+            Args:
+                event (Dict): The event data.
+                current_tool_use (Optional[Dict]): The current tool use data, if any.
+
+            Yields:
+                str: Complete sentences extracted from the current text.
+            """
+            nonlocal current_text
+
+            delta = event.get('delta', {})
+            if delta.get('type') == 'text_delta':
+                text = delta.get('text', '')
+                current_text += text
+                sentences = extract_sentences(current_text)
+
+                if len(sentences) > 1:
+                    for sentence in sentences[:-1]:
+                        yield sentence
+                    current_text = sentences[-1]
+
+            elif delta.get('type') == 'input_json_delta':
+                if current_tool_use is not None:
+                    current_tool_use['input'] = current_tool_use.get('input', '') + delta.get('partial_json', '')
+
+        def process_content_block_start(event: Dict) -> Optional[Dict]:
+            """
+            Process a content block start event.
+
+            Args:
+                event (Dict): The event data.
+
+            Returns:
+                Optional[Dict]: The tool use data if it's a tool use event, None otherwise.
+            """
+            content_block = event.get('content_block', {})
+            if content_block.get('type') == 'tool_use':
+                return {'type': 'tool_use', 'name': content_block.get('name'), 'id': content_block.get('id'),
+                        'input': ''}
+            return None
+
+        async def process_content_block_stop(current_tool_use: Optional[Dict], current_text: str,
+                                             message_list: List[Dict[str, str]]) \
+                -> AsyncGenerator[str, None]:
+            """
+            Process a content block stop event.
+
+            Args:
+                current_tool_use (Optional[Dict]): The current tool use data, if any.
+                current_text (str): The current text.
+                message_list (List[Dict[str, str]]): The list of messages in the conversation.
+
+            Yields:
+                str: Any remaining text and the result of processing tool use, if applicable.
+            """
+            sentences = extract_sentences(current_text)
+            for sentence in sentences:
+                yield sentence
+
+            if current_tool_use:
+                async for r in self._process_tool_use_streaming(current_tool_use, message_list):
+                    yield r
+
+        async def process_message_stop(message_list: List[Dict[str, str]], assistant_message: str) -> \
+                AsyncGenerator[str, None]:
+            """
+            Process a message stop event.
+
+            Args:
+                message_list (List[Dict[str, str]]): The list of messages in the conversation.
+                assistant_message (str): The complete assistant message.
+
+            Yields:
+                str: Any remaining text.
+            """
+            nonlocal current_text, current_tool_use
+
+            if current_text:
+                logger.debug(f"{self._time_str()}Yielding final text: {current_text}")
+                assistant_message += f"{current_text} "
+                yield current_text
+
+            message_list.append({"role": "assistant", "content": assistant_message})
 
         try:
             async for event in self._get_response_async(message_list, streaming=True):
@@ -333,31 +338,30 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     raise Exception(f"Claude error: {event['error']['message']}")
 
                 if event_type == 'content_block_delta':
-                    async for sentence in self._process_content_block_delta(event, current_tool_use):
+                    async for sentence in process_content_block_delta(event, current_tool_use):
                         if sentence:
                             yield sentence
 
                 elif event_type == 'content_block_start':
-                    current_tool_use = self._process_content_block_start(event)
+                    current_tool_use = process_content_block_start(event)
 
                 elif event_type == 'content_block_stop':
-                    async for sentence in self._process_content_block_stop(current_tool_use, message_list):
+                    async for sentence in process_content_block_stop(current_tool_use, current_text, message_list):
                         if sentence:
                             yield sentence
-                    self.current_text = ""
+                    current_text = ""
                     current_tool_use = None
 
                 elif event_type == 'message_stop':
-                    message_ended = True
-                    async for sentence in self._process_message_stop(message_list, assistant_message):
+                    async for sentence in process_message_stop(message_list, assistant_message):
                         if sentence:
                             yield sentence
-                    self.current_text = ""
+                    current_text = ""
                     assistant_message = ""
 
-            if self.current_text:
-                logger.debug(f"{self._time_str()}Yielding remaining text: {self.current_text}")
-                yield self.current_text
+            if current_text:
+                logger.debug(f"{self._time_str()}Yielding remaining text: {current_text}")
+                yield current_text
 
         except StopAsyncIteration:
             logger.debug("AsyncGenerator completed normally.")
@@ -581,5 +585,5 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     load_dotenv()
-    asyncio.run(main_async())
+    # asyncio.run(main_async())
     main()
