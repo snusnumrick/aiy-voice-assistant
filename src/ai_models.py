@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from abc import ABC, abstractmethod
 from typing import List, Dict, AsyncGenerator, Optional, Union
 from pydantic import BaseModel, Field
@@ -18,7 +19,7 @@ import aiohttp
 import requests
 
 from src.config import Config
-from src.tools import time_string_ms, retry_async_generator
+from src.tools import time_string_ms, retry_async_generator, extract_sentences, yield_complete_sentences
 
 
 class MessageModel(BaseModel):
@@ -63,7 +64,6 @@ class AIModel(ABC):
         """
         pass
 
-    @retry_async_generator()
     async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response based on the conversation history.
@@ -75,6 +75,91 @@ class AIModel(ABC):
             str: Parts of the generated response.
         """
         pass
+
+
+class GeminiAIModel(AIModel):
+    """
+    Implementation of AIModel using Google Gemini model.
+    """
+
+    def __init__(self, config: Config, model_id: Optional[str] = None):
+        sys_path = sys.path
+        sys.path = [p for p in sys.path if p != os.getcwd()]
+        import google.generativeai as genai
+        sys.path = sys_path
+
+        genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+        model_id = model_id or config.get("gemini_model_id", "gemini-1.5-pro-exp-0801")
+        self.model = genai.GenerativeModel(model_id)
+        max_tokens = config.get('max_tokens', 4096)
+        self.generation_config = genai.GenerationConfig(max_output_tokens=max_tokens)
+
+    def get_response(self, messages: MessageList) -> str:
+        """
+        Generate a response using Google Gemini model.
+
+        Args:
+            messages (MessageList): A list of message models representing the conversation history.
+
+        Returns:
+            str: The generated response.
+        """
+        from google.generativeai import types
+
+        messages = normalize_messages(messages)
+        system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
+        non_system_messages = [m for m in messages if m["role"] != 'system']
+        adapted_messages = []
+        for m in non_system_messages:
+            a = {"role": "model" if m["role"] == "assistant" else "user", "parts": m["content"]}
+            adapted_messages.append(a)
+        history = adapted_messages[:-1] if adapted_messages else []
+
+        try:
+            if system_message_combined:
+                self.model._system_instruction = types.content_types.to_content(system_message_combined)
+            chat = self.model.start_chat(history=history)
+            response = chat.send_message(adapted_messages[-1], generation_config=self.generation_config)
+            return response.text.strip()
+        except Exception as e:
+            logging.error(f"Error in Gemini API call: {str(e)}")
+            raise
+
+    @retry_async_generator()
+    @yield_complete_sentences
+    async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
+        """
+        Asynchronously generate a response using Google gemini model.
+
+        Args:
+            messages (MessageList): A list of message models representing the conversation history.
+
+        Yields:
+            str: Parts of the generated response.
+        """
+        from google.generativeai import types
+
+        messages = normalize_messages(messages)
+        system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
+        non_system_messages = [m for m in messages if m["role"] != 'system']
+        adapted_messages = []
+        for m in non_system_messages:
+            a = {"role": "model" if m["role"] == "assistant" else "user", "parts": m["content"]}
+            adapted_messages.append(a)
+        history = adapted_messages[:-1] if adapted_messages else []
+
+        try:
+            if system_message_combined:
+                self.model._system_instruction = types.content_types.to_content(system_message_combined)
+            chat = self.model.start_chat(history=history)
+            async for response in await chat.send_message_async(adapted_messages[-1],
+                                                                generation_config=self.generation_config,
+                                                                stream=True):
+                yield response.text
+
+        except Exception as e:
+            logging.error(f"Error in Gemini API call: {str(e)}")
+            raise
 
 
 class OpenAIModel(AIModel):
@@ -119,6 +204,7 @@ class OpenAIModel(AIModel):
             raise
 
     @retry_async_generator()
+    @yield_complete_sentences
     async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response using OpenAI's GPT model.
@@ -177,8 +263,7 @@ class ClaudeAIModel(AIModel):
         """
         system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
         non_system_message = [m for m in messages if m["role"] != 'system']
-        data = {"model": self.model, "max_tokens": self.max_tokens, "messages": non_system_message,
-                "tools": self.tools_description}
+        data = {"model": self.model, "max_tokens": self.max_tokens, "messages": non_system_message}
         if system_message_combined:
             data["system"] = system_message_combined
 
@@ -226,6 +311,7 @@ class ClaudeAIModel(AIModel):
         return response_text
 
     @retry_async_generator()
+    @yield_complete_sentences
     async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response using Anthropic's Claude model.
@@ -312,11 +398,14 @@ async def main_async():
     user:  Я играл в футбол.
     """
     config = Config()
+    ai_model = GeminiAIModel(config)
     ai_model = ClaudeAIModel(config)
+    # ai_model = OpenAIModel(config, model_id="gpt-4o-mini")
     result = ""
     async for response_part in ai_model.get_response_async([{"role": "user", "content": prompt}]):
+        print(response_part)
         result += response_part
-        print(result)
+    print(result)
 
 
 def main():
@@ -324,8 +413,9 @@ def main():
     Main function for debugging purposes.
     """
     config = Config()
-    model = ClaudeAIModel(config)
-    messages = [{"role": "user", "content": "who will play at euro 2024 final?"}]
+    model = GeminiAIModel(config)
+    messages = [{"role": "system", "content": "Your name is Cubie."},
+                {"role": "user", "content": "Hi! What's your name?"}]
     response = model.get_response(messages)
     print(response)
 
@@ -337,4 +427,5 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     load_dotenv()
+    # main()
     asyncio.run(main_async())  # main()

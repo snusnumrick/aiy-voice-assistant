@@ -9,14 +9,16 @@ Claude AI and OpenAI models with tool-using capabilities.
 import asyncio
 import json
 import logging
+import os
+import sys
 from typing import List, Dict, Callable, AsyncGenerator, Optional, Coroutine
 
 import aiohttp
 from pydantic import BaseModel, Field
 
-from src.ai_models import ClaudeAIModel, OpenAIModel, MessageList, normalize_messages
+from src.ai_models import ClaudeAIModel, OpenAIModel, MessageList, normalize_messages, GeminiAIModel
 from src.config import Config
-from src.tools import extract_sentences, retry_async_generator, get_token_count
+from src.tools import extract_sentences, yield_complete_sentences, retry_async_generator, get_token_count
 
 logger = logging.getLogger(__name__)
 
@@ -399,6 +401,150 @@ class ToolCall(BaseModel):
     id: str
 
 
+class GeminiAIModeWithTools(GeminiAIModel):
+    """
+    Implementation of AIModel using Google Gemini model.
+    """
+
+    def __init__(self, config: Config, model_id: Optional[str] = None, tools: Optional[List[Tool]] = None):
+        sys_path = sys.path
+        sys.path = [p for p in sys.path if p != os.getcwd()]
+        import google.generativeai as genai
+        sys.path = sys_path
+
+        genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+        model_id = model_id or config.get("gemini_model_id", "gemini-1.5-pro-latest")
+
+        self.tools = {t.name: t for t in tools} if tools else {}
+        self.tools_description = self._create_tools_description(tools) if tools else None
+        self.tools_processors = {t.name: t.processor for t in tools} if tools else {}
+
+        def add(a: int, b: int) -> int:
+            """returns a * b."""
+            return a+b
+
+        import inspect
+        sig = inspect.signature(add)
+
+        self.model = genai.GenerativeModel(model_id, tools=[add])
+
+        self.model = genai.GenerativeModel(model_id, tools=self.tools_description)
+        max_tokens = config.get('max_tokens', 4096)
+        self.generation_config = genai.GenerationConfig(max_output_tokens=max_tokens)
+
+    @classmethod
+    def _create_tools_description(self, tools: List[Tool]) -> dict:
+        """Create a list of tool descriptions for the Gemini model."""
+
+        def schema(t: Tool):
+            from google.generativeai.responder import to_type
+            return {'type': 'object',
+                    'properties': {p.name: {'type': p.type, 'description': p.description}
+                                   for p in t.parameters},
+                    'required': t.required}
+
+        return {'function_declarations':
+                    [{'name': t.name, 'description': t.description, 'parameters': schema(t)} for t in tools]}
+
+    def get_response(self, messages: MessageList) -> str:
+        """
+        Generate a response using Google Gemini model.
+
+        Args:
+            messages (MessageList): A list of message models representing the conversation history.
+
+        Returns:
+            str: The generated response.
+        """
+        from google.generativeai import types
+        import google.generativeai as genai
+
+        messages = normalize_messages(messages)
+        system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
+        non_system_messages = [m for m in messages if m["role"] != 'system']
+        adapted_messages = []
+        for m in non_system_messages:
+            a = {"role": "model" if m["role"] == "assistant" else "user", "parts": m["content"]}
+            adapted_messages.append(a)
+        history = adapted_messages[:-1] if adapted_messages else []
+
+        try:
+            if system_message_combined:
+                self.model._system_instruction = types.content_types.to_content(system_message_combined)
+            chat = self.model.start_chat(history=history, enable_automatic_function_calling=True)
+            response = chat.send_message(adapted_messages[-1], generation_config=self.generation_config)
+            while True:
+                part = response.candidates[0].content.parts[0]
+                if not part.function_call:
+                    return part.text.strip()
+                else:
+                    fc = part.function_call
+                    args = {p.name: fc.args[p.name] for p in self.tools[fc.name].parameters if p.name in fc.args}
+                    result = asyncio.run(self.tools_processors[fc.name](args))
+                    if self.tools[fc.name].iterative:
+                        response = chat.send_message(
+                            genai.protos.Content(
+                                parts=[genai.protos.Part(
+                                    function_response=genai.protos.FunctionResponse(
+                                        name='multiply',
+                                        response={'result': result}))]),
+                            generation_config=self.generation_config)
+        except Exception as e:
+            logging.error(f"Error in Gemini API call: {str(e)}")
+            raise
+
+    @retry_async_generator()
+    @yield_complete_sentences
+    async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
+        """
+        Asynchronously generate a response using Google gemini model.
+
+        Args:
+            messages (MessageList): A list of message models representing the conversation history.
+
+        Yields:
+            str: Parts of the generated response.
+        """
+        from google.generativeai import types
+        import google.generativeai as genai
+
+        messages = normalize_messages(messages)
+        system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
+        non_system_messages = [m for m in messages if m["role"] != 'system']
+        adapted_messages = []
+        for m in non_system_messages:
+            a = {"role": "model" if m["role"] == "assistant" else "user", "parts": m["content"]}
+            adapted_messages.append(a)
+        history = adapted_messages[:-1] if adapted_messages else []
+
+        try:
+            if system_message_combined:
+                self.model._system_instruction = types.content_types.to_content(system_message_combined)
+            chat = self.model.start_chat(history=history, enable_automatic_function_calling=True)
+            response = chat.send_message(adapted_messages[-1], generation_config=self.generation_config)
+            part = response.candidates[0].content.parts[0]
+            if not part.function_call:
+                yield part.text
+            else:
+                fc = part.function_call
+                args = {p.name : fc.args[p.name] for p in self.tools[fc.name].parameters if p.name in fc.args}
+                result = await self.tools_processors[fc.name](args)
+                if self.tools[fc.name].iterative:
+                    response = await chat.send_message_async(
+                        genai.protos.Content(
+                            parts=[genai.protos.Part(
+                                function_response=genai.protos.FunctionResponse(
+                                    name='multiply',
+                                    response={'result': result}))]),
+                        generation_config=self.generation_config
+                    )
+                    yield response.text
+
+        except Exception as e:
+            logging.error(f"Error in Gemini API call: {str(e)}")
+            raise
+
+
 class OpenAIModelWithTools(OpenAIModel):
     """
     A class representing an AI model with tool-using capabilities.
@@ -547,7 +693,8 @@ def main():
     from src.web_search_tool import WebSearchTool
     config = Config()
     search_tool = WebSearchTool(config)
-    for model in [ClaudeAIModelWithTools(config, tools=[search_tool.tool_definition()]),
+    for model in [GeminiAIModeWithTools(config, tools=[search_tool.tool_definition()]),
+                  ClaudeAIModelWithTools(config, tools=[search_tool.tool_definition()]),
                   OpenAIModelWithTools(config, tools=[search_tool.tool_definition()])]:
         message = "Today is August 6, 2024. who got olympics gold today?"
         print(message)
@@ -562,7 +709,8 @@ async def main_async():
     from src.web_search_tool import WebSearchTool
     config = Config()
     search_tool = WebSearchTool(config)
-    for model in [OpenAIModelWithTools(config, tools=[search_tool.tool_definition()]),
+    for model in [GeminiAIModeWithTools(config, tools=[search_tool.tool_definition()]),
+                  OpenAIModelWithTools(config, tools=[search_tool.tool_definition()]),
                   ClaudeAIModelWithTools(config, tools=[search_tool.tool_definition()])]:
         system = """Today is August 6 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
                 Отвечай естественно, как в устной речи. Говори максимально просто и понятно. Не используй списки и нумерации. Например, не говори 1. что-то; 2.
@@ -570,7 +718,8 @@ async def main_async():
                 так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов."""
         message = "Today is August 6, 2024. who got olympics gold today?"
         print(message)
-        messages = [{"role": "system", "content": system}, {"role": "user", "content": message}]
+        # messages = [{"role": "system", "content": system}, {"role": "user", "content": message}]
+        messages = [{"role": "user", "content": message}]
         m = ""
         async for response_part in model.get_response_async(messages):
             print(response_part, flush=True, end="")
@@ -585,5 +734,5 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     load_dotenv()
-    # asyncio.run(main_async())
-    main()
+    asyncio.run(main_async())
+    # main()

@@ -35,8 +35,9 @@ class WebSearchTool:
 
     """
     def tool_definition(self) -> Tool:
-        return Tool(name="internet_search", description="Search Internet", iterative=True, parameters=[
+        return Tool(name="internet_search", description="Search Internet for actual information", iterative=True, parameters=[
             ToolParameter(name='query', type='string', description='A query to search for, preferable in English')],
+                    required=["query"],
                     processor=self.do_search_async)
 
     def __init__(self, config: Config):

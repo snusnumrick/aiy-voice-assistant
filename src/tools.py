@@ -7,7 +7,7 @@ import re
 import time
 from datetime import datetime
 from functools import wraps
-from typing import List, Dict, Union, Any, Callable, AsyncGenerator, Iterable, Tuple
+from typing import List, Dict, Union, Any, Callable, AsyncGenerator, Iterable, Tuple, AsyncIterator
 
 import aiofiles
 import geocoder
@@ -571,6 +571,63 @@ def extract_sentences(text: str) -> List[str]:
 
     logger.debug(f"Extracted sentences: {sentences}")
     return sentences
+
+
+def yield_complete_sentences(func: Callable[..., AsyncIterator[str]]) -> Callable[..., AsyncIterator[str]]:
+    """
+    A decorator that modifies an async generator function to yield complete sentences.
+
+    This decorator wraps around functions that yield text in chunks. It buffers the
+    yielded text and only yields complete sentences. Any incomplete sentence at the
+    end of the input is yielded as-is.
+
+    Args:
+        func (Callable[..., AsyncIterator[str]]): The async generator function to be decorated.
+            This function should yield strings (text chunks).
+
+    Returns:
+        Callable[..., AsyncIterator[str]]: A wrapped version of the input function that
+        yields complete sentences.
+
+    Example:
+        @yield_complete_sentences
+        async def my_text_generator() -> AsyncIterator[str]:
+            yield "Hello, wo"
+            yield "rld! How are"
+            yield " you today?"
+
+        # Using the decorated function
+        async for sentence in my_text_generator():
+            print(sentence)
+
+        # Output:
+        # Hello, world!
+        # How are you today?
+
+    Note:
+        This decorator assumes the existence of an `extract_sentences` function
+        that can split a string into a list of sentences. Make sure to implement
+        this function according to your specific needs.
+    """
+
+    @wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any) -> AsyncIterator[str]:
+        current_text = ""
+        async for text in func(*args, **kwargs):
+            current_text += text
+            sentences = extract_sentences(current_text)
+
+            if len(sentences) > 1:
+                for sentence in sentences[:-1]:
+                    yield sentence
+                current_text = sentences[-1]
+
+        sentences = extract_sentences(current_text)
+        for sentence in sentences:
+            yield sentence
+
+    return wrapper
+
 
 def combine_audio_files(file_list: List[str], output_filename: str) -> None:
     """
