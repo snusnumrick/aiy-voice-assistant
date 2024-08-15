@@ -140,6 +140,17 @@ You can manually control the service with these commands:
 * Restart the service: ```sudo systemctl restart aiy.service```
 * Check service status: ```sudo systemctl status aiy.service```
 
+To view the terminal output of the running assistant:
+
+1. Ensure the service is running
+2. Attach to the tmux session:
+    ```bash
+    tmux attach -t aiy
+    ```
+3. To detach from the session without stopping the assistant, press ```Ctrl-B``` then ```D```
+
+This allows you to monitor the assistant's operation and view any debug information or errors in real-time.
+
 Once the assistant is running, here's how to interact with it:
 
 1. **Initial Introduction:**
