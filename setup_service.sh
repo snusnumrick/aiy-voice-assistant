@@ -10,6 +10,9 @@ RUN_SCRIPT="${WORKING_DIR}/run.sh"
 LOG_FILE="${WORKING_DIR}/logfile.log"
 ERROR_LOG="${WORKING_DIR}/errorfile.log"
 
+# Make run.sh executable
+chmod +x "${RUN_SCRIPT}"
+
 # Create the service file content
 cat << EOF > "${SERVICE_NAME}.service"
 [Unit]
