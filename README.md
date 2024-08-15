@@ -107,14 +107,38 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
       * Make sure to keep your `.env` file secure and never commit it to version control.
       * Depending on configuration, some of these API keys may be unnecessary.
 
+7. Set up the systemd service:
+   * Ensure you're in the project directory
+   * Run the setup script:
+    ```bash
+    sudo ./setup_service.sh
+    ```
+   * This script will:
+     * Make run.sh executable
+     * Create a systemd service file
+     * Enable the service to start on boot
+     * Start the service
+
+     After running the script, you can check the service status with:
+     ```bash
+     sudo systemctl status aiy.service
+     ```
+
 ## Usage
 
-Ensure you're in the virtual environment before running the assistant:
+To start the assistant manually (if not using the systemd service):
 
-```
+```bash
 source venv/bin/activate  
 python main.py
 ```
+
+If you've set up the systemd service, the assistant will start automatically on boot. 
+You can manually control the service with these commands:
+* Start the service: ```sudo systemctl start aiy.service```
+* Stop the service: ```sudo systemctl stop aiy.service```
+* Restart the service: ```sudo systemctl restart aiy.service```
+* Check service status: ```sudo systemctl status aiy.service```
 
 Once the assistant is running, here's how to interact with it:
 
