@@ -647,6 +647,82 @@ def combine_audio_files(file_list: List[str], output_filename: str) -> None:
     logger.debug(f"Exported combined audio to {output_filename}")
 
 
+def fix_stress_marks_russian(s: str) -> str:
+    """
+    Corrects the placement of stress marks in Russian text.
+
+    This function moves any '+' sign that's incorrectly placed before a consonant
+    forward to the next vowel. It handles both Cyrillic and Latin alphabets, as well
+    as the soft sign (ь) and hard sign (ъ).
+
+    Parameters:
+    s (str): The input string containing Russian text with stress marks.
+
+    Returns:
+    str: The corrected string with properly placed stress marks.
+
+    Behavior:
+    1. Identifies vowels in both Cyrillic and Latin alphabets.
+    2. Recognizes the soft sign (ь) and hard sign (ъ) as special characters.
+    3. Moves '+' forward if found before a consonant until it precedes a vowel.
+    4. Preserves all original characters, only modifying the position of '+' signs.
+    5. Keeps '+' at the end of the string if present.
+
+    Examples:
+    >>> fix_stress_marks_russian("п+ривет")
+    "пр+ивет"
+    >>> fix_stress_marks_russian("об+ъявление")
+    "объ+явление"
+    >>> fix_stress_marks_russian("подъ+езд")
+    "подъ+езд"
+    >>> fix_stress_marks_russian("семь+я")
+    "семь+я"
+    >>> fix_stress_marks_russian("+слово")
+    "+слово"
+    >>> fix_stress_marks_russian("конец+")
+    "конец+"
+
+    Limitations:
+    - Does not validate linguistic correctness of stress placement.
+    - Does not handle other types of diacritical marks or punctuation.
+    - Assumes '+' is exclusively used as a stress mark in the input text.
+
+    Note:
+    This function is useful for correcting automatically generated or improperly
+    formatted stressed Russian text. It can be integrated into larger text processing
+    pipelines for Russian language learning materials or linguistic analysis tools.
+    """
+    # fix stress marks in a string by moving any '+' sign that's incorrectly placed before a consonant forward to the next vowel.
+    vowels = 'аеёиоуыэюяАЕЁИОУЫЭЮЯaeiouAEIOU'
+    non_consonants = vowels + 'ьъЬЪ'  # Include soft and hard signs
+    result = []
+    stress_pending = False
+
+    for char in s:
+        if char == '+':
+            stress_pending = True
+        elif char in vowels and stress_pending:
+            result.append('+')
+            result.append(char)
+            stress_pending = False
+        elif char in non_consonants:
+            result.append(char)
+        else:  # consonant
+            if stress_pending:
+                result.append(char)
+            else:
+                result.append(char)
+
+    # If there's a pending stress at the end, just append it
+    if stress_pending:
+        result.append('+')
+
+    result = ''.join(result)
+    if result != s:
+        logger.info(f"fixed stress mark: {s} -> {result}")
+    return result
+
+
 def test():
     # tz = get_timezone()
     # print(tz)

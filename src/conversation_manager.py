@@ -20,7 +20,7 @@ from typing import List, Tuple, AsyncGenerator, Deque, Dict
 
 from src.llm_tools import optimize_rules, optimize_facts
 from src.responce_player import extract_emotions, extract_language
-from src.tools import format_message_history, clean_response, time_string_ms
+from src.tools import format_message_history, clean_response, time_string_ms, fix_stress_marks_russian
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -263,7 +263,9 @@ class ConversationManager:
                     logger.debug(f"Language: {lang} -> {clean_text}")
                     self.current_language_code = lang
                     if text:
+                        clean_text = fix_stress_marks_russian(clean_text)
                         result.append({"emotion": emo, "language": lang, "text": clean_text})
+
             logger.debug(f"yielding {result}")
             yield result
 
