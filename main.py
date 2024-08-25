@@ -26,6 +26,7 @@ from src.email_tools import SendEmailTool
 from src.tools import get_timezone
 from src.tts_engine import YandexTTSEngine, Language, ElevenLabsTTSEngine
 from src.web_search_tool import WebSearchTool
+from src.stress_tool import StressTool
 
 # Set up signal handling for graceful shutdown
 signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
@@ -93,8 +94,9 @@ def main():
     with Board() as board, Leds() as leds:
 
         search_tool = WebSearchTool(config)
+        stress_tool = StressTool(config)
         send_email_tool = SendEmailTool(config)
-        tools = [search_tool.tool_definition(), send_email_tool.tool_definition()]
+        tools = [search_tool.tool_definition(), send_email_tool.tool_definition(), stress_tool.tool_definition()]
 
         # Initial LED feedback
         leds.update(Leds.rgb_on(Color.WHITE))

@@ -707,19 +707,35 @@ async def main_async():
     Asynchronous main function for testing the ClaudeAIModelWithTools.
     """
     from src.web_search_tool import WebSearchTool
+    from src.stress_tool import StressTool
     config = Config()
+    system = """Today is August 6 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
+            Отвечай естественно, как в устной речи. Говори максимально просто и понятно. Не используй списки и нумерации. Например, не говори 1. что-то; 2.
+            что-то. говори во-первых, во-вторых или просто перечисляй. При ответе на вопрос где важно время, помни какое сегодня число. Если чего-то не знаешь,
+            так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов."""
+
+    system = """Today is August 6 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
+            Отвечай естественно, как в устной речи. Говори максимально просто и понятно. Не используй списки и нумерации. Например, не говори 1. что-то; 2.
+            что-то. говори во-первых, во-вторых или просто перечисляй. При ответе на вопрос где важно время, помни какое сегодня число. Если чего-то не знаешь,
+            так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов."""
+    stress_tool = StressTool(config)
+    model = ClaudeAIModelWithTools(config, tools=[stress_tool.tool_definition()])
+    messages = [{"role": "system", "content": system},
+                {"role": "user", "content": "как поставить ударение в слове тростник?"}]
+    m = ""
+    async for response_part in model.get_response_async(messages):
+        print(response_part, flush=True, end="")
+        m += response_part
+    print()
+    return
+
     search_tool = WebSearchTool(config)
     for model in [GeminiAIModeWithTools(config, tools=[search_tool.tool_definition()]),
                   OpenAIModelWithTools(config, tools=[search_tool.tool_definition()]),
                   ClaudeAIModelWithTools(config, tools=[search_tool.tool_definition()])]:
-        system = """Today is August 6 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
-                Отвечай естественно, как в устной речи. Говори максимально просто и понятно. Не используй списки и нумерации. Например, не говори 1. что-то; 2.
-                что-то. говори во-первых, во-вторых или просто перечисляй. При ответе на вопрос где важно время, помни какое сегодня число. Если чего-то не знаешь,
-                так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов."""
         message = "Today is August 6, 2024. who got olympics gold today?"
         print(message)
-        # messages = [{"role": "system", "content": system}, {"role": "user", "content": message}]
-        messages = [{"role": "user", "content": message}]
+        # messages = [{"role": "user", "content": message}]
         m = ""
         async for response_part in model.get_response_async(messages):
             print(response_part, flush=True, end="")

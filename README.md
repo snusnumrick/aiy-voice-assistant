@@ -34,6 +34,7 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 - **Email Functionality**: Ability to send emails to the user.
 - **Memory Formation**: Remembers facts and rules across conversations for improved context retention.
 - **Streaming Responses**: Provides more natural conversation flow with real-time responses.
+- **Russian Stress Marking**: Ability to add stress marks to Russian words, enhancing pronunciation guidance and language learning.
 
 ## Hardware Requirements
 
@@ -217,6 +218,7 @@ Additional Features:
   - `llm_tools.py`: Language model specific tools
   - `responce_player.py`: Audio playback and LED control
   - `stt_engine.py`: Speech-to-text engines
+  - `stress_tool.py`: Tool for adding stress marks to Russian words
 
 ## Troubleshooting
 
