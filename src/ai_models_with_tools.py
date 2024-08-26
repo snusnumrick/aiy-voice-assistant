@@ -195,11 +195,11 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         message_list = [m for m in messages]
 
         async for response_dict in self._get_response_async(message_list, streaming=False):
-            logger.debug(f"get_response_async: {json.dumps(response_dict, indent=2)}")
+            logger.debug(f"get_response_async: {json.dumps(response_dict, indent=2, ensure_ascii=False)}")
             if 'usage' in response_dict:
                 logger.debug(f"tokens usage: {response_dict['usage']} vs estimate {get_token_count(message_list)}")
             if 'content' not in response_dict:
-                logger.error(f"No content in response: {json.dumps(response_dict, indent=2)}")
+                logger.error(f"No content in response: {json.dumps(response_dict, indent=2, ensure_ascii=False)}")
                 if 'error' in response_dict:
                     response_dict['content'] = [{"type": "text", "text": response_dict["error"]["message"]}]
                 else:
@@ -384,7 +384,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             logger.debug(f"{self._time_str()}Processing tool use: {tool_name}, {tool_use_id}")
             tool_processor = self.tools_processors[tool_name]
             tool_result = await tool_processor(tool_input)
-            logger.debug(f"{self._time_str()}tool result: {json.dumps(tool_result, indent=2)}")
+            logger.debug(f"{self._time_str()}tool result: {json.dumps(tool_result, indent=2, ensure_ascii=False)}")
             if self.tools[tool_name].iterative:
                 message_list.append({"role": "user", "content": [
                     {'type': 'tool_result', 'content': tool_result, "tool_use_id": tool_use_id}]})

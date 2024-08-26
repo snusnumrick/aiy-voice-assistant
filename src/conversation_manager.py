@@ -281,7 +281,7 @@ class ConversationManager:
     def save_dialog(self):
         # save message history to dialog.txt
         dialog_file_name = "dialog.txt"
-        with open(dialog_file_name, "w") as dialog_file:
+        with open(dialog_file_name, "w", encoding='utf-8') as dialog_file:
             dialog_file.write("\n\n" + self.formatted_message_history(150) + "\n\n")
 
     async def _run_sync_in_thread(self, func, *args):

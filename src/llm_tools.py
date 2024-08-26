@@ -94,7 +94,7 @@ async def optimize_rules(hard_rules: str, soft_rules: List[str], config: Config)
 
     list of soft rules in json:
     '''
-    {json.dumps(soft_rules, indent=2)}
+    {json.dumps(soft_rules, indent=2, ensure_ascii=False)}
     '''
     """
     model = ClaudeAIModel(config)
@@ -135,7 +135,7 @@ async def optimize_facts(facts: List[str], config: Config, timezone: str) -> Lis
 
     последовательность известных фактов в JSON:
     '''
-    {json.dumps(facts, indent=2)}
+    {json.dumps(facts, indent=2, ensure_ascii=False)}
     '''
     """
     model = ClaudeAIModel(config)
