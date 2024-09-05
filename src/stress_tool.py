@@ -29,6 +29,8 @@ class StressTool:
 
     The stress is marked with a '+' symbol placed before the stressed vowel.
 
+    The implementation uses https://morpher.ru/ws3/#addstressmarks
+
     Class: StressTool
 
     Methods:

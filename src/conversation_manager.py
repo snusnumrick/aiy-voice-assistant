@@ -228,7 +228,7 @@ class ConversationManager:
             if new_message_history != self.message_history:
                 self.message_history = new_message_history
                 newline_str = "\n\n"
-                logger.info(
+                logger.debug(
                     f'Compressed  conversation:  {(newline_str + self.formatted_message_history(150) + newline_str)}')
 
         # logger.debug(f"Message history: \n{self.formatted_message_history()}")

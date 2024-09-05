@@ -12,6 +12,9 @@ source ./venv/bin/activate
 # Pull the latest changes from the repository
 git pull
 
+# set audio volume
+amixer sset 'Master' 40%
+
 # Run the Python script
 python main.py
 

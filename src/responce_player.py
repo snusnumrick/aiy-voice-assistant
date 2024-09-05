@@ -304,7 +304,7 @@ class ResponsePlayer:
             if not self.wav_list:
                 return
 
-            logger.info(
+            logger.debug(
                 f"({time_string_ms(self.timezone)}) merging {self.wav_list_light} {self.wav_list} {self.playlist}")
 
             light = self.wav_list_light if self.wav_list_light is not None else self.current_light
@@ -352,13 +352,13 @@ class ResponsePlayer:
                     break
                 try:
                     light, audio_file = self.playlist.get_nowait()
-                    logger.info(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
+                    logger.debug(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
                 except queue.Empty:
                     # If playlist is empty, process wav_list and continue
                     self._process_wav_list()
                     continue
 
-            logger.info(
+            logger.debug(
                 f"({time_string_ms(self.timezone)}) Playing {audio_file} with {light}")
 
             self.change_light_behavior(light)
