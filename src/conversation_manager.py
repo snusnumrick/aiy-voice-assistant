@@ -430,7 +430,10 @@ class ConversationManager:
     def load_rules():
         try:
             with open('rules.json', 'r') as f:
-                return json.load(f)
+                result = json.load(f)
+                if isinstance(result, dict):
+                    result = result["rules"]
+                return result
         except FileNotFoundError:
             return []
         except json.decoder.JSONDecodeError as e:

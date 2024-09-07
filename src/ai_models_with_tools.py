@@ -727,7 +727,7 @@ async def main_async():
     model = ClaudeAIModelWithTools(config, tools=[interpreter_tool.tool_definition()])
     # model = ClaudeAIModel(config)
     messages = [{"role": "system", "content": system}, {"role": "user", "content":
-        "Какова сумма цифр в числе 2^1000 (2 в степени 1000)?"}]
+        "Реши уравнение ИКС в квадрате равно 4."}]
     m = ""
     async for response_part in model.get_response_async(messages):
         print(response_part + " ", flush=True, end="")
