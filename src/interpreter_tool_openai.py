@@ -53,7 +53,6 @@ The result is JSON dictionary with keys stdout and stderr.
     def tool_definition(self) -> Tool:
         return Tool(
             name="code_interpreter",
-            # description="Execute Python code and return the result. Can process data, generate graphs, and perform complex computations.",
             description=self.base_description,
             iterative=True,
             parameters=[
@@ -64,11 +63,11 @@ The result is JSON dictionary with keys stdout and stderr.
         )
 
     def __init__(self, config: Config):
-        self.openai_api_key = os.environ["OPENAI_API_KEY"]
+        self.api_key = os.environ["OPENAI_API_KEY"]
         self.openai_api_base = config.get('openai_api_base', 'https://api.openai.com/v1')
         self.model = config.get('code_interpreter_model', 'gpt-4o')
         self.headers = {
-            "Authorization": f"Bearer {self.openai_api_key}",
+            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "OpenAI-Beta": "assistants=v2"
         }
