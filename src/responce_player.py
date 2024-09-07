@@ -272,7 +272,7 @@ class ResponsePlayer:
                     break
                 try:
                     mi: MergeItem = self.merge_queue.get_nowait()
-                    logger.info(
+                    logger.debug(
                         f"({time_string_ms(self.timezone)}) merging {mi.light} {mi.filename} {self.wav_list_light} {self.wav_list}")
                     if not self.wav_list:
                         self.wav_list_light = mi.light
