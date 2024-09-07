@@ -46,8 +46,7 @@ It should be in python format NOT markdown.
 The code should NOT be wrapped in backticks. 
 All python packages including requests, matplotlib, scipy, numpy, pandas, \
 etc are available.
-print() any output and results so you can capture the output.
-The result is JSON dictionary with keys stdout and stderr.
+Convey all results through print(), so you can capture the output.
 """
 
     def tool_definition(self) -> Tool:
@@ -80,7 +79,8 @@ The result is JSON dictionary with keys stdout and stderr.
         code = parameters['code']
         logger.info(f"Executing code: \n{code}")
         message = (f"run interpreter for this code```\n{code}\n```\n; "
-                   f"return json dictionary only with keys stdout and stderr, omit explanations")
+                   f"return json dictionary only with keys stdout and stderr, omit explanations"
+                   )
 
         # Create an Assistant
         assistant = await self._create_assistant()
@@ -103,8 +103,21 @@ The result is JSON dictionary with keys stdout and stderr.
         # Extract and return the last assistant message
         for message in reversed(messages['data']):
             if message['role'] == 'assistant':
-                logger.info(f"openai assistant result:\n{message['content'][0]['text']['value']}")
-                return message['content'][0]['text']['value']
+                result = message['content'][0]['text']['value']
+
+                # Remove the ```json and ``` markers
+                json_string = result.strip().replace('```json', '').replace('```', '')
+
+                # Parse the JSON string
+                data = json.loads(json_string)
+
+                if data['stderr']:
+                    result = f"there was an error: {data['stderr']}"
+                else:
+                    result = f"the result is {data['stdout']}"
+
+                logger.info(f"openai assistant result:\n{result}")
+                return result
 
         return "No result found"
 

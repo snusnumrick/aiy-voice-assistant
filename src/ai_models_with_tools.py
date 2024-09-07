@@ -708,14 +708,15 @@ async def main_async():
     """
     from src.web_search_tool import WebSearchTool
     from src.stress_tool import StressTool
-    from src.interpreter_tool_openai import InterpreterTool
+    from src.code_interpreter_tooli import InterpreterTool
     # from src.interpreter_tool_judge0 import InterpreterTool
     config = Config()
 
     system = """Today is August 6 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
             Отвечай естественно, как в устной речи. Говори максимально просто и понятно. Не используй списки и нумерации. Например, не говори 1. что-то; 2.
             что-то. говори во-первых, во-вторых или просто перечисляй. При ответе на вопрос где важно время, помни какое сегодня число. Если чего-то не знаешь,
-            так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов."""
+            так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов. 
+            Используй code_interpreter только для очень сложных запросов."""
 
     system = """Today is August 6 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
             Отвечай естественно, как в устной речи. Говори максимально просто и понятно. Не используй списки и нумерации. Например, не говори 1. что-то; 2.
@@ -723,11 +724,13 @@ async def main_async():
             так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов."""
 
     interpreter_tool = InterpreterTool(config)
-    model = OpenAIModelWithTools(config, tools=[interpreter_tool.tool_definition()])
-    messages = [{"role": "system", "content": system}, {"role": "user", "content": "Can you solve this equation? 10x + 14 = 21 / 3"}]
+    model = ClaudeAIModelWithTools(config, tools=[interpreter_tool.tool_definition()])
+    # model = ClaudeAIModel(config)
+    messages = [{"role": "system", "content": system}, {"role": "user", "content":
+        "Какова сумма цифр в числе 2^1000 (2 в степени 1000)?"}]
     m = ""
     async for response_part in model.get_response_async(messages):
-        print(response_part, flush=True, end="")
+        print(response_part + " ", flush=True, end="")
         m += response_part
     print()
     return

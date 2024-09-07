@@ -17,6 +17,7 @@ Key aspects of the assistant include:
 - Multi-model AI approach, supporting Claude AI, OpenAI, and Google's Gemini models
 - Email functionality for sending messages
 - Streaming responses for natural conversation flow
+- Code interpretation and execution capabilities
 
 The assistant primarily operates in Russian but can be configured for other languages.
 
@@ -35,6 +36,7 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 - **Memory Formation**: Remembers facts and rules across conversations for improved context retention.
 - **Streaming Responses**: Provides more natural conversation flow with real-time responses.
 - **Russian Stress Marking**: Ability to add stress marks to Russian words, enhancing pronunciation guidance and language learning.
+- **Code Interpretation**: Can execute Python code, allowing for complex computations and data analysis, with results conveyed verbally.
 
 ## Hardware Requirements
 
@@ -194,6 +196,12 @@ Additional Features:
 - **Web Search**: Ask questions about current events or topics beyond the AI's training data.
 - **Email**: Request the assistant to send you an email with specific information.
 - **Emotional Expression**: Observe LED patterns and voice tone changes reflecting the assistant's emotional state.
+- **Complex Problem Solving**: Ask the assistant to solve complex problems that may require computational assistance. For example:
+  - "Вычисли сумму всех простых чисел меньше 10000." (Calculate the sum of all prime numbers below 10000.)
+  - "Если бы у нас был список из 1000000 случайных чисел от 1 до 100, какова вероятность того, что число 42 появится более 15000 раз?" (If we had a list of 1000000 random numbers from 1 to 100, what's the probability that the number 42 would appear more than 15000 times?)
+  - "Сколько различных способов есть подняться на лестницу из 30 ступенек, если за один шаг можно подниматься на 1 или 2 ступеньки?" (How many different ways are there to climb a staircase of 30 steps if you can take either 1 or 2 steps at a time?)
+  - "Какова сумма цифр в числе 2^1000 (2 в степени 1000)?" (What is the sum of the digits in the number 2^1000 (2 to the power of 1000)?)
+
 
 ## Customization
 
@@ -219,6 +227,7 @@ Additional Features:
   - `responce_player.py`: Audio playback and LED control
   - `stt_engine.py`: Speech-to-text engines
   - `stress_tool.py`: Tool for adding stress marks to Russian words
+  - `code_interpreter_tool.py`: Tool for executing Python code and returning results
 
 ## Troubleshooting
 
