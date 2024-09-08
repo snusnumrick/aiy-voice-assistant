@@ -27,7 +27,7 @@ from src.tools import get_timezone
 from src.tts_engine import YandexTTSEngine, Language, ElevenLabsTTSEngine
 from src.web_search_tool import WebSearchTool
 from src.stress_tool import StressTool
-from src.code_interpreter_tooli import InterpreterTool
+from src.code_interpreter_tool import InterpreterTool
 
 # Set up signal handling for graceful shutdown
 signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))

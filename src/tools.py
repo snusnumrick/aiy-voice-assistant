@@ -7,7 +7,7 @@ import re
 import time
 from datetime import datetime
 from functools import wraps
-from typing import List, Dict, Union, Any, Callable, AsyncGenerator, Iterable, Tuple, AsyncIterator
+from typing import List, Dict, Union, Any, Callable, AsyncGenerator, Iterable, Tuple, AsyncIterator, Optional
 
 import aiofiles
 import geocoder
@@ -480,7 +480,7 @@ def retry_async_generator(max_retries: int = 5, initial_retry_delay: float = 1, 
     return decorator
 
 
-def extract_sentences(text: str) -> List[str]:
+def extract_sentences(text: str, expected_enumeration: Optional[List[int]] = None) -> List[str]:
     """
     Extracts sentences from the given text while preserving special patterns and numbered lists.
 
@@ -488,7 +488,7 @@ def extract_sentences(text: str) -> List[str]:
     such as emotion tags or JSON-like structures. It preserves these patterns within
     the sentences, and correctly splits sentences at punctuation marks, even when
     they appear immediately after a special pattern without a space. It also preserves
-    numbered list items as separate sentences.
+    numbered list items as separate sentences when they match the expected enumeration.
 
     The function is designed to work with both English and Russian text.
 
@@ -496,32 +496,29 @@ def extract_sentences(text: str) -> List[str]:
         text (str): The input text to be processed. May contain special patterns
                     starting with $, as well as normal sentences in English or Russian,
                     and numbered list items.
+        expected_enumeration (Optional[List[int]]): A list containing the expected number
+                    for the next enumeration item. If provided, it should be a list with
+                    one integer element. This list will be updated as enumeration is processed.
 
     Returns:
         List[str]: A list of extracted sentences. Special patterns are preserved within
                    the sentences they were originally associated with, and numbered list
-                   items are treated as separate sentences.
+                   items are treated as separate sentences when they match the expected enumeration.
 
     Note:
     - The function treats $... patterns (complete or incomplete) as part of the sentence.
     - It correctly splits sentences at punctuation marks, even immediately after special patterns.
     - It handles ellipsis and multiple punctuation marks as single sentence endings.
     - Incomplete sentences or patterns at the end of the text are preserved.
-    - Numbered list items are treated as separate sentences.
+    - Numbered list items are treated as separate sentences only when they match the expected enumeration.
     - The function handles cases where sentence-ending punctuation is not followed by a space.
+    - The expected_enumeration list is updated as valid enumeration items are encountered.
     """
     logger.debug(f"Extracting sentences from: {text}")
 
     # Define patterns
-
-    # Match sequences that start with a dollar sign, followed by any characters that are not a dollar sign,
-    # and then end with either another dollar sign or the end of the line.
     special_pattern = r'\$[^$]+(?:\$|$)'
-
-    # Match sentence-ending punctuation followed by whitespace, avoiding splitting on abbreviations or initials.
     sentence_end_pattern = r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!|:|\))\s'
-
-    # Match numbered list items, allowing for optional leading whitespace.
     numbered_list_pattern = r'\s*\d+\.(?:\s|$)'
 
     # Find all special patterns and their positions
@@ -550,16 +547,29 @@ def extract_sentences(text: str) -> List[str]:
             parts = [p for p in parts if p is not None]
             for i, part in enumerate(parts):
                 if (re.match(sentence_end_pattern, part) or
-                        (i > 0 and not part.strip() and re.search(sentence_end_pattern, parts[i-1] + part))):
+                        (i > 0 and not part.strip() and re.search(sentence_end_pattern, parts[i - 1] + part))):
                     # End the current sentence if we encounter sentence-ending punctuation
                     # or if we have a space after sentence-ending punctuation
-                    sentences.append(current_sentence.strip())
-                    current_sentence = ''
-                elif re.match(numbered_list_pattern, part.strip()):
-                    # Treat numbered list items as separate sentences
                     if current_sentence:
                         sentences.append(current_sentence.strip())
-                    current_sentence = part
+                        current_sentence = ''
+                elif re.match(numbered_list_pattern, part.strip()):
+                    # Check if this matches our expected enumeration
+                    match = re.match(r'\s*(\d+)\.', part)
+                    if match:
+                        num = int(match.group(1))
+                        if expected_enumeration is None or (expected_enumeration and num == expected_enumeration[0]):
+                            if current_sentence:
+                                sentences.append(current_sentence.strip())
+                            current_sentence = part
+                            if expected_enumeration:
+                                expected_enumeration[0] = num + 1
+                            else:
+                                expected_enumeration = [num + 1]
+                        else:
+                            current_sentence += part
+                    else:
+                        current_sentence += part
                 else:
                     current_sentence += part
 
@@ -571,7 +581,6 @@ def extract_sentences(text: str) -> List[str]:
 
     logger.debug(f"Extracted sentences: {sentences}")
     return sentences
-
 
 def yield_complete_sentences(func: Callable[..., AsyncIterator[str]]) -> Callable[..., AsyncIterator[str]]:
     """
@@ -737,6 +746,8 @@ def test():
     # "'+' идет перед ударной гласной."
     #
     # Как тебе такие варианты? Может быть, эти более лаконичные формулировки будут легче запомнить. Спасибо, что помогаешь мне улучшить мою работу с языком. Твой подход к обучению очень ценен.'''))
+    expected_enumeration = [1]
+    print(extract_sentences("от 0 до 10. Но сначала,", expected_enumeration))
     # print(extract_sentences("abc$x.f"))
     # print(extract_sentences("$x.f$abc. 123"))
     # print(extract_sentences("qr.$x.f$abc.123"))
@@ -754,7 +765,7 @@ def test():
     # print(extract_sentences('Швеция - 3:56.92 8. Нидерланды - 3:59.52'))
     # print(extract_sentences('$pattern1$.$pattern2$.'))
     # print(extract_sentences('1. First. And. 2. Second'))
-    print(extract_sentences('1. First point. 2. Second point with multiple sentences. It continues here. 3. Third point.'))
+    # print(extract_sentences('1. First point. 2. Second point with multiple sentences. It continues here. 3. Third point.'))
     # print(extract_sentences('This is an $incomplete pattern'))
     pass
 

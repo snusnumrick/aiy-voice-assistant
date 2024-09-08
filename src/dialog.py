@@ -260,17 +260,17 @@ class DialogManager:
         ai_message = ""
         ai_responses_complete = False
 
-        def set_button_pressed():
+        def _set_button_pressed():
             nonlocal button_pressed
             button_pressed = True
             logger.debug("Button press detected, initiating shutdown sequence")
 
-        def set_ai_responses_complete():
+        def _set_ai_responses_complete():
             nonlocal ai_responses_complete
             ai_responses_complete = True
             logger.debug("AI response generation marked as complete")
 
-        self.button.when_pressed = set_button_pressed
+        self.button.when_pressed = _set_button_pressed
         logger.debug("Button callback set for interruption")
 
         conversation_response_generator = self.conversation_manager.get_response(text)
@@ -278,7 +278,7 @@ class DialogManager:
 
         save_conversation_task = None
 
-        async def process_ai_responses():
+        async def _process_ai_responses():
             nonlocal response_count, ai_message, synthesis_tasks, save_conversation_task
             try:
                 logger.debug("Starting AI response processing loop")
@@ -303,20 +303,12 @@ class DialogManager:
                         logger.debug(
                             f"Created synthesis task {response_count}, total tasks now: {len(synthesis_tasks)}")
 
-                        # Handle conversation saving
-                        if save_conversation_task and not save_conversation_task.done():
-                            logger.debug("Cancelling previous save_to_conversation task")
-                            save_conversation_task.cancel()
-
-                        save_conversation_task = asyncio.create_task(
-                            save_to_conversation("assistant", ai_message, self.timezone))
-                        logger.debug("Initiated new save_to_conversation task")
                 logger.debug("AI response generation completed normally")
             except Exception as e:
                 logger.error(f"Error in AI response generation: {str(e)}")
                 logger.error(traceback.format_exc())
             finally:
-                set_ai_responses_complete()  # Mark AI responses as complete
+                _set_ai_responses_complete()  # Mark AI responses as complete
                 logger.debug("AI response processing loop exited")
 
         async def process_synthesis_tasks():
@@ -347,12 +339,22 @@ class DialogManager:
 
         try:
             logger.debug("Initiating concurrent processing of AI responses and synthesis tasks")
-            ai_task = asyncio.create_task(process_ai_responses())
+            ai_task = asyncio.create_task(_process_ai_responses())
             synthesis_task = asyncio.create_task(process_synthesis_tasks())
 
             # Wait for both tasks to complete
             await asyncio.gather(ai_task, synthesis_task)
             logger.debug("Both AI response and synthesis task processing completed")
+
+            # Handle conversation saving
+            if ai_message:
+                if save_conversation_task and not save_conversation_task.done():
+                    logger.debug("Cancelling previous save_to_conversation task")
+                    save_conversation_task.cancel()
+
+                save_conversation_task = asyncio.create_task(
+                    save_to_conversation("assistant", ai_message, self.timezone))
+                logger.debug("Initiated new save_to_conversation task")
 
         except Exception as e:
             logger.error(f"Unexpected error in process_ai_response: {str(e)}")

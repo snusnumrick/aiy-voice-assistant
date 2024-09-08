@@ -242,6 +242,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         current_text = ""
         current_tool_use = None
         assistant_message = ""
+        expected_enumeration = [1]  # passed as a list to keep mutable
 
         async def process_content_block_delta(event: Dict, current_tool_use: Optional[Dict] = None) -> \
                 AsyncGenerator[str, None]:
@@ -255,13 +256,13 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             Yields:
                 str: Complete sentences extracted from the current text.
             """
-            nonlocal current_text
+            nonlocal current_text, expected_enumeration
 
             delta = event.get('delta', {})
             if delta.get('type') == 'text_delta':
                 text = delta.get('text', '')
                 current_text += text
-                sentences = extract_sentences(current_text)
+                sentences = extract_sentences(current_text, expected_enumeration)
 
                 if len(sentences) > 1:
                     for sentence in sentences[:-1]:
@@ -708,7 +709,7 @@ async def main_async():
     """
     from src.web_search_tool import WebSearchTool
     from src.stress_tool import StressTool
-    from src.code_interpreter_tooli import InterpreterTool
+    from src.code_interpreter_tool import InterpreterTool
     # from src.interpreter_tool_judge0 import InterpreterTool
     config = Config()
 
