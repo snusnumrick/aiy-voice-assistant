@@ -16,12 +16,15 @@ chmod +x "${RUN_SCRIPT}"
 # Create the service file content
 cat << EOF > "${SERVICE_NAME}.service"
 [Unit]
+Description=${SERVICE_DESCRIPTION}
 After=network-online.target sound.target
 Wants=network-online.target
 
 [Service]
 Type=forking
-ExecStart=/bin/bash -c 'sleep 10 && /usr/bin/tmux new-session -d -s ${SERVICE_NAME} "bash -c \"exec ${RUN_SCRIPT}\""'
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+Environment="TMUX="
+ExecStart=/bin/bash -c '/usr/bin/tmux new-session -d -s ${SERVICE_NAME} "bash -c \"exec ${RUN_SCRIPT}\""'
 ExecStop=/usr/bin/tmux kill-session -t ${SERVICE_NAME}
 WorkingDirectory=${WORKING_DIR}
 User=${USER}
