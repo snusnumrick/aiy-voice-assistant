@@ -24,6 +24,25 @@ from src.config import Config
 
 logger = logging.getLogger(__name__)
 
+
+def get_current_volume() -> int:
+    try:
+        result = subprocess.run(['amixer', 'sget', 'Master'], capture_output=True, text=True)
+        volume = int(result.stdout.split('[')[1].split('%')[0])
+        return volume
+    except Exception as e:
+        logger.error(f"Failed to get current volume: {str(e)}")
+        return 50  # Return a default value if unable to get the current volume
+
+
+def set_volume(volume: int):
+    try:
+        subprocess.run(['amixer', 'sset', 'Master', f'{volume}%'], check=True)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to set volume: {str(e)}")
+        raise
+
+
 class VolumeControlTool:
     """
     This class represents a tool for controlling the speaker volume. It provides methods to adjust the volume
@@ -81,7 +100,7 @@ class VolumeControlTool:
         value = parameters.get("value", self.step)
 
         try:
-            current_volume = self.get_current_volume()
+            current_volume = get_current_volume()
 
             if action == "increase":
                 new_volume = min(current_volume + value, self.max_volume)
@@ -92,27 +111,11 @@ class VolumeControlTool:
             else:
                 return f"Invalid action: {action}. Use 'increase', 'decrease', or 'set'. Current volume: {current_volume}%"
 
-            self.set_volume(new_volume)
+            set_volume(new_volume)
             return f"Volume adjusted to {new_volume}%"
         except Exception as e:
             logger.error(f"An error occurred while adjusting volume: {str(e)}")
             return f"Failed to adjust volume: {str(e)}"
-
-    def get_current_volume(self) -> int:
-        try:
-            result = subprocess.run(['amixer', 'sget', 'Master'], capture_output=True, text=True)
-            volume = int(result.stdout.split('[')[1].split('%')[0])
-            return volume
-        except Exception as e:
-            logger.error(f"Failed to get current volume: {str(e)}")
-            return 50  # Return a default value if unable to get the current volume
-
-    def set_volume(self, volume: int):
-        try:
-            subprocess.run(['amixer', 'sset', 'Master', f'{volume}%'], check=True)
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to set volume: {str(e)}")
-            raise
 
 # Example usage:
 # config = Config()
