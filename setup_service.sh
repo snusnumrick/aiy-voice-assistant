@@ -18,19 +18,21 @@ cat << EOF > "${SERVICE_NAME}.service"
 [Unit]
 Description=${SERVICE_DESCRIPTION}
 After=network-online.target sound.target
-Wants=network-online.target
+Wants=network-online.target sound.target
+Required=network-online.target sound.target
 
 [Service]
-Type=forking
-Environment="XDG_RUNTIME_DIR=/run/user/1000"
-Environment="TMUX="
-ExecStart=/bin/bash -c '/usr/bin/tmux new-session -d -s ${SERVICE_NAME} "bash -c \"exec ${RUN_SCRIPT}\""'
-ExecStop=/usr/bin/tmux kill-session -t ${SERVICE_NAME}
+Type=simple
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="HOME=/home/anton"
+ExecStartPre=/bin/sleep 10
+ExecStart=/bin/bash -c "${RUN_SCRIPT}"
 WorkingDirectory=${WORKING_DIR}
 User=${USER}
 Group=${GROUP}
 StandardOutput=append:${LOG_FILE}
 StandardError=append:${ERROR_LOG}
+
 
 [Install]
 WantedBy=multi-user.target

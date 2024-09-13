@@ -13,7 +13,7 @@ source ./venv/bin/activate
 git pull
 
 # set audio volume
-amixer sset 'Master' 40%
+amixer sset 'Master' 40% || amixer sset 'Speaker' 55% || echo "Failed to set volume"
 
 # Run the Python script
 python main.py
