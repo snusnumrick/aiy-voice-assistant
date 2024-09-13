@@ -37,6 +37,7 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 - **Streaming Responses**: Provides more natural conversation flow with real-time responses.
 - **Russian Stress Marking**: Ability to add stress marks to Russian words, enhancing pronunciation guidance and language learning.
 - **Code Interpretation**: Can execute Python code, allowing for complex computations and data analysis, with results conveyed verbally.
+- **Volume Control**: Ability to adjust speaker volume through voice commands, enhancing user comfort and accessibility.
 
 ## Hardware Requirements
 
@@ -202,6 +203,14 @@ Once the assistant is running, here's how to interact with it:
    - You can have a continuous conversation by repeating steps 3-5.
    - The assistant will maintain context throughout the conversation.
 
+7. **Volume Control:**
+   - You can ask the assistant to adjust the volume using natural language commands.
+   - For example:
+     - To increase volume: "Говори погромче" (Speak louder)
+     - To decrease volume: "Сделай потише" (Make it quieter)
+     - To set a specific volume: "Установи громкость на 50 процентов" (Set the volume to 50 percent)
+   - The assistant will confirm the volume change after adjusting it.
+
 Remember, the assistant is primarily configured to interact in Russian. It will adapt its conversation style and content based on the user's age and interests as indicated in the initial introduction.
 
 While the assistant is designed to be safe and educational for children, it can also engage in more complex discussions with adult users. However, for young children, parental supervision is recommended to ensure a safe and productive experience.
@@ -222,6 +231,7 @@ Additional Features:
 - Switch between AI models (Claude, OpenAI, Gemini) in the `config.json` file.
 - Adjust the system prompt and other configuration options in `config.json`.
 - Customize TTS voices and languages in the configuration.
+- Adjust volume control settings (min/max volume, step size) in the `config.json` file
 
 ## Project Structure
 
@@ -242,6 +252,7 @@ Additional Features:
   - `stt_engine.py`: Speech-to-text engines
   - `stress_tool.py`: Tool for adding stress marks to Russian words
   - `code_interpreter_tool.py`: Tool for executing Python code and returning results
+  - `volume_control_tool.py`: Tool for adjusting speaker volume
 
 ## Troubleshooting
 
