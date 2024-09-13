@@ -1,5 +1,9 @@
 #!/bin/bash
 
+echo "--- Audio Controls ---"
+amixer scontrols
+echo "--- End Audio Controls ---"
+
 # get path to script (project root)
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
