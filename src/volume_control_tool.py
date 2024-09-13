@@ -77,7 +77,20 @@ class VolumeControlTool:
     def tool_definition(self) -> Tool:
         return Tool(
             name="control_speaker_volume",
-            description="Control the speaker volume. Returns the new volume level after adjustment.",
+            description="""
+Control the speaker volume based on user requests. Use this tool when the user asks to change the volume,
+even if they don't explicitly mention 'volume'. Common requests include:
+- Increase volume: "говори погромче" (speak louder), "сделай громче" (make it louder)
+- Decrease volume: "говори потише" (speak softer), "сделай тише" (make it quieter)
+- Set specific volume: "установи громкость на 50 процентов" (set volume to 50 percent)
+
+For non-specific requests:
+- Use 'increase' or 'decrease' with the default step size.
+- For specific volume requests, use the 'set' action with the requested percentage.
+
+Always use this tool when the user's request implies a volume change.
+Returns the new volume level after adjustment.
+            """,
             iterative=True,
             parameters=[
                 ToolParameter(
