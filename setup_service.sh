@@ -24,7 +24,7 @@ Required=network-online.target sound.target
 [Service]
 Type=simple
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-Environment="HOME=/home/anton"
+Environment="HOME=/home/${USER}"
 ExecStartPre=/bin/sleep 10
 ExecStart=/bin/bash -c "${RUN_SCRIPT}"
 WorkingDirectory=${WORKING_DIR}
@@ -33,13 +33,32 @@ Group=${GROUP}
 StandardOutput=append:${LOG_FILE}
 StandardError=append:${ERROR_LOG}
 
-
 [Install]
 WantedBy=multi-user.target
 EOF
 
 # Move the service file to the correct location
 sudo mv "${SERVICE_NAME}.service" /etc/systemd/system/
+
+# Create logrotate configuration
+cat << EOF > "${SERVICE_NAME}-logrotate"
+${LOG_FILE}
+${ERROR_LOG} {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 ${USER} ${GROUP}
+}
+EOF
+
+# Move the logrotate configuration to the correct location
+sudo mv "${SERVICE_NAME}-logrotate" /etc/logrotate.d/${SERVICE_NAME}
+
+# Set correct permissions for the logrotate configuration
+sudo chmod 644 /etc/logrotate.d/${SERVICE_NAME}
 
 # Reload systemd to recognize the new service
 sudo systemctl daemon-reload
@@ -51,4 +70,5 @@ sudo systemctl enable "${SERVICE_NAME}.service"
 sudo systemctl start "${SERVICE_NAME}.service"
 
 echo "Service ${SERVICE_NAME} has been created, enabled, and started."
+echo "Logrotate configuration for ${SERVICE_NAME} has been set up."
 echo "You can check its status with: sudo systemctl status ${SERVICE_NAME}.service"

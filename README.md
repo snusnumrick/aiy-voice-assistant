@@ -126,6 +126,20 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
      ```bash
      sudo systemctl status aiy.service
      ```
+     
+8. Log Rotation:
+   The setup script automatically configures log rotation for the service logs. This helps manage log file sizes and prevents them from growing indefinitely. The logrotate configuration:
+   - Rotates logs daily
+   - Keeps 7 rotated logs
+   - Compresses old logs
+   - Creates new log files with the correct permissions and ownership
+
+   You can find the logrotate configuration in `/etc/logrotate.d/aiy`.
+
+   To manually rotate logs, you can run:
+    ```bash
+    sudo logrotate /etc/logrotate.d/aiy
+    ```
 
 ## Usage
 
@@ -236,6 +250,7 @@ Additional Features:
 - Check console output for error messages
 - For API rate limit issues, consider implementing backoff strategies
 - For email configuration issues, verify SMTP settings in `config.json`
+- Log files are automatically rotated to prevent disk space issues. You can find recent logs in the project directory and older, compressed logs with date suffixes.
 
 
 ## Performance Considerations
