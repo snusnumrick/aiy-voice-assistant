@@ -130,7 +130,7 @@ class ConversationManager:
         self.ai_model = ai_model
         self.summarize_model = ClaudeAIModel(config)
         self.facts = self.load_facts()
-        self.rules = self.load_rules()
+        self.rules: List[str] = self.load_rules()
         self.location = get_location()
         self.timezone = timezone
         self.current_language_code = "ru"
@@ -450,7 +450,7 @@ class ConversationManager:
             json.dump(facts, f, ensure_ascii=False, indent=4)
 
     @staticmethod
-    def load_rules():
+    def load_rules() -> List[str]:
         try:
             with open('rules.json', 'r') as f:
                 result = json.load(f)

@@ -108,6 +108,12 @@ async def optimize_rules(hard_rules: str, soft_rules: List[str], config: Config)
 
     logger.debug(f"optimize_rules responces: {responses}")
     new_rules = extract_json(responses)
+    if isinstance(new_rules, dict) and "rules" in new_rules:
+        logger.warning(f"new rules are in dict format: {new_rules}")
+        new_rules = new_rules["rules"]
+    if not isinstance(new_rules, list):
+        logger.error(f"new rules are in wrong format: {new_rules}")
+        new_rules = soft_rules
     return new_rules
 
 
