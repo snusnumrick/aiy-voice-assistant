@@ -697,7 +697,7 @@ def main():
     for model in [GeminiAIModeWithTools(config, tools=[search_tool.tool_definition()]),
                   ClaudeAIModelWithTools(config, tools=[search_tool.tool_definition()]),
                   OpenAIModelWithTools(config, tools=[search_tool.tool_definition()])]:
-        message = "Today is August 6, 2024. who got olympics gold today?"
+        message = "what is the cheapest flight from san jose to frankfurt with layovers no longer than 3 hours?"
         print(message)
         messages = [{"role": "user", "content": message}]
         print(model.get_response(messages))
@@ -769,5 +769,6 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     load_dotenv()
-    asyncio.run(main_async())
-    # main()
+    # asyncio.run(main_async())
+    main()
+

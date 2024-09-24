@@ -367,7 +367,7 @@ class PerplexityModel(OpenAIModel):
         Args:
             config (Config): The application configuration object.
         """
-        model = config.get('perplexity_model', 'llama-3-sonar-large-32k-online')
+        model = config.get('perplexity_model', 'llama-3.1-sonar-small-128k-online')
         base_url = "https://api.perplexity.ai"
         api_key = os.getenv("PERPLEXITY_API_KEY")
         super().__init__(config, base_url=base_url, api_key=api_key, model_id=model)

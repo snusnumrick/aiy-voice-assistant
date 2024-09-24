@@ -280,9 +280,14 @@ class WebSearcher:
 async def loop():
     config = Config()
     web_searcher = WebSearcher(config)
+    ai_model = OpenRouterModel(config, use_simple_model=True)
     while True:
         query = input(">")
         result = await web_searcher.search_async(query)
+
+        prompt = (f"Answer short. Based on result from internet search below, what is the answer to the question: "
+                  f"{query}\n\n{result}")
+        result = ai_model.get_response([{"role": "user", "content": prompt}])
         print(result)
 
 
