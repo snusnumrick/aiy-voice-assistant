@@ -48,40 +48,107 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 
 ## Software Requirements
 
-- Python 3.7+
-- Various Python libraries (see `requirements.txt` for a complete list)
+- Raspberry Pi OS
+- Python 3.9 (managed via pyenv)
+- Poetry for dependency management
+- Rust compiler
+- ZSH shell with Oh My Zsh
 - API keys for: OpenAI, Google, **Yandex**, **Anthropic**, **ElevenLabs**, **Tavily**, OpenRouter, **Perplexity** 
 (in **bold** are keys for default configuration)
+- Additional system packages and development tools (detailed in setup instructions)
+
+For a complete list of Python dependencies, refer to the pyproject.toml file in the project repository. Poetry will handle the installation of these dependencies during the setup process.
 
 ## Setup
 
-1. Set up the Google Voice Kit V2:
-   - Follow the official setup guide at https://aiyprojects.withgoogle.com/voice/
-   - Ensure your Raspberry Pi and Voice Kit hardware are properly configured
+Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
 
-2. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/voice-assistant.git
-   cd voice-assistant
-   ```
+1. **Set up the Google Voice Kit V2:**
+   - Follow the official guide at https://aiyprojects.withgoogle.com/voice/
 
-3. Set up a virtual environment:
+2. **Enable easy SSH access:**
    ```
-   python3 -m venv venv
-   source venv/bin/activate  
+   ssh-copy-id <your-raspberry-pi-ip>
    ```
 
-4. Install required Python packages:
-   ```
-   pip install -r requirements.txt
+3. **Increase VM size:**
+   ```bash
+   sudo dphys-swapfile swapoff
+   sudo nano /etc/dphys-swapfile
+   # Find CONF_SWAPSIZE=100 and increase (e.g., to 1024 for 1GB)
+   sudo dphys-swapfile setup
+   sudo dphys-swapfile swapon
+   sudo reboot
+   free -h  # Verify new swap size
    ```
 
-5. Configure the assistant:
-   Customize `config.json` file in the project root directory. 
-   Refer to the provided json in the repository for the structure and available options.
-   
-   Note:
-   * listed are dafault values.
+4. **Update the system:**
+   ```bash
+   sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys B53DC80D13EDEF05
+   sudo apt update
+   sudo apt upgrade
+   ```
+
+5. **Install and configure ZSH:**
+   ```bash
+   sudo apt install zsh
+   chsh -s $(which zsh)
+   # Logout and login again
+   sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+   ```
+
+6. **Set up remote editing:**
+   ```bash
+   sudo apt install ruby
+   sudo gem install rmate
+   ```
+
+7. **Install Poetry:**
+   ```bash
+   sudo apt install pipx
+   pipx install poetry
+   echo 'export PATH=/home/anton/.local/bin:$PATH' >> ~/.zshrc
+   mkdir $ZSH_CUSTOM/plugins/poetry
+   poetry completions zsh > $ZSH_CUSTOM/plugins/poetry/_poetry
+   # Add 'poetry' to your plugins array in ~/.zshrc
+
+8. **Install Python 3.9 using pyenv:**
+   ```bash
+   curl https://pyenv.run | bash
+   echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.zshrc
+   echo '[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.zshrc
+   echo 'eval "$(pyenv init -)"' >> ~/.zshrc
+   poetry config virtualenvs.prefer-active-python true
+   # Logout and login again
+   sudo apt update
+   sudo apt install build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev curl git libclang-dev libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev
+   pyenv install 3.9
+   # Logout and login again
+   ```
+
+9. **Install Rust:**
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > rust.sh
+   bash rust.sh -y
+   ```
+
+10. **Clone the repository and set up the project:**
+    ```bash
+    git clone https://github.com/snusnumrick/aiy-voice-assistant.git
+    cd aiy-voice-assistant
+    pyenv local 3.9
+    sudo apt install cmake cython
+    poetry install
+    pip install google-cloud-speech google-cloud-texttospeech
+    ```
+
+11. **Configure the assistant:**
+    Customize `config.json` file in the project root directory. 
+    Refer to the provided json in the repository for the structure and available options.
+
+Note:
+
+    * listed are default values.
 
    Adjust the following fields in the `config.json`:
    - `assistant_email_address`: The email address the assistant will use to send emails
@@ -90,8 +157,8 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
    - `smtp_port`: SMTP port number (usually 587 for TLS or 465 for SSL)
    - `assistant_email_username`: Username for the assistant's email account
 
-6. Set up environment variables:
-   Create a `.env` file in the project root and 
+12. **Set up environment variables:**
+    Create a `.env` file in the project root and 
    add the following (replace with your actual API keys and sensitive information):
    ```
     OPENAI_API_KEY=your_openai_api_key
@@ -108,11 +175,13 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
    ```
 
    Notes
-      * Make sure to keep your `.env` file secure and never commit it to version control.
-      * Depending on configuration, some of these API keys may be unnecessary.
 
-7. Set up the systemd service:
-   * Ensure you're in the project directory
+    * Make sure to keep your `.env` file secure and never commit it to version control.
+    * Depending on configuration, some of these API keys may be unnecessary.
+
+
+13. **Set up the systemd service:**
+    * Ensure you're in the project directory
    * Run the setup script:
     ```bash
     sudo ./setup_service.sh
@@ -127,9 +196,9 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
      ```bash
      sudo systemctl status aiy.service
      ```
-     
-8. Log Rotation:
-   The setup script automatically configures log rotation for the service logs. This helps manage log file sizes and prevents them from growing indefinitely. The logrotate configuration:
+
+14. **Verify log rotation:**
+     The setup script automatically configures log rotation for the service logs. This helps manage log file sizes and prevents them from growing indefinitely. The logrotate configuration:
    - Rotates logs daily
    - Keeps 7 rotated logs
    - Compresses old logs
@@ -142,6 +211,7 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
     sudo logrotate /etc/logrotate.d/aiy
     ```
 
+After completing these steps, your AI Voice Assistant should be set up and ready to use on your Raspberry Pi.
 ## Usage
 
 To start the assistant manually (if not using the systemd service):
