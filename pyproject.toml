@@ -28,6 +28,9 @@ geocoder = "^1.38.1"
 pytz = "^2024.2"
 python-dotenv = "^1.0.1"
 pytoml = "^0.1.21"
+duckduckgo-search = "3.8.5"
+google-cloud = "^0.34.0"
+grpcio = "1.67.0"
 
 
 [build-system]
