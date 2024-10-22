@@ -23,7 +23,7 @@ Required=network-online.target sound.target
 
 [Service]
 Type=simple
-Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PATH=/home/${USER}/.pyenv/shims:/home/${USER}/.pyenv/bin:/home/${USER}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="HOME=/home/${USER}"
 ExecStartPre=/bin/sleep 10
 ExecStart=/bin/bash -c "${RUN_SCRIPT}"
