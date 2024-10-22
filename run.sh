@@ -10,6 +10,19 @@ SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 # Navigate to the project directory
 cd "${SCRIPT_DIR}"
 
+# wait for the network
+max_attempts=12
+attempt=1
+while ! ping -c 1 github.com >/dev/null 2>&1; do
+    if [ $attempt -ge $max_attempts ]; then
+        echo "Network not available after $max_attempts attempts, exiting"
+        exit 1
+    fi
+    echo "Waiting for network... attempt $attempt"
+    sleep 5
+    attempt=$((attempt + 1))
+done
+
 # Pull the latest changes from the repository
 git pull
 
