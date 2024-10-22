@@ -318,6 +318,10 @@ class ResponsePlayer:
                 combine_audio_files([w[0] for w in self.wav_list], output_filename)
                 self.playlist.put((light, output_filename))
 
+            # notify about new item
+            with self.condition:
+                self.condition.notify()
+
             logger.debug(f"Processed and added merged audio to playlist: {self.wav_list_light}, {self.wav_list}")
             self.wav_list = []
 
