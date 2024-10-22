@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# make poetry available to Root
-sudo cp ~/.local/bin/poetry /usr/bin
-
 # Define variables
 SERVICE_NAME="aiy"
 SERVICE_DESCRIPTION="AIY Voice Assistant Service"
