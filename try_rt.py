@@ -122,6 +122,79 @@ class RealtimeAssistant:
         self.board.button.when_pressed = self._handle_button_press
         self.board.button.when_released = self._handle_button_release
 
+    def _open_wav_files(self):
+        """Open WAV files for writing"""
+        # Original audio WAV file
+        self.original_wav_file = wave.open(self.original_wav_filename, 'wb')
+        self.original_wav_file.setnchannels(RECORD_FORMAT.num_channels)
+        self.original_wav_file.setsampwidth(RECORD_FORMAT.bytes_per_sample)
+        self.original_wav_file.setframerate(RECORD_FORMAT.sample_rate_hz)
+
+        # Resampled audio WAV file
+        self.resampled_wav_file = wave.open(self.resampled_wav_filename, 'wb')
+        self.resampled_wav_file.setnchannels(1)
+        self.resampled_wav_file.setsampwidth(2)
+        self.resampled_wav_file.setframerate(OPENAI_SAMPLE_RATE)
+
+        logger.info(
+            f"Opened WAV files: {self.original_wav_filename}, {self.resampled_wav_filename}, and response will be saved to {self.response_wav_filename}")
+
+    def _close_wav_files(self):
+        """Close WAV files if open"""
+        if self.original_wav_file:
+            self.original_wav_file.close()
+            self.original_wav_file = None
+        if self.resampled_wav_file:
+            self.resampled_wav_file.close()
+            self.resampled_wav_file = None
+        logger.info("Closed WAV files")
+
+    async def handle_server_events(self):
+        """Handle events from the OpenAI Realtime API"""
+        # Start audio processing task
+        audio_task = asyncio.create_task(self.process_audio_chunks())
+
+        try:
+            logger.info("Waiting for events...")
+            async for message in self.websocket:
+                event = json.loads(message)
+                logger.info(f"Received event: {json.dumps(event, indent=2)}")
+
+                if event["type"] == "error":
+                    logger.error(f"Error event: {event.get('error')}")
+                    continue
+
+                elif event["type"] == "response.audio.delta":
+                    try:
+                        # Convert hex string to bytes
+                        audio_data = bytes.fromhex(event["delta"])
+
+                        # Save to response WAV file
+                        append_to_wav(self.response_wav_filename, audio_data)
+
+                        # Play audio
+                        self.player.play(AUDIO_FORMAT)(audio_data)
+
+                        # Log audio chunk info
+                        self.response_chunk_count += 1
+                        chunk_size = len(audio_data)
+                        chunk_duration = chunk_size / (AUDIO_FORMAT.sample_rate_hz * AUDIO_FORMAT.bytes_per_sample)
+                        logger.debug(
+                            f"Response audio chunk {self.response_chunk_count}: {chunk_size} bytes ({chunk_duration:.3f}s)")
+
+                    except Exception as e:
+                        logger.error(f"Error handling audio response: {e}")
+
+                elif event["type"] == "response.text.delta":
+                    # Print text as it comes in
+                    logger.info(f"Response text: {event.get('delta')}")
+
+        except Exception as e:
+            logger.error(f"Event handling error: {e}")
+        finally:
+            await audio_task
+            logger.info(f"Event handling completed. Total response chunks: {self.response_chunk_count}")
+
     async def send_audio_message(self, audio_chunks):
         """Send audio as a conversation item message"""
         if not audio_chunks:
@@ -174,6 +247,148 @@ class RealtimeAssistant:
 
         except Exception as e:
             logger.error(f"Error sending audio message: {e}")
+
+    async def process_audio_chunks(self):
+        """Process audio chunks from the queue and send to websocket"""
+        chunks_buffer = []
+        buffer_duration = 0
+        last_send_time = time.time()
+        logger.info("Audio processing started...")
+
+        while True:
+            try:
+                # Non-blocking get from queue
+                chunk = self.audio_queue.get_nowait()
+
+                if chunk is None:  # Sentinel value for stopping
+                    logger.info("Audio processing stopped")
+                    # Send any remaining buffered audio
+                    if chunks_buffer:
+                        await self.send_audio_message(chunks_buffer)
+                    break
+
+                # Write original chunk to WAV file
+                if self.original_wav_file:
+                    self.original_wav_file.writeframes(chunk)
+
+                # Calculate chunk duration in seconds
+                chunk_duration = len(chunk) / (RECORD_FORMAT.bytes_per_sample * RECORD_FORMAT.sample_rate_hz)
+                buffer_duration += chunk_duration
+                chunks_buffer.append(chunk)
+                logger.debug(f"buffer: {buffer_duration:.3f}s ({len(chunk)} bytes)")
+
+                # If we've accumulated enough audio and have a websocket connection
+                current_time = time.time()
+                if buffer_duration >= MIN_AUDIO_BUFFER and (current_time - last_send_time) >= 0.1:
+                    if self.websocket:
+                        # Send accumulated audio as a message
+                        await self.send_audio_message(chunks_buffer)
+                        last_send_time = current_time
+                        logger.info(f"Sent {buffer_duration:.3f}s of audio")
+
+                    # Clear the buffer after sending
+                    chunks_buffer = []
+                    buffer_duration = 0
+
+                self.audio_queue.task_done()
+
+            except queue.Empty:
+                # If queue is empty, wait a bit before checking again
+                await asyncio.sleep(0.01)
+            except Exception as e:
+                logger.error(f"Error processing audio chunk: {e}")
+                await asyncio.sleep(0.01)
+
+    def record_audio(self):
+        """Record audio in a separate thread"""
+        logger.info("Recording started...")
+        self.led.update(Leds.rgb_on(Color.RED))
+
+        # Open new WAV files for recording
+        self._open_wav_files()
+
+        try:
+            # Initialize timing variables
+            chunk_count = 0
+            start_time = time.time()
+
+            for chunk in self.recorder.record(
+                    RECORD_FORMAT,
+                    chunk_duration_sec=CHUNK_DURATION_SECS,
+                    on_start=lambda: None,
+                    on_stop=lambda: None
+            ):
+                if not self.recording:
+                    break
+
+                # Put the chunk in the thread-safe queue
+                self.audio_queue.put(chunk)
+                chunk_count += 1
+
+                # Log throughput every second for debugging
+                if chunk_count % 10 == 0:  # Every second (10 * 0.1s chunks)
+                    elapsed = time.time() - start_time
+                    logger.info(f"Audio throughput: {chunk_count / elapsed:.2f} chunks/sec")
+
+        except Exception as e:
+            logger.error(f"Recording error: {e}")
+        finally:
+            # Signal the audio processing to stop
+            self.audio_queue.put(None)
+            self._close_wav_files()
+            self.led.update(Leds.rgb_off())
+            logger.info("Recording stopped")
+
+    def start_recording(self):
+        """Start recording audio"""
+        if not self.recording:
+            self.recording = True
+            # Start the recording thread
+            self.recording_thread = threading.Thread(target=self.record_audio)
+            self.recording_thread.start()
+
+    def stop_recording(self):
+        """Stop recording audio"""
+        if self.recording:
+            self.recording = False
+            if self.recording_thread:
+                self.recording_thread.join()
+                self.recording_thread = None
+
+    async def handle_server_events(self):
+        """Handle events from the OpenAI Realtime API"""
+        # Start audio processing task
+        audio_task = asyncio.create_task(self.process_audio_chunks())
+
+        try:
+            logger.info("Waiting for events...")
+            async for message in self.websocket:
+                event = json.loads(message)
+                logger.info(f"Received event: {json.dumps(event, indent=2)}")
+
+                if event["type"] == "error":
+                    logger.error(f"Error event: {event.get('error')}")
+                    continue
+
+                elif event["type"] == "response.audio.delta":
+                    # Play audio chunk
+                    audio_data = bytes.fromhex(event["delta"])
+                    self.player.play(AUDIO_FORMAT)(audio_data)
+
+                elif event["type"] == "response.text.delta":
+                    # Print text as it comes in
+                    logger.info(f"Response text: {event.get('delta')}")
+
+        except Exception as e:
+            logger.error(f"Event handling error: {e}")
+        finally:
+            await audio_task
+            logger.info("Event handling completed")
+
+    async def run(self):
+        """Main run loop"""
+        await self.connect_websocket()
+        await self.handle_server_events()
 
     async def cleanup(self):
         """Cleanup resources"""
