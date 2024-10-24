@@ -1,4 +1,9 @@
-#!/usr/bin/env python3
+me
+Assistant
+with Fixed WebSocket
+
+```python
+# !/usr/bin/env python3
 """
 Sample app demonstrating OpenAI Realtime API with AIY audio interface.
 """
@@ -13,11 +18,10 @@ import queue
 import time
 import wave
 import base64
-import websockets
-import numpy as np
-from dotenv import load_dotenv
-import soundfile as sf
 import io
+import websockets
+from pydub import AudioSegment
+from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(
@@ -35,30 +39,63 @@ from aiy.voice.audio import AudioFormat, BytesPlayer, Recorder
 from aiy.leds import Leds, Color
 
 # Audio configuration
-# Original recording format
 RECORD_FORMAT = AudioFormat(sample_rate_hz=24000, num_channels=1, bytes_per_sample=2)
-# Required OpenAI format
 OPENAI_SAMPLE_RATE = 16000
 CHUNK_DURATION_SECS = 0.1  # 100ms chunks
 MIN_AUDIO_BUFFER = 0.2  # 200ms minimum buffer size
 
 
 def resample_audio(audio_data, src_rate=24000, target_rate=16000):
-    """Resample audio data to target sample rate"""
-    # Convert bytes to numpy array
-    audio_array = np.frombuffer(audio_data, dtype=np.int16)
+    """Resample audio data using pydub"""
+    try:
+        # Create WAV in memory
+        wav_io = io.BytesIO()
+        with wave.open(wav_io, 'wb') as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(src_rate)
+            wav.writeframes(audio_data)
+        wav_io.seek(0)
 
-    # Calculate resampling ratio
-    ratio = target_rate / src_rate
+        # Load with pydub
+        audio = AudioSegment.from_wav(wav_io)
 
-    # Calculate new length
-    new_length = int(len(audio_array) * ratio)
+        # Resample
+        resampled_audio = audio.set_frame_rate(target_rate)
 
-    # Use numpy to resample
-    resampled = np.array(list(audio_array[int(i / ratio)] for i in range(new_length)))
+        # Export to bytes
+        output_io = io.BytesIO()
+        resampled_audio.export(output_io, format='wav')
 
-    # Convert back to bytes
-    return resampled.astype(np.int16).tobytes()
+        # Extract raw PCM from WAV
+        with wave.open(output_io, 'rb') as wav:
+            return wav.readframes(wav.getnframes())
+
+    except Exception as e:
+        logger.error(f"Error resampling audio: {e}")
+        return None
+
+
+def append_to_wav(wav_file, audio_data, sample_rate=16000, channels=1, sample_width=2):
+    """Helper function to append audio data to an existing WAV file"""
+    try:
+        # Convert hex to bytes if needed
+        if isinstance(audio_data, str):
+            audio_data = bytes.fromhex(audio_data)
+
+        # Create WAV file if it doesn't exist
+        if not os.path.exists(wav_file):
+            with wave.open(wav_file, 'wb') as wf:
+                wf.setnchannels(channels)
+                wf.setsampwidth(sample_width)
+                wf.setframerate(sample_rate)
+                wf.writeframes(audio_data)
+        else:
+            # Append to existing file
+            with wave.open(wav_file, 'ab') as wf:
+                wf.writeframes(audio_data)
+    except Exception as e:
+        logger.error(f"Error appending to WAV file: {e}")
 
 
 class RealtimeAssistant:
@@ -90,79 +127,6 @@ class RealtimeAssistant:
         self.board.button.when_pressed = self._handle_button_press
         self.board.button.when_released = self._handle_button_release
 
-    def _open_wav_files(self):
-        """Open WAV files for writing"""
-        # Original audio WAV file
-        self.original_wav_file = wave.open(self.original_wav_filename, 'wb')
-        self.original_wav_file.setnchannels(RECORD_FORMAT.num_channels)
-        self.original_wav_file.setsampwidth(RECORD_FORMAT.bytes_per_sample)
-        self.original_wav_file.setframerate(RECORD_FORMAT.sample_rate_hz)
-
-        # Resampled audio WAV file
-        self.resampled_wav_file = wave.open(self.resampled_wav_filename, 'wb')
-        self.resampled_wav_file.setnchannels(1)
-        self.resampled_wav_file.setsampwidth(2)
-        self.resampled_wav_file.setframerate(OPENAI_SAMPLE_RATE)
-
-        logger.info(
-            f"Opened WAV files: {self.original_wav_filename}, {self.resampled_wav_filename}, and response will be saved to {self.response_wav_filename}")
-
-    def _close_wav_files(self):
-        """Close WAV files if open"""
-        if self.original_wav_file:
-            self.original_wav_file.close()
-            self.original_wav_file = None
-        if self.resampled_wav_file:
-            self.resampled_wav_file.close()
-            self.resampled_wav_file = None
-        logger.info("Closed WAV files")
-
-    async def handle_server_events(self):
-        """Handle events from the OpenAI Realtime API"""
-        # Start audio processing task
-        audio_task = asyncio.create_task(self.process_audio_chunks())
-
-        try:
-            logger.info("Waiting for events...")
-            async for message in self.websocket:
-                event = json.loads(message)
-                logger.info(f"Received event: {json.dumps(event, indent=2)}")
-
-                if event["type"] == "error":
-                    logger.error(f"Error event: {event.get('error')}")
-                    continue
-
-                elif event["type"] == "response.audio.delta":
-                    try:
-                        # Convert hex string to bytes
-                        audio_data = bytes.fromhex(event["delta"])
-
-                        # Save to response WAV file
-                        append_to_wav(self.response_wav_filename, audio_data)
-
-                        # Play audio
-                        self.player.play(AUDIO_FORMAT)(audio_data)
-
-                        # Log audio chunk info
-                        self.response_chunk_count += 1
-                        chunk_size = len(audio_data)
-                        chunk_duration = chunk_size / (AUDIO_FORMAT.sample_rate_hz * AUDIO_FORMAT.bytes_per_sample)
-                        logger.debug(
-                            f"Response audio chunk {self.response_chunk_count}: {chunk_size} bytes ({chunk_duration:.3f}s)")
-
-                    except Exception as e:
-                        logger.error(f"Error handling audio response: {e}")
-
-                elif event["type"] == "response.text.delta":
-                    # Print text as it comes in
-                    logger.info(f"Response text: {event.get('delta')}")
-
-        except Exception as e:
-            logger.error(f"Event handling error: {e}")
-        finally:
-            await audio_task
-            logger.info(f"Event handling completed. Total response chunks: {self.response_chunk_count}")
-
     async def send_audio_message(self, audio_chunks):
         """Send audio as a conversation item message"""
         if not audio_chunks:
@@ -172,12 +136,20 @@ class RealtimeAssistant:
             # Combine chunks
             combined_audio = b''.join(audio_chunks)
 
-            # Resample to 16kHz
+            # Write original audio to file
+            if self.original_wav_file:
+                self.original_wav_file.writeframes(combined_audio)
+
+            # Resample to 16kHz using pydub
             resampled_audio = resample_audio(combined_audio,
                                              src_rate=RECORD_FORMAT.sample_rate_hz,
                                              target_rate=OPENAI_SAMPLE_RATE)
 
-            # Write to debug WAV file
+            if resampled_audio is None:
+                logger.error("Failed to resample audio")
+                return
+
+            # Write resampled audio to file
             if self.resampled_wav_file:
                 self.resampled_wav_file.writeframes(resampled_audio)
 
@@ -207,8 +179,6 @@ class RealtimeAssistant:
 
         except Exception as e:
             logger.error(f"Error sending audio message: {e}")
-
-    # ... [rest of the class implementation remains the same] ...
 
     async def cleanup(self):
         """Cleanup resources"""
