@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
@@ -38,7 +38,6 @@ class RealtimeAssistant:
         self.player = BytesPlayer()
         self.recorder = Recorder()
         self.recording = False
-        self.ws = None
         self.recording_thread = None
         self.led = Leds()
         self.websocket = None
@@ -56,14 +55,11 @@ class RealtimeAssistant:
             logger.info("Connected to OpenAI Realtime API")
 
             # Send initial configuration
-            logger.info("Sending initial configuration...")
             await self.websocket.send(json.dumps({
-                "type": "response.create",
-                "response": {
+                "type": "session.update",
+                "session": {
                     "modalities": ["text", "audio"],
-                    "instructions": "Please assist the user.",
                     "voice": "alloy",
-                    "input_audio_format": "pcm16",
                     "output_audio_format": "pcm16",
                     "turn_detection": {
                         "type": "server_vad",
@@ -81,10 +77,9 @@ class RealtimeAssistant:
         """Send audio chunk to websocket"""
         if self.websocket:
             try:
-                logger.info("sending audio chunk")
                 await self.websocket.send(json.dumps({
-                    "type": "audio.chunk",
-                    "chunk": chunk.hex()  # Convert bytes to hex string
+                    "type": "input_audio_buffer.append",
+                    "audio": chunk.hex()  # Convert bytes to hex string
                 }))
             except Exception as e:
                 logger.error(f"Failed to send audio: {e}")
@@ -125,26 +120,28 @@ class RealtimeAssistant:
             if self.recording_thread:
                 self.recording_thread.join()
                 self.recording_thread = None
+                # Send commit after stopping recording
+                asyncio.run(self.websocket.send(json.dumps({
+                    "type": "input_audio_buffer.commit"
+                })))
 
     async def handle_server_events(self):
         """Handle events from the OpenAI Realtime API"""
         try:
-            while True:
-                logger.info("Waiting for events...")
-                message = await self.websocket.recv()
+            async for message in self.websocket:
                 event = json.loads(message)
                 logger.info(f"Received event: {json.dumps(event, indent=2)}")
 
-                if event.get("type") == "error":
+                if event["type"] == "error":
                     logger.error(f"Error event: {event.get('error')}")
                     continue
 
-                if event.get("type") == "audio.delta":
+                elif event["type"] == "response.audio.delta":
                     # Play audio chunk
                     audio_data = bytes.fromhex(event["delta"])  # Convert hex string back to bytes
                     self.player.play(AUDIO_FORMAT)(audio_data)
 
-                elif event.get("type") == "text.delta":
+                elif event["type"] == "response.text.delta":
                     # Print text as it comes in
                     logger.info(f"Response text: {event.get('delta')}")
 
