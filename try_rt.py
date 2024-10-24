@@ -213,6 +213,7 @@ class RealtimeAssistant:
         audio_task = asyncio.create_task(self.process_audio_chunks())
 
         try:
+            logger.info("Waiting for events...")
             async for message in self.websocket:
                 event = json.loads(message)
                 logger.info(f"Received event: {json.dumps(event, indent=2)}")
@@ -234,6 +235,7 @@ class RealtimeAssistant:
             logger.error(f"Event handling error: {e}")
         finally:
             await audio_task
+            logger.info("Event handling completed")
 
     async def run(self):
         """Main run loop"""
