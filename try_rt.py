@@ -29,7 +29,7 @@ from aiy.leds import Leds, Color
 
 # Audio configuration
 AUDIO_FORMAT = AudioFormat(sample_rate_hz=16000, num_channels=1, bytes_per_sample=2)
-CHUNK_DURATION_SECS = 0.1
+CHUNK_DURATION_SECS = 0.1  # 100ms chunks
 
 
 class RealtimeAssistant:
@@ -41,6 +41,8 @@ class RealtimeAssistant:
         self.recording_thread = None
         self.led = Leds()
         self.websocket = None
+        self.audio_queue = asyncio.Queue()
+        self.audio_processing_task = None
 
         # Set up button handlers
         self.board.button.when_pressed = self._handle_button_press
@@ -85,16 +87,32 @@ class RealtimeAssistant:
             logger.error(f"Failed to connect: {e}")
             sys.exit(1)
 
-    async def send_audio(self, chunk):
-        """Send audio chunk to websocket"""
-        if self.websocket:
-            try:
-                await self.websocket.send(json.dumps({
-                    "type": "input_audio_buffer.append",
-                    "audio": chunk.hex()  # Convert bytes to hex string
-                }))
-            except Exception as e:
-                logger.error(f"Failed to send audio: {e}")
+    async def process_audio_queue(self):
+        """Process audio chunks from the queue and send to websocket"""
+        buffer_size = 0
+        try:
+            while True:
+                chunk = await self.audio_queue.get()
+                if chunk is None:  # Sentinel value to indicate stopping
+                    if buffer_size > 0:  # Only commit if we have audio
+                        await self.websocket.send(json.dumps({
+                            "type": "input_audio_buffer.commit"
+                        }))
+                    break
+
+                # Send the chunk
+                if self.websocket:
+                    await self.websocket.send(json.dumps({
+                        "type": "input_audio_buffer.append",
+                        "audio": chunk.hex()
+                    }))
+                    buffer_size += len(chunk)
+
+                # Let the server handle VAD
+                self.audio_queue.task_done()
+
+        except Exception as e:
+            logger.error(f"Audio processing error: {e}")
 
     def record_audio(self):
         """Record audio in a separate thread"""
@@ -110,11 +128,13 @@ class RealtimeAssistant:
             ):
                 if not self.recording:
                     break
-                if self.websocket:
-                    asyncio.run(self.send_audio(chunk))
+                # Put the chunk in the queue for async processing
+                asyncio.run(self.audio_queue.put(chunk))
         except Exception as e:
             logger.error(f"Recording error: {e}")
         finally:
+            # Signal the audio processing to stop
+            asyncio.run(self.audio_queue.put(None))
             self.led.update(Leds.rgb_off())
             logger.info("Recording stopped")
 
@@ -122,6 +142,10 @@ class RealtimeAssistant:
         """Start recording audio"""
         if not self.recording:
             self.recording = True
+            # Start the audio processing task if not running
+            if not self.audio_processing_task or self.audio_processing_task.done():
+                self.audio_processing_task = asyncio.create_task(self.process_audio_queue())
+            # Start the recording thread
             self.recording_thread = threading.Thread(target=self.record_audio)
             self.recording_thread.start()
 
@@ -132,11 +156,6 @@ class RealtimeAssistant:
             if self.recording_thread:
                 self.recording_thread.join()
                 self.recording_thread = None
-                # Send commit after stopping recording
-                if self.websocket:
-                    asyncio.run(self.websocket.send(json.dumps({
-                        "type": "input_audio_buffer.commit"
-                    })))
 
     async def handle_server_events(self):
         """Handle events from the OpenAI Realtime API"""
@@ -151,7 +170,7 @@ class RealtimeAssistant:
 
                 elif event["type"] == "response.audio.delta":
                     # Play audio chunk
-                    audio_data = bytes.fromhex(event["delta"])  # Convert hex string back to bytes
+                    audio_data = bytes.fromhex(event["delta"])
                     self.player.play(AUDIO_FORMAT)(audio_data)
 
                 elif event["type"] == "response.text.delta":
@@ -164,13 +183,16 @@ class RealtimeAssistant:
     async def run(self):
         """Main run loop"""
         await self.connect_websocket()
-
-        # Just wait for events since button handlers are already set up
         await self.handle_server_events()
 
     async def cleanup(self):
         """Cleanup resources"""
         self.stop_recording()
+        if self.audio_processing_task:
+            try:
+                await self.audio_processing_task
+            except Exception as e:
+                logger.error(f"Error cleaning up audio processing: {e}")
         if self.websocket:
             await self.websocket.close()
         self.board.close()
