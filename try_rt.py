@@ -4,12 +4,21 @@ Sample app demonstrating OpenAI Realtime API with AIY audio interface.
 """
 import asyncio
 import json
+import logging
 import os
 import signal
 import sys
 import threading
 import wave
 from typing import Optional
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 from aiy.board import Board, MultiColorLed
 from aiy.voice.audio import AudioFormat, BytesPlayer, Recorder
@@ -49,14 +58,14 @@ class RealtimeAssistant:
                     "silence_duration_ms": 500
                 }
             )
-            print("Connected to OpenAI Realtime API")
+            logger.info("Connected to OpenAI Realtime API")
         except Exception as e:
-            print(f"Failed to connect: {e}")
+            logger.error(f"Failed to connect: {e}")
             sys.exit(1)
 
     def record_audio(self):
         """Record audio in a separate thread"""
-        print("Recording started...")
+        logger.info("Recording started...")
         self.led.update(Leds.rgb_on(Color.RED))
 
         try:
@@ -71,10 +80,10 @@ class RealtimeAssistant:
                 if self.ws:
                     asyncio.run(self.ws.send_audio(chunk))
         except Exception as e:
-            print(f"Recording error: {e}")
+            logger.error(f"Recording error: {e}")
         finally:
             self.led.update(Leds.rgb_off())
-            print("Recording stopped")
+            logger.info("Recording stopped")
 
     def start_recording(self):
         """Start recording audio"""
@@ -96,7 +105,7 @@ class RealtimeAssistant:
         try:
             async for event in self.ws:
                 if event.type == "error":
-                    print(f"Error: {event.error}")
+                    logger.error(f"Error: {event.error}")
                     continue
 
                 if event.type == "response.audio.delta":
@@ -106,10 +115,10 @@ class RealtimeAssistant:
 
                 elif event.type == "response.text.delta":
                     # Print text as it comes in
-                    print(event.delta, end="", flush=True)
+                    logger.info(f"Response text: {event.delta}")
 
         except Exception as e:
-            print(f"Event handling error: {e}")
+            logger.error(f"Event handling error: {e}")
 
     async def run(self):
         """Main run loop"""
@@ -144,7 +153,7 @@ def main():
     assistant = RealtimeAssistant()
 
     def signal_handler(sig, frame):
-        print("\nShutting down...")
+        logger.info("Shutting down...")
         assistant.cleanup()
         sys.exit(0)
 
@@ -153,7 +162,7 @@ def main():
     try:
         asyncio.run(assistant.run())
     except Exception as e:
-        print(f"Error in main loop: {e}")
+        logger.error(f"Error in main loop: {e}")
     finally:
         assistant.cleanup()
 
