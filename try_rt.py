@@ -157,6 +157,37 @@ class RealtimeAssistant:
         """Callback for button release event"""
         self.stop_recording()
 
+    async def connect_websocket(self):
+        """Connect to OpenAI Realtime API websocket"""
+        url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
+        headers = {
+            "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
+            "OpenAI-Beta": "realtime=v1"
+        }
+
+        try:
+            self.websocket = await websockets.connect(url, extra_headers=headers)
+            logger.info("Connected to OpenAI Realtime API")
+
+            # Send initial configuration
+            await self.websocket.send(json.dumps({
+                "type": "session.update",
+                "session": {
+                    "modalities": ["text", "audio"],
+                    "voice": "alloy",
+                    "output_audio_format": "pcm16",
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "threshold": 0.5,
+                        "prefix_padding_ms": 300,
+                        "silence_duration_ms": 500
+                    }
+                }
+            }))
+        except Exception as e:
+            logger.error(f"Failed to connect: {e}")
+            sys.exit(1)
+
     async def handle_server_events(self):
         """Handle events from the OpenAI Realtime API"""
         # Start audio processing task
