@@ -133,6 +133,7 @@ class RealtimeAssistant:
                 logger.info("Waiting for events...")
                 message = await self.websocket.recv()
                 event = json.loads(message)
+                logger.info(f"Received event: {json.dumps(event, ident=2)}")
 
                 if event.get("type") == "error":
                     logger.error(f"Error event: {event.get('error')}")
