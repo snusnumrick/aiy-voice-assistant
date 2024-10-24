@@ -97,6 +97,7 @@ class RealtimeAssistant:
         chunks_buffer = []
         buffer_duration = 0
         last_send_time = time.time()
+        logger.info("Audio processing started...")
 
         while True:
             try:
@@ -104,6 +105,7 @@ class RealtimeAssistant:
                 chunk = self.audio_queue.get_nowait()
 
                 if chunk is None:  # Sentinel value for stopping
+                    logger.info("Audio processing stopped")
                     # If we have accumulated audio, send it
                     if chunks_buffer and self.websocket:
                         # Send remaining chunks
@@ -123,6 +125,7 @@ class RealtimeAssistant:
                 chunk_duration = len(chunk) / (AUDIO_FORMAT.bytes_per_sample * AUDIO_FORMAT.sample_rate_hz)
                 buffer_duration += chunk_duration
                 chunks_buffer.append(chunk)
+                logger.info(f"buffer: {buffer_duration}")
 
                 # If we've accumulated enough audio and have a websocket connection
                 current_time = time.time()
@@ -130,13 +133,14 @@ class RealtimeAssistant:
                     if self.websocket:
                         # Send all buffered chunks
                         for buffered_chunk in chunks_buffer:
+                            logger.info("send chunk:")
                             await self.websocket.send(json.dumps({
                                 "type": "input_audio_buffer.append",
                                 "audio": buffered_chunk.hex()
                             }))
                         last_send_time = current_time
                         # Keep track of sent audio for debugging
-                        logger.debug(f"Sent {buffer_duration:.3f}s of audio")
+                        logger.info(f"Sent {buffer_duration:.3f}s of audio")
 
                     # Clear the buffer after sending
                     chunks_buffer = []
@@ -177,7 +181,7 @@ class RealtimeAssistant:
                 # Log throughput every second for debugging
                 if chunk_count % 10 == 0:  # Every second (10 * 0.1s chunks)
                     elapsed = time.time() - start_time
-                    logger.debug(f"Audio throughput: {chunk_count / elapsed:.2f} chunks/sec")
+                    logger.info(f"Audio throughput: {chunk_count / elapsed:.2f} chunks/sec")
 
         except Exception as e:
             logger.error(f"Recording error: {e}")
