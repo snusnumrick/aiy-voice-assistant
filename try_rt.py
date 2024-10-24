@@ -11,6 +11,8 @@ import sys
 import threading
 import queue
 import time
+import wave
+import base64
 import websockets
 from dotenv import load_dotenv
 
@@ -49,9 +51,28 @@ class RealtimeAssistant:
         self.audio_queue = queue.Queue()
         self.buffer_time = 0  # Track accumulated audio time
 
+        # Create WAV file for debug recording
+        self.wav_file = None
+        self.wav_filename = f"debug_recording_{int(time.time())}.wav"
+
         # Set up button handlers
         self.board.button.when_pressed = self._handle_button_press
         self.board.button.when_released = self._handle_button_release
+
+    def _open_wav_file(self):
+        """Open WAV file for writing"""
+        self.wav_file = wave.open(self.wav_filename, 'wb')
+        self.wav_file.setnchannels(AUDIO_FORMAT.num_channels)
+        self.wav_file.setsampwidth(AUDIO_FORMAT.bytes_per_sample)
+        self.wav_file.setframerate(AUDIO_FORMAT.sample_rate_hz)
+        logger.info(f"Opened WAV file: {self.wav_filename}")
+
+    def _close_wav_file(self):
+        """Close WAV file if open"""
+        if self.wav_file:
+            self.wav_file.close()
+            self.wav_file = None
+            logger.info("Closed WAV file")
 
     def _handle_button_press(self):
         """Callback for button press event"""
@@ -110,17 +131,22 @@ class RealtimeAssistant:
                     if chunks_buffer and self.websocket:
                         # Send remaining chunks
                         for buffered_chunk in chunks_buffer:
+                            encoded_chunk = base64.b64encode(buffered_chunk).decode('utf-8')
                             await self.websocket.send(json.dumps({
                                 "type": "input_audio_buffer.append",
-                                "audio": buffered_chunk.hex()
+                                "audio": encoded_chunk
                             }))
                     break
+
+                # Write chunk to WAV file if open
+                if self.wav_file:
+                    self.wav_file.writeframes(chunk)
 
                 # Calculate chunk duration in seconds
                 chunk_duration = len(chunk) / (AUDIO_FORMAT.bytes_per_sample * AUDIO_FORMAT.sample_rate_hz)
                 buffer_duration += chunk_duration
                 chunks_buffer.append(chunk)
-                logger.info(f"buffer: {buffer_duration}")
+                logger.info(f"buffer: {buffer_duration:.3f}s ({len(chunk)} bytes)")
 
                 # If we've accumulated enough audio and have a websocket connection
                 current_time = time.time()
@@ -128,10 +154,12 @@ class RealtimeAssistant:
                     if self.websocket:
                         # Send all buffered chunks
                         for buffered_chunk in chunks_buffer:
-                            logger.info("send chunk:")
+                            # Base64 encode the chunk
+                            encoded_chunk = base64.b64encode(buffered_chunk).decode('utf-8')
+                            logger.info(f"sending chunk: {len(buffered_chunk)} bytes")
                             await self.websocket.send(json.dumps({
                                 "type": "input_audio_buffer.append",
-                                "audio": buffered_chunk.hex()
+                                "audio": encoded_chunk
                             }))
                         last_send_time = current_time
                         # Keep track of sent audio for debugging
@@ -154,6 +182,9 @@ class RealtimeAssistant:
         """Record audio in a separate thread"""
         logger.info("Recording started...")
         self.led.update(Leds.rgb_on(Color.RED))
+
+        # Open new WAV file for recording
+        self._open_wav_file()
 
         try:
             # Initialize timing variables
@@ -183,6 +214,7 @@ class RealtimeAssistant:
         finally:
             # Signal the audio processing to stop
             self.audio_queue.put(None)
+            self._close_wav_file()
             self.led.update(Leds.rgb_off())
             logger.info("Recording stopped")
 
@@ -240,6 +272,7 @@ class RealtimeAssistant:
     async def cleanup(self):
         """Cleanup resources"""
         self.stop_recording()
+        self._close_wav_file()
         if self.websocket:
             await self.websocket.close()
         self.board.close()
