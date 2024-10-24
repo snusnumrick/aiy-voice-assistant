@@ -114,7 +114,7 @@ class RealtimeAssistant:
                                 "type": "input_audio_buffer.append",
                                 "audio": buffered_chunk.hex()
                             }))
-                     break
+                    break
 
                 # Calculate chunk duration in seconds
                 chunk_duration = len(chunk) / (AUDIO_FORMAT.bytes_per_sample * AUDIO_FORMAT.sample_rate_hz)
