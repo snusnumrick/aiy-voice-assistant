@@ -11,8 +11,9 @@ import threading
 import wave
 from typing import Optional
 
-from aiy.board import Board, Led
+from aiy.board import Board, MultiColorLed
 from aiy.voice.audio import AudioFormat, BytesPlayer, Recorder
+from aiy.leds import Leds, Color
 import openai
 
 # Configure OpenAI client
@@ -31,7 +32,7 @@ class RealtimeAssistant:
         self.recording = False
         self.ws = None
         self.recording_thread = None
-        self.led = Led.rgb(red=True, green=True, blue=True)
+        self.led = Leds()
 
     async def connect_websocket(self):
         """Connect to OpenAI Realtime API websocket"""
@@ -56,7 +57,7 @@ class RealtimeAssistant:
     def record_audio(self):
         """Record audio in a separate thread"""
         print("Recording started...")
-        self.led.update(red=True)
+        self.led.update(Leds.rgb_on(Color.RED))
 
         try:
             for chunk in self.recorder.record(
@@ -72,7 +73,7 @@ class RealtimeAssistant:
         except Exception as e:
             print(f"Recording error: {e}")
         finally:
-            self.led.update(red=False)
+            self.led.update(Leds.rgb_off())
             print("Recording stopped")
 
     def start_recording(self):
@@ -134,8 +135,9 @@ class RealtimeAssistant:
         if self.ws:
             asyncio.run(self.ws.close())
         self.board.close()
-        self.player.close()
-        self.recorder.close()
+        self.player.join()
+        self.recorder.join()
+        self.led.reset()
 
 
 def main():
