@@ -30,7 +30,7 @@ from aiy.voice.audio import AudioFormat, BytesPlayer, Recorder
 from aiy.leds import Leds, Color
 
 # Audio configuration
-AUDIO_FORMAT = AudioFormat(sample_rate_hz=16000, num_channels=1, bytes_per_sample=2)
+AUDIO_FORMAT = AudioFormat(sample_rate_hz=24000, num_channels=1, bytes_per_sample=2)
 CHUNK_DURATION_SECS = 0.1  # 100ms chunks
 MIN_AUDIO_BUFFER = 0.2  # 200ms minimum buffer size
 
