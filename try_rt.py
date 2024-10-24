@@ -9,6 +9,7 @@ import os
 import signal
 import sys
 import threading
+import queue
 import websockets
 from dotenv import load_dotenv
 
@@ -41,8 +42,9 @@ class RealtimeAssistant:
         self.recording_thread = None
         self.led = Leds()
         self.websocket = None
-        self.audio_queue = asyncio.Queue()
-        self.audio_processing_task = None
+
+        # Use a thread-safe Queue instead of asyncio.Queue
+        self.audio_queue = queue.Queue()
 
         # Set up button handlers
         self.board.button.when_pressed = self._handle_button_press
@@ -87,32 +89,32 @@ class RealtimeAssistant:
             logger.error(f"Failed to connect: {e}")
             sys.exit(1)
 
-    async def process_audio_queue(self):
+    async def process_audio_chunks(self):
         """Process audio chunks from the queue and send to websocket"""
-        buffer_size = 0
-        try:
-            while True:
-                chunk = await self.audio_queue.get()
-                if chunk is None:  # Sentinel value to indicate stopping
-                    if buffer_size > 0:  # Only commit if we have audio
+        while True:
+            try:
+                # Use get_nowait() to avoid blocking the async loop
+                chunk = self.audio_queue.get_nowait()
+                if chunk is None:  # Sentinel value for stopping
+                    # Only commit if we have a websocket connection
+                    if self.websocket:
                         await self.websocket.send(json.dumps({
                             "type": "input_audio_buffer.commit"
                         }))
                     break
 
-                # Send the chunk
                 if self.websocket:
                     await self.websocket.send(json.dumps({
                         "type": "input_audio_buffer.append",
                         "audio": chunk.hex()
                     }))
-                    buffer_size += len(chunk)
-
-                # Let the server handle VAD
                 self.audio_queue.task_done()
-
-        except Exception as e:
-            logger.error(f"Audio processing error: {e}")
+            except queue.Empty:
+                # If queue is empty, wait a bit before checking again
+                await asyncio.sleep(0.01)
+            except Exception as e:
+                logger.error(f"Error processing audio chunk: {e}")
+                await asyncio.sleep(0.01)
 
     def record_audio(self):
         """Record audio in a separate thread"""
@@ -128,13 +130,13 @@ class RealtimeAssistant:
             ):
                 if not self.recording:
                     break
-                # Put the chunk in the queue for async processing
-                asyncio.run(self.audio_queue.put(chunk))
+                # Put the chunk in the thread-safe queue
+                self.audio_queue.put(chunk)
         except Exception as e:
             logger.error(f"Recording error: {e}")
         finally:
             # Signal the audio processing to stop
-            asyncio.run(self.audio_queue.put(None))
+            self.audio_queue.put(None)
             self.led.update(Leds.rgb_off())
             logger.info("Recording stopped")
 
@@ -142,9 +144,6 @@ class RealtimeAssistant:
         """Start recording audio"""
         if not self.recording:
             self.recording = True
-            # Start the audio processing task if not running
-            if not self.audio_processing_task or self.audio_processing_task.done():
-                self.audio_processing_task = asyncio.create_task(self.process_audio_queue())
             # Start the recording thread
             self.recording_thread = threading.Thread(target=self.record_audio)
             self.recording_thread.start()
@@ -159,6 +158,9 @@ class RealtimeAssistant:
 
     async def handle_server_events(self):
         """Handle events from the OpenAI Realtime API"""
+        # Start audio processing task
+        audio_task = asyncio.create_task(self.process_audio_chunks())
+
         try:
             async for message in self.websocket:
                 event = json.loads(message)
@@ -179,6 +181,8 @@ class RealtimeAssistant:
 
         except Exception as e:
             logger.error(f"Event handling error: {e}")
+        finally:
+            await audio_task
 
     async def run(self):
         """Main run loop"""
@@ -188,11 +192,6 @@ class RealtimeAssistant:
     async def cleanup(self):
         """Cleanup resources"""
         self.stop_recording()
-        if self.audio_processing_task:
-            try:
-                await self.audio_processing_task
-            except Exception as e:
-                logger.error(f"Error cleaning up audio processing: {e}")
         if self.websocket:
             await self.websocket.close()
         self.board.close()
