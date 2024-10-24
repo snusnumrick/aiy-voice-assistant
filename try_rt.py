@@ -149,6 +149,14 @@ class RealtimeAssistant:
             self.resampled_wav_file = None
         logger.info("Closed WAV files")
 
+    def _handle_button_press(self):
+        """Callback for button press event"""
+        self.start_recording()
+
+    def _handle_button_release(self):
+        """Callback for button release event"""
+        self.stop_recording()
+
     async def handle_server_events(self):
         """Handle events from the OpenAI Realtime API"""
         # Start audio processing task
