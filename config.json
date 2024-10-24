@@ -1,3 +1,4 @@
 {
-  "llm_streaming": true
+  "llm_streaming": true,
+  "claude_model": "claude-3-5-sonnet-latest"
 }
