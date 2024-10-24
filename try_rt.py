@@ -10,6 +10,7 @@ import signal
 import sys
 import threading
 import queue
+import time
 import websockets
 from dotenv import load_dotenv
 
@@ -31,6 +32,7 @@ from aiy.leds import Leds, Color
 # Audio configuration
 AUDIO_FORMAT = AudioFormat(sample_rate_hz=16000, num_channels=1, bytes_per_sample=2)
 CHUNK_DURATION_SECS = 0.1  # 100ms chunks
+MIN_AUDIO_BUFFER = 0.2  # 200ms minimum buffer size
 
 
 class RealtimeAssistant:
@@ -43,8 +45,9 @@ class RealtimeAssistant:
         self.led = Leds()
         self.websocket = None
 
-        # Use a thread-safe Queue instead of asyncio.Queue
+        # Use a thread-safe Queue for audio chunks
         self.audio_queue = queue.Queue()
+        self.buffer_time = 0  # Track accumulated audio time
 
         # Set up button handlers
         self.board.button.when_pressed = self._handle_button_press
@@ -91,24 +94,56 @@ class RealtimeAssistant:
 
     async def process_audio_chunks(self):
         """Process audio chunks from the queue and send to websocket"""
+        chunks_buffer = []
+        buffer_duration = 0
+        last_send_time = time.time()
+
         while True:
             try:
-                # Use get_nowait() to avoid blocking the async loop
+                # Non-blocking get from queue
                 chunk = self.audio_queue.get_nowait()
+
                 if chunk is None:  # Sentinel value for stopping
-                    # Only commit if we have a websocket connection
-                    if self.websocket:
-                        await self.websocket.send(json.dumps({
-                            "type": "input_audio_buffer.commit"
-                        }))
+                    # If we have accumulated audio, send it
+                    if chunks_buffer and self.websocket:
+                        # Send remaining chunks
+                        for buffered_chunk in chunks_buffer:
+                            await self.websocket.send(json.dumps({
+                                "type": "input_audio_buffer.append",
+                                "audio": buffered_chunk.hex()
+                            }))
+                        # Only commit if we have enough audio
+                        if buffer_duration >= MIN_AUDIO_BUFFER:
+                            await self.websocket.send(json.dumps({
+                                "type": "input_audio_buffer.commit"
+                            }))
                     break
 
-                if self.websocket:
-                    await self.websocket.send(json.dumps({
-                        "type": "input_audio_buffer.append",
-                        "audio": chunk.hex()
-                    }))
+                # Calculate chunk duration in seconds
+                chunk_duration = len(chunk) / (AUDIO_FORMAT.bytes_per_sample * AUDIO_FORMAT.sample_rate_hz)
+                buffer_duration += chunk_duration
+                chunks_buffer.append(chunk)
+
+                # If we've accumulated enough audio and have a websocket connection
+                current_time = time.time()
+                if buffer_duration >= MIN_AUDIO_BUFFER and (current_time - last_send_time) >= 0.1:
+                    if self.websocket:
+                        # Send all buffered chunks
+                        for buffered_chunk in chunks_buffer:
+                            await self.websocket.send(json.dumps({
+                                "type": "input_audio_buffer.append",
+                                "audio": buffered_chunk.hex()
+                            }))
+                        last_send_time = current_time
+                        # Keep track of sent audio for debugging
+                        logger.debug(f"Sent {buffer_duration:.3f}s of audio")
+
+                    # Clear the buffer after sending
+                    chunks_buffer = []
+                    buffer_duration = 0
+
                 self.audio_queue.task_done()
+
             except queue.Empty:
                 # If queue is empty, wait a bit before checking again
                 await asyncio.sleep(0.01)
@@ -122,6 +157,10 @@ class RealtimeAssistant:
         self.led.update(Leds.rgb_on(Color.RED))
 
         try:
+            # Initialize timing variables
+            chunk_count = 0
+            start_time = time.time()
+
             for chunk in self.recorder.record(
                     AUDIO_FORMAT,
                     chunk_duration_sec=CHUNK_DURATION_SECS,
@@ -130,8 +169,16 @@ class RealtimeAssistant:
             ):
                 if not self.recording:
                     break
+
                 # Put the chunk in the thread-safe queue
                 self.audio_queue.put(chunk)
+                chunk_count += 1
+
+                # Log throughput every second for debugging
+                if chunk_count % 10 == 0:  # Every second (10 * 0.1s chunks)
+                    elapsed = time.time() - start_time
+                    logger.debug(f"Audio throughput: {chunk_count / elapsed:.2f} chunks/sec")
+
         except Exception as e:
             logger.error(f"Recording error: {e}")
         finally:
