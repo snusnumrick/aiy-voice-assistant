@@ -114,12 +114,7 @@ class RealtimeAssistant:
                                 "type": "input_audio_buffer.append",
                                 "audio": buffered_chunk.hex()
                             }))
-                        # Only commit if we have enough audio
-                        if buffer_duration >= MIN_AUDIO_BUFFER:
-                            await self.websocket.send(json.dumps({
-                                "type": "input_audio_buffer.commit"
-                            }))
-                    break
+                     break
 
                 # Calculate chunk duration in seconds
                 chunk_duration = len(chunk) / (AUDIO_FORMAT.bytes_per_sample * AUDIO_FORMAT.sample_rate_hz)
