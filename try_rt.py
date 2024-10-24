@@ -1,8 +1,3 @@
-me
-Assistant
-with Fixed WebSocket
-
-```python
 # !/usr/bin/env python3
 """
 Sample app demonstrating OpenAI Realtime API with AIY audio interface.
