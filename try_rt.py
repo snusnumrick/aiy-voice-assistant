@@ -42,6 +42,18 @@ class RealtimeAssistant:
         self.led = Leds()
         self.websocket = None
 
+        # Set up button handlers
+        self.board.button.when_pressed = self._handle_button_press
+        self.board.button.when_released = self._handle_button_release
+
+    def _handle_button_press(self):
+        """Callback for button press event"""
+        self.start_recording()
+
+    def _handle_button_release(self):
+        """Callback for button release event"""
+        self.stop_recording()
+
     async def connect_websocket(self):
         """Connect to OpenAI Realtime API websocket"""
         url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
@@ -121,9 +133,10 @@ class RealtimeAssistant:
                 self.recording_thread.join()
                 self.recording_thread = None
                 # Send commit after stopping recording
-                asyncio.run(self.websocket.send(json.dumps({
-                    "type": "input_audio_buffer.commit"
-                })))
+                if self.websocket:
+                    asyncio.run(self.websocket.send(json.dumps({
+                        "type": "input_audio_buffer.commit"
+                    })))
 
     async def handle_server_events(self):
         """Handle events from the OpenAI Realtime API"""
@@ -152,16 +165,7 @@ class RealtimeAssistant:
         """Main run loop"""
         await self.connect_websocket()
 
-        def handle_button(button):
-            if button.pressed:
-                self.start_recording()
-            else:
-                self.stop_recording()
-
-        self.board.button.when_pressed = lambda: handle_button(self.board.button)
-        self.board.button.when_released = lambda: handle_button(self.board.button)
-
-        # Start event handling
+        # Just wait for events since button handlers are already set up
         await self.handle_server_events()
 
     async def cleanup(self):
