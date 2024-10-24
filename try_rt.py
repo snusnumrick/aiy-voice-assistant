@@ -113,6 +113,34 @@ class RealtimeAssistant:
             logger.error(f"Failed to connect: {e}")
             sys.exit(1)
 
+    async def send_audio_message(self, audio_chunks):
+        """Send audio as a conversation item message"""
+        if not audio_chunks:
+            return
+
+        # Combine all chunks
+        combined_audio = b''.join(audio_chunks)
+
+        # Encode to base64
+        encoded_audio = base64.b64encode(combined_audio).decode()
+
+        # Create message event
+        event = {
+            "type": "conversation.item.create",
+            "item": {
+                "type": "message",
+                "role": "user",
+                "content": [{
+                    "type": "input_audio",
+                    "audio": encoded_audio
+                }]
+            }
+        }
+
+        # Send the message
+        logger.info(f"Sending audio message: {len(combined_audio)} bytes")
+        await self.websocket.send(json.dumps(event))
+
     async def process_audio_chunks(self):
         """Process audio chunks from the queue and send to websocket"""
         chunks_buffer = []
@@ -127,15 +155,9 @@ class RealtimeAssistant:
 
                 if chunk is None:  # Sentinel value for stopping
                     logger.info("Audio processing stopped")
-                    # If we have accumulated audio, send it
-                    if chunks_buffer and self.websocket:
-                        # Send remaining chunks
-                        for buffered_chunk in chunks_buffer:
-                            encoded_chunk = base64.b64encode(buffered_chunk).decode('utf-8')
-                            await self.websocket.send(json.dumps({
-                                "type": "input_audio_buffer.append",
-                                "audio": encoded_chunk
-                            }))
+                    # Send any remaining buffered audio
+                    if chunks_buffer:
+                        await self.send_audio_message(chunks_buffer)
                     break
 
                 # Write chunk to WAV file if open
@@ -146,23 +168,15 @@ class RealtimeAssistant:
                 chunk_duration = len(chunk) / (AUDIO_FORMAT.bytes_per_sample * AUDIO_FORMAT.sample_rate_hz)
                 buffer_duration += chunk_duration
                 chunks_buffer.append(chunk)
-                logger.info(f"buffer: {buffer_duration:.3f}s ({len(chunk)} bytes)")
+                logger.debug(f"buffer: {buffer_duration:.3f}s ({len(chunk)} bytes)")
 
                 # If we've accumulated enough audio and have a websocket connection
                 current_time = time.time()
                 if buffer_duration >= MIN_AUDIO_BUFFER and (current_time - last_send_time) >= 0.1:
                     if self.websocket:
-                        # Send all buffered chunks
-                        for buffered_chunk in chunks_buffer:
-                            # Base64 encode the chunk
-                            encoded_chunk = base64.b64encode(buffered_chunk).decode('utf-8')
-                            logger.info(f"sending chunk: {len(buffered_chunk)} bytes")
-                            await self.websocket.send(json.dumps({
-                                "type": "input_audio_buffer.append",
-                                "audio": encoded_chunk
-                            }))
+                        # Send accumulated audio as a message
+                        await self.send_audio_message(chunks_buffer)
                         last_send_time = current_time
-                        # Keep track of sent audio for debugging
                         logger.info(f"Sent {buffer_duration:.3f}s of audio")
 
                     # Clear the buffer after sending
