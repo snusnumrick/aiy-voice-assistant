@@ -56,6 +56,7 @@ class RealtimeAssistant:
             logger.info("Connected to OpenAI Realtime API")
 
             # Send initial configuration
+            logger.info("Sending initial configuration...")
             await self.websocket.send(json.dumps({
                 "type": "response.create",
                 "response": {
@@ -80,6 +81,7 @@ class RealtimeAssistant:
         """Send audio chunk to websocket"""
         if self.websocket:
             try:
+                logger.info("sending audio chunk")
                 await self.websocket.send(json.dumps({
                     "type": "audio.chunk",
                     "chunk": chunk.hex()  # Convert bytes to hex string
@@ -128,11 +130,12 @@ class RealtimeAssistant:
         """Handle events from the OpenAI Realtime API"""
         try:
             while True:
+                logger.info("Waiting for events...")
                 message = await self.websocket.recv()
                 event = json.loads(message)
 
                 if event.get("type") == "error":
-                    logger.error(f"Error: {event.get('error')}")
+                    logger.error(f"Error event: {event.get('error')}")
                     continue
 
                 if event.get("type") == "audio.delta":
