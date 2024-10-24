@@ -9,8 +9,7 @@ import os
 import signal
 import sys
 import threading
-import wave
-from typing import Optional
+from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(
@@ -19,6 +18,9 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
 
 from aiy.board import Board, MultiColorLed
 from aiy.voice.audio import AudioFormat, BytesPlayer, Recorder
