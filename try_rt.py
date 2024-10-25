@@ -410,7 +410,7 @@ class RealtimeAssistant:
 
                 elif event["type"] == "response.audio.delta":
                     # Play audio chunk
-                    audio_data = bytes.fromhex(event["delta"])
+                    audio_data = base64.b64decode(event["delta"])
                     self.player.play(AUDIO_FORMAT)(audio_data)
 
                 elif event["type"] == "response.text.delta":
