@@ -176,7 +176,7 @@ class RealtimeAssistant:
                     "output_audio_format": "pcm16",
                     "turn_detection": {
                         "type": "server_vad",
-                        "threshold": 0.9,
+                        "threshold": 0.95,
                         "prefix_padding_ms": 300,
                         "silence_duration_ms": 500
                     }
@@ -374,11 +374,11 @@ class RealtimeAssistant:
                     logger.info(f"{json.dumps(event, indent=2)}")
 
                 elif event["type"] == "input_audio_buffer.speech_started":
-                    logger.info(f"speech_started")
+                    logger.info(f"speech_started at {event['audio_start_ms']}ms")
                     self.led.update(Leds.rgb_on(TRANSCRIBING_COLOR))
 
                 elif event["type"] == "input_audio_buffer.speech_stopped":
-                    logger.info(f"speech_stopped")
+                    logger.info(f"speech_stopped at {event['audio_end_ms']}ms")
                     self.led.pattern = LISTENING_PATTERN
                     self.led.update(Leds.rgb_pattern(LISTENING_COLOR))
 
