@@ -281,7 +281,7 @@ class RealtimeAssistant:
                     "type": "message",
                     "role": "user",
                     "content": [{
-                        "type": "input_audio",
+                        "type": "input_audio_buffer.append",
                         "audio": encoded_audio
                     }]
                 }
