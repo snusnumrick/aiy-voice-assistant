@@ -75,28 +75,6 @@ def resample_audio(audio_data, src_rate=24000, target_rate=16000):
         return None
 
 
-def append_to_wav(wav_file, audio_data, sample_rate=16000, channels=1, sample_width=2):
-    """Helper function to append audio data to an existing WAV file"""
-    try:
-        # Convert hex to bytes if needed
-        if isinstance(audio_data, str):
-            audio_data = bytes.fromhex(audio_data)
-
-        # Create WAV file if it doesn't exist
-        if not os.path.exists(wav_file):
-            with wave.open(wav_file, 'wb') as wf:
-                wf.setnchannels(channels)
-                wf.setsampwidth(sample_width)
-                wf.setframerate(sample_rate)
-                wf.writeframes(audio_data)
-        else:
-            # Append to existing file
-            with wave.open(wav_file, 'ab') as wf:
-                wf.writeframes(audio_data)
-    except Exception as e:
-        logger.error(f"Error appending to WAV file: {e}")
-
-
 class RealtimeAssistant:
     def __init__(self):
         self.board = Board()
@@ -225,8 +203,8 @@ class RealtimeAssistant:
                         audio_data = bytes.fromhex(event["delta"])
 
                         # Save to response WAV file
-                        if self.response_wav_file:
-                            self.response_wav_file.writeframes(audio_data)
+                        # if self.response_wav_file:
+                        #     self.response_wav_file.writeframes(audio_data)
 
                         # Play audio
                         self.player.play(AUDIO_FORMAT)(audio_data)
@@ -276,13 +254,13 @@ class RealtimeAssistant:
                 return
 
             # Write resampled audio to file
-            if self.resampled_wav_file:
-                self.resampled_wav_file.writeframes(resampled_audio)
+            # if self.resampled_wav_file:
+            #     self.resampled_wav_file.writeframes(resampled_audio)
 
             # Calculate duration for logging
             audio_bytes = len(resampled_audio)
             audio_duration = audio_bytes / (OPENAI_SAMPLE_RATE * 2)  # 2 bytes per sample
-            logger.info(f"Sending audio message: {audio_bytes} bytes ({audio_duration:.3f}s)")
+            logger.debug(f"Sending audio message: {audio_bytes} bytes ({audio_duration:.3f}s)")
 
             # Encode to base64
             encoded_audio = base64.b64encode(resampled_audio).decode()
@@ -321,8 +299,8 @@ class RealtimeAssistant:
                     break
 
                 # Write original chunk to WAV file
-                if self.original_wav_file:
-                    self.original_wav_file.writeframes(chunk)
+                # if self.original_wav_file:
+                #     self.original_wav_file.writeframes(chunk)
 
                 # Calculate chunk duration in seconds
                 chunk_duration = len(chunk) / (RECORD_FORMAT.bytes_per_sample * RECORD_FORMAT.sample_rate_hz)
@@ -337,7 +315,7 @@ class RealtimeAssistant:
                         # Send accumulated audio as a message
                         await self.send_audio_message(chunks_buffer)
                         last_send_time = current_time
-                        logger.info(f"Sent {buffer_duration:.3f}s of audio")
+                        logger.debug(f"Sent {buffer_duration:.3f}s of audio")
 
                     # Clear the buffer after sending
                     chunks_buffer = []
@@ -381,7 +359,7 @@ class RealtimeAssistant:
                 # Log throughput every second for debugging
                 if chunk_count % 10 == 0:  # Every second (10 * 0.1s chunks)
                     elapsed = time.time() - start_time
-                    logger.info(f"Audio throughput: {chunk_count / elapsed:.2f} chunks/sec")
+                    logger.debug(f"Audio throughput: {chunk_count / elapsed:.2f} chunks/sec")
 
         except Exception as e:
             logger.error(f"Recording error: {e}")
@@ -422,6 +400,28 @@ class RealtimeAssistant:
                 if event["type"] == "error":
                     logger.error(f"Error event: {event.get('error')}")
                     continue
+
+                elif event["type"] == "session.created":
+                    logger.info(f"{json.dumps(event, indent=2)}")
+
+                elif event["type"] == "session.updated":
+                    logger.info(f"{json.dumps(event, indent=2)}")
+
+                elif event["type"] == "input_audio_buffer.speech_started":
+                    logger.info(f"speech_started")
+
+                elif event["type"] == "input_audio_buffer.speech_stopped":
+                    logger.info(f"speech_stopped")
+
+                elif event["type"] == "response.created":
+                    logger.info(f"response.created")
+
+                elif event["type"] == "input_audio_buffer.committed":
+                    logger.info(f"input_audio_buffer.committed")
+
+                elif event["type"] == "conversation.item.created":
+                    item = event["item"]
+                    logger.info(f"{item['role']}: {item['content']}")
 
                 elif event["type"] == "response.audio.delta":
                     logger.info("received response.audio.delta")
