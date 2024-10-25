@@ -311,8 +311,8 @@ class RealtimeAssistant:
                     break
 
                 # Write original chunk to WAV file
-                if self.original_wav_file:
-                    self.original_wav_file.writeframes(chunk)
+                # if self.original_wav_file:
+                #     self.original_wav_file.writeframes(chunk)
 
                 # Calculate chunk duration in seconds
                 chunk_duration = len(chunk) / (RECORD_FORMAT.bytes_per_sample * RECORD_FORMAT.sample_rate_hz)
