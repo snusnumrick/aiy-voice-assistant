@@ -272,7 +272,9 @@ class RealtimeAssistant:
             logger.info(f"Sending audio message: {audio_bytes} bytes ({audio_duration:.3f}s)")
 
             # Encode to base64
-            encoded_audio = base64.b64encode(resampled_audio)
+            encoded_audio = base64.b64encode(resampled_audio).decode()
+            test = base64.b64decode(encoded_audio)
+            assert resampled_audio == test
 
             # Create message event
             event = {
