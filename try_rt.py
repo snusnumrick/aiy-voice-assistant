@@ -340,7 +340,7 @@ class RealtimeAssistant:
     def record_audio(self):
         """Record audio in a separate thread"""
         logger.info("Recording started...")
-        self.led.pattern(LISTENING_PATTERN)
+        self.led.pattern = LISTENING_PATTERN
         self.led.update(Leds.rgb_pattern(LISTENING_COLOR))
 
         # Open new WAV files for recording
