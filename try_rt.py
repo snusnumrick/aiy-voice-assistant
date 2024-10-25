@@ -40,7 +40,7 @@ OPENAI_SAMPLE_RATE = 24000
 CHUNK_DURATION_SECS = 0.1  # 100ms chunks
 MIN_AUDIO_BUFFER = 0.2  # 200ms minimum buffer size
 LISTENING_COLOR = Color.WHITE
-LISTENING_PATTERN = Pattern.breathe(500)
+LISTENING_PATTERN = Pattern.breathe(5000)
 TRANSCRIBING_COLOR = Color.GREEN
 TRANSCRIBING_PATTERN = None
 
@@ -422,7 +422,7 @@ class RealtimeAssistant:
 
                 elif event["type"] == "input_audio_buffer.speech_stopped":
                     logger.info(f"speech_stopped")
-                    self.led.pattern(LISTENING_PATTERN)
+                    self.led.pattern = LISTENING_PATTERN
                     self.led.update(Leds.rgb_pattern(LISTENING_COLOR))
 
                 elif event["type"] == "response.created":
