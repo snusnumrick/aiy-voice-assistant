@@ -168,20 +168,20 @@ class RealtimeAssistant:
             logger.info("Connected to OpenAI Realtime API")
 
             # Send initial configuration
-            # await self.websocket.send(json.dumps({
-            #     "type": "session.update",
-            #     "session": {
-            #         "modalities": ["text", "audio"],
-            #         "voice": "alloy",
-            #         "output_audio_format": "pcm16",
-            #         "turn_detection": {
-            #             "type": "server_vad",
-            #             "threshold": 0.5,
-            #             "prefix_padding_ms": 300,
-            #             "silence_duration_ms": 500
-            #         }
-            #     }
-            # }))
+            await self.websocket.send(json.dumps({
+                "type": "session.update",
+                "session": {
+                    "modalities": ["text", "audio"],
+                    "voice": "onyx",
+                    "output_audio_format": "pcm16",
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "threshold": 0.9,
+                        "prefix_padding_ms": 300,
+                        "silence_duration_ms": 500
+                    }
+                }
+            }))
         except Exception as e:
             logger.error(f"Failed to connect: {e}")
             sys.exit(1)
@@ -345,64 +345,6 @@ class RealtimeAssistant:
                 self.recording_thread.join()
                 self.recording_thread = None
 
-    # async def handle_server_events(self):
-    #     """Handle events from the OpenAI Realtime API"""
-    #     # Start audio processing task
-    #     audio_task = asyncio.create_task(self.process_audio_chunks())
-    #     response_chunks = b""
-    #     play = self.player.play(AUDIO_FORMAT)
-    #
-    #     try:
-    #         logger.info("Waiting for events...")
-    #         async for message in self.websocket:
-    #             event = json.loads(message)
-    #             logger.info(f"Received event: {json.dumps(event, indent=2)}")
-    #
-    #             if event["type"] == "error":
-    #                 logger.error(f"Error event: {event.get('error')}")
-    #                 continue
-    #
-    #             elif event["type"] == "response.audio_transcript.delta":
-    #                 pass
-    #
-    #             elif event["type"] == "response.content_part.added":
-    #                 pass
-    #
-    #             elif event["type"] == "response.audio.done":
-    #                 # Play audio
-    #                 play(AUDIO_FORMAT)(response_chunks)
-    #                 response_chunks = b""
-    #
-    #             elif event["type"] == "response.audio.delta":
-    #                 try:
-    #                     # Convert hex string to bytes
-    #                     audio_data: bytes = bytes.fromhex(event["delta"])
-    #                     response_chunks = response_chunks + audio_data
-    #
-    #                     # Save to response WAV file
-    #                     # if self.response_wav_file:
-    #                     #     self.response_wav_file.writeframes(audio_data)
-    #
-    #                     # Log audio chunk info
-    #                     self.response_chunk_count += 1
-    #                     chunk_size = len(audio_data)
-    #                     chunk_duration = chunk_size / (AUDIO_FORMAT.sample_rate_hz * AUDIO_FORMAT.bytes_per_sample)
-    #                     logger.debug(
-    #                         f"Response audio chunk {self.response_chunk_count}: {chunk_size} bytes ({chunk_duration:.3f}s)")
-    #
-    #                 except Exception as e:
-    #                     logger.error(f"Error handling audio response: {e}")
-    #
-    #             elif event["type"] == "response.text.delta":
-    #                 # Print text as it comes in
-    #                 logger.info(f"Response text: {event.get('delta')}")
-    #
-    #     except Exception as e:
-    #         logger.error(f"Event handling error: {e}")
-    #     finally:
-    #         await audio_task
-    #         logger.info(f"Event handling completed. Total response chunks: {self.response_chunk_count}")
-
     async def handle_server_events(self):
         """Handle events from the OpenAI Realtime API"""
         # Start audio processing task
@@ -418,6 +360,12 @@ class RealtimeAssistant:
                 if event["type"] == "error":
                     logger.error(f"Error event: {event.get('error')}")
                     continue
+
+                elif event["type"] == "response.audio_transcript.delta":
+                    pass
+
+                elif event["type"] == "response.content_part.added":
+                    pass
 
                 elif event["type"] == "session.created":
                     logger.info(f"{json.dumps(event, indent=2)}")
@@ -448,7 +396,7 @@ class RealtimeAssistant:
                     logger.info(f"{item['role']}: {item['content']}")
 
                 elif event["type"] == "response.audio.delta":
-                    logger.info("received response.audio.delta")
+                    logger.debug("received response.audio.delta")
                     # Play audio chunk
                     audio_data = base64.b64decode(event["delta"])
                     play(audio_data)
