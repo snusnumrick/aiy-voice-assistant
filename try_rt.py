@@ -113,7 +113,7 @@ class RealtimeAssistant:
         self.original_wav_filename = f"original_{timestamp}.wav"
         self.resampled_wav_filename = f"resampled_{timestamp}.wav"
         self.response_wav_filename = f"response_{timestamp}.wav"
-        # self.original_wav_file = None
+        self.original_wav_file = None
         self.resampled_wav_file = None
 
         # Counter for response chunks
@@ -126,10 +126,10 @@ class RealtimeAssistant:
     def _open_wav_files(self):
         """Open WAV files for writing"""
         # Original audio WAV file
-        # self.original_wav_file = wave.open(self.original_wav_filename, 'wb')
-        # self.original_wav_file.setnchannels(RECORD_FORMAT.num_channels)
-        # self.original_wav_file.setsampwidth(RECORD_FORMAT.bytes_per_sample)
-        # self.original_wav_file.setframerate(RECORD_FORMAT.sample_rate_hz)
+        self.original_wav_file = wave.open(self.original_wav_filename, 'wb')
+        self.original_wav_file.setnchannels(RECORD_FORMAT.num_channels)
+        self.original_wav_file.setsampwidth(RECORD_FORMAT.bytes_per_sample)
+        self.original_wav_file.setframerate(RECORD_FORMAT.sample_rate_hz)
 
         # Resampled audio WAV file
         self.resampled_wav_file = wave.open(self.resampled_wav_filename, 'wb')
@@ -137,14 +137,14 @@ class RealtimeAssistant:
         self.resampled_wav_file.setsampwidth(2)
         self.resampled_wav_file.setframerate(OPENAI_SAMPLE_RATE)
 
-        # logger.info(
-        #     f"Opened WAV files: {self.original_wav_filename}, {self.resampled_wav_filename}, and response will be saved to {self.response_wav_filename}")
+        logger.info(
+            f"Opened WAV files: {self.original_wav_filename}, {self.resampled_wav_filename}, and response will be saved to {self.response_wav_filename}")
 
     def _close_wav_files(self):
         """Close WAV files if open"""
-        # if self.original_wav_file:
-        #     self.original_wav_file.close()
-        #     self.original_wav_file = None
+        if self.original_wav_file:
+            self.original_wav_file.close()
+            self.original_wav_file = None
         if self.resampled_wav_file:
             self.resampled_wav_file.close()
             self.resampled_wav_file = None
@@ -248,8 +248,10 @@ class RealtimeAssistant:
             combined_audio = b''.join(audio_chunks)
 
             # Write original audio to file
-            append_to_wav(self.original_wav_filename, combined_audio, sample_rate=RECORD_FORMAT.sample_rate_hz,
-                          channels=RECORD_FORMAT.num_channels, sample_width=RECORD_FORMAT.bytes_per_sample)
+            # if self.original_wav_file:
+            #     for chunk in audio_chunks:
+            #         self.original_wav_file.writeframes(chunk)
+                # self.original_wav_file.writeframes(combined_audio)
 
             # Resample to 16kHz using pydub
             resampled_audio = resample_audio(combined_audio,
@@ -311,8 +313,8 @@ class RealtimeAssistant:
                     break
 
                 # Write original chunk to WAV file
-                # if self.original_wav_file:
-                #     self.original_wav_file.writeframes(chunk)
+                if self.original_wav_file:
+                    self.original_wav_file.writeframes(chunk)
 
                 # Calculate chunk duration in seconds
                 chunk_duration = len(chunk) / (RECORD_FORMAT.bytes_per_sample * RECORD_FORMAT.sample_rate_hz)
@@ -363,9 +365,6 @@ class RealtimeAssistant:
             ):
                 if not self.recording:
                     break
-
-                # append_to_wav(self.original_wav_filename, chunk, sample_rate=RECORD_FORMAT.sample_rate_hz,
-                #               channels=RECORD_FORMAT.num_channels, sample_width=RECORD_FORMAT.bytes_per_sample)
 
                 # Put the chunk in the thread-safe queue
                 self.audio_queue.put(chunk)
