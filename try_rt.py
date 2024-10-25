@@ -172,7 +172,7 @@ class RealtimeAssistant:
                 "type": "session.update",
                 "session": {
                     "modalities": ["text", "audio"],
-                    "voice": "onyx",
+                    "voice": "echo",
                     "output_audio_format": "pcm16",
                     "turn_detection": {
                         "type": "server_vad",
