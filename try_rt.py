@@ -186,7 +186,7 @@ class RealtimeAssistant:
             logger.error(f"Failed to connect: {e}")
             sys.exit(1)
 
-        async def send_audio_message(self, audio_chunks):
+    async def send_audio_message(self, audio_chunks):
         """Send audio as a conversation item message"""
         if not audio_chunks:
             return
