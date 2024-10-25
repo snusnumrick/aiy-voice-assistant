@@ -249,7 +249,9 @@ class RealtimeAssistant:
 
             # Write original audio to file
             if self.original_wav_file:
-                self.original_wav_file.writeframes(combined_audio)
+                for chunk in audio_chunks:
+                    self.original_wav_file.writeframes(chunk)
+                # self.original_wav_file.writeframes(combined_audio)
 
             # Resample to 16kHz using pydub
             resampled_audio = resample_audio(combined_audio,
