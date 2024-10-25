@@ -34,7 +34,7 @@ from aiy.voice.audio import AudioFormat, BytesPlayer, Recorder
 from aiy.leds import Leds, Color
 
 # Audio configuration
-RECORD_FORMAT = AudioFormat(sample_rate_hz=16000, num_channels=1, bytes_per_sample=2)
+RECORD_FORMAT = AudioFormat(sample_rate_hz=24000, num_channels=1, bytes_per_sample=2)
 AUDIO_FORMAT = AudioFormat(sample_rate_hz=24000, num_channels=1, bytes_per_sample=2)
 OPENAI_SAMPLE_RATE = 24000
 CHUNK_DURATION_SECS = 0.1  # 100ms chunks
@@ -42,6 +42,9 @@ MIN_AUDIO_BUFFER = 0.2  # 200ms minimum buffer size
 
 
 def resample_audio(audio_data, src_rate=24000, target_rate=16000):
+    if src_rate == target_rate:
+        return audio_data
+
     """Resample audio data using pydub"""
     try:
         # Create WAV in memory
@@ -137,6 +140,12 @@ class RealtimeAssistant:
         self.resampled_wav_file.setsampwidth(2)
         self.resampled_wav_file.setframerate(OPENAI_SAMPLE_RATE)
 
+        # response audio WAV file
+        self.response_wav_file = wave.open(self.response_wav_filename, 'wb')
+        self.response_wav_file.setnchannels(1)
+        self.response_wav_file.setsampwidth(2)
+        self.response_wav_file.setframerate(OPENAI_SAMPLE_RATE)
+
         logger.info(
             f"Opened WAV files: {self.original_wav_filename}, {self.resampled_wav_filename}, and response will be saved to {self.response_wav_filename}")
 
@@ -148,6 +157,9 @@ class RealtimeAssistant:
         if self.resampled_wav_file:
             self.resampled_wav_file.close()
             self.resampled_wav_file = None
+        if self.response_wav_file:
+            self.response_wav_file.close()
+            self.response_wav_file = None
         logger.info("Closed WAV files")
 
     def _handle_button_press(self):
@@ -213,7 +225,8 @@ class RealtimeAssistant:
                         audio_data = bytes.fromhex(event["delta"])
 
                         # Save to response WAV file
-                        append_to_wav(self.response_wav_filename, audio_data)
+                        if self.response_wav_file:
+                            self.response_wav_file.writeframes(audio_data)
 
                         # Play audio
                         self.player.play(AUDIO_FORMAT)(audio_data)
@@ -273,8 +286,8 @@ class RealtimeAssistant:
 
             # Encode to base64
             encoded_audio = base64.b64encode(resampled_audio).decode()
-            test = base64.b64decode(encoded_audio)
-            assert resampled_audio == test
+            # test = base64.b64decode(encoded_audio)
+            # assert resampled_audio == test
 
             # Create message event
             event = {
@@ -411,13 +424,16 @@ class RealtimeAssistant:
                     continue
 
                 elif event["type"] == "response.audio.delta":
+                    logger.info("received response.audio.delta")
                     # Play audio chunk
                     audio_data = base64.b64decode(event["delta"])
                     self.player.play(AUDIO_FORMAT)(audio_data)
 
-                elif event["type"] == "response.text.delta":
-                    # Print text as it comes in
-                    logger.info(f"Response text: {event.get('delta')}")
+                elif event["type"] == "response.audio_transcript.done":
+                    logger.info(f"Response text: {event.get('transcript')}")
+
+                else:
+                    logger.info(f"Event not handled: {json.dumps(event, indent=2)}")
 
         except Exception as e:
             logger.error(f"Event handling error: {e}")
