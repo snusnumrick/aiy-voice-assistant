@@ -174,9 +174,6 @@ class RealtimeAssistant:
                     "modalities": ["text", "audio"],
                     "voice": "alloy",
                     "output_audio_format": "pcm16",
-                    "input_audio_transcription": {
-                        "model": "whisper-1"
-                    },
                     "turn_detection": {
                         "type": "server_vad",
                         "threshold": 0.5,
@@ -193,6 +190,7 @@ class RealtimeAssistant:
         """Handle events from the OpenAI Realtime API"""
         # Start audio processing task
         audio_task = asyncio.create_task(self.process_audio_chunks())
+        response_chunks = b""
 
         try:
             logger.info("Waiting for events...")
@@ -204,17 +202,20 @@ class RealtimeAssistant:
                     logger.error(f"Error event: {event.get('error')}")
                     continue
 
+                elif event["type"] == "response.audio.done":
+                    # Play audio
+                    self.player.play(AUDIO_FORMAT)(response_chunks)
+                    response_chunks = b""
+
                 elif event["type"] == "response.audio.delta":
                     try:
                         # Convert hex string to bytes
                         audio_data = bytes.fromhex(event["delta"])
+                        response_chunks = response_chunks + audio_data
 
                         # Save to response WAV file
                         # if self.response_wav_file:
                         #     self.response_wav_file.writeframes(audio_data)
-
-                        # Play audio
-                        self.player.play(AUDIO_FORMAT)(audio_data)
 
                         # Log audio chunk info
                         self.response_chunk_count += 1
