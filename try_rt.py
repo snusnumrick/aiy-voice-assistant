@@ -276,15 +276,8 @@ class RealtimeAssistant:
 
             # Create message event
             event = {
-                "type": "conversation.item.create",
-                "item": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{
-                        "type": "input_audio_buffer.append",
-                        "audio": encoded_audio
-                    }]
-                }
+                "type": "input_audio_buffer.append",
+                "audio": encoded_audio
             }
 
             # Send the message
