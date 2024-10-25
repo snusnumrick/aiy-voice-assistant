@@ -431,6 +431,9 @@ class RealtimeAssistant:
                 elif event["type"] == "input_audio_buffer.committed":
                     logger.info(f"input_audio_buffer.committed")
 
+                elif event["type"] == "conversation.item.input_audio_transcription.completed":
+                    logger.info(f"{event['event_id']} - {event['item_id']} - {event['content_index']} - {event['transcript']}")
+
                 elif event["type"] == "conversation.item.created":
                     item = event["item"]
                     logger.info(f"{item['role']}: {item['content']}")
