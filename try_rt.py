@@ -417,7 +417,7 @@ class RealtimeAssistant:
             logger.info("Waiting for events...")
             async for message in self.websocket:
                 event = json.loads(message)
-                logger.info(f"Received event: {json.dumps(event, indent=2)}")
+                # logger.info(f"Received event: {json.dumps(event, indent=2)}")
 
                 if event["type"] == "error":
                     logger.error(f"Error event: {event.get('error')}")
@@ -433,7 +433,7 @@ class RealtimeAssistant:
                     logger.info(f"Response text: {event.get('transcript')}")
 
                 else:
-                    logger.info(f"Event not handled: {json.dumps(event, indent=2)}")
+                    logger.info(f"Event not handled: {event['type']}")
 
         except Exception as e:
             logger.error(f"Event handling error: {e}")
