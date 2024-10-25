@@ -31,7 +31,7 @@ load_dotenv()
 
 from aiy.board import Board
 from aiy.voice.audio import AudioFormat, BytesPlayer, Recorder
-from aiy.leds import Leds, Color
+from aiy.leds import Leds, Color, Pattern
 
 # Audio configuration
 RECORD_FORMAT = AudioFormat(sample_rate_hz=24000, num_channels=1, bytes_per_sample=2)
@@ -39,6 +39,10 @@ AUDIO_FORMAT = AudioFormat(sample_rate_hz=24000, num_channels=1, bytes_per_sampl
 OPENAI_SAMPLE_RATE = 24000
 CHUNK_DURATION_SECS = 0.1  # 100ms chunks
 MIN_AUDIO_BUFFER = 0.2  # 200ms minimum buffer size
+LISTENING_COLOR = Color.WHITE
+LISTENING_PATTERN = Pattern.breathe(500)
+TRANSCRIBING_COLOR = Color.GREEN
+TRANSCRIBING_PATTERN = None
 
 
 def resample_audio(audio_data, src_rate=24000, target_rate=16000):
@@ -142,11 +146,14 @@ class RealtimeAssistant:
 
     def _handle_button_press(self):
         """Callback for button press event"""
-        self.start_recording()
+        if not self.recording:
+            self.start_recording()
+        else:
+            self.stop_recording()
 
     def _handle_button_release(self):
         """Callback for button release event"""
-        self.stop_recording()
+        pass
 
     async def connect_websocket(self):
         """Connect to OpenAI Realtime API websocket"""
@@ -333,7 +340,8 @@ class RealtimeAssistant:
     def record_audio(self):
         """Record audio in a separate thread"""
         logger.info("Recording started...")
-        self.led.update(Leds.rgb_on(Color.RED))
+        self.led.pattern(LISTENING_PATTERN)
+        self.led.update(Leds.rgb_pattern(LISTENING_COLOR))
 
         # Open new WAV files for recording
         self._open_wav_files()
@@ -382,6 +390,7 @@ class RealtimeAssistant:
         """Stop recording audio"""
         if self.recording:
             self.recording = False
+            self.led.update(Leds.rgb_off())
             if self.recording_thread:
                 self.recording_thread.join()
                 self.recording_thread = None
@@ -409,9 +418,12 @@ class RealtimeAssistant:
 
                 elif event["type"] == "input_audio_buffer.speech_started":
                     logger.info(f"speech_started")
+                    self.led.update(Leds.rgb_on(TRANSCRIBING_COLOR))
 
                 elif event["type"] == "input_audio_buffer.speech_stopped":
                     logger.info(f"speech_stopped")
+                    self.led.pattern(LISTENING_PATTERN)
+                    self.led.update(Leds.rgb_pattern(LISTENING_COLOR))
 
                 elif event["type"] == "response.created":
                     logger.info(f"response.created")
