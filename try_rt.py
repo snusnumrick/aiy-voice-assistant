@@ -248,8 +248,8 @@ class RealtimeAssistant:
             combined_audio = b''.join(audio_chunks)
 
             # Write original audio to file
-            # append_to_wav(self.original_wav_filename, combined_audio, sample_rate=RECORD_FORMAT.sample_rate_hz,
-            #               channels=RECORD_FORMAT.num_channels, sample_width=RECORD_FORMAT.bytes_per_sample)
+            append_to_wav(self.original_wav_filename, combined_audio, sample_rate=RECORD_FORMAT.sample_rate_hz,
+                          channels=RECORD_FORMAT.num_channels, sample_width=RECORD_FORMAT.bytes_per_sample)
 
             # Resample to 16kHz using pydub
             resampled_audio = resample_audio(combined_audio,
@@ -364,8 +364,8 @@ class RealtimeAssistant:
                 if not self.recording:
                     break
 
-                append_to_wav(self.original_wav_filename, chunk, sample_rate=RECORD_FORMAT.sample_rate_hz,
-                              channels=RECORD_FORMAT.num_channels, sample_width=RECORD_FORMAT.bytes_per_sample)
+                # append_to_wav(self.original_wav_filename, chunk, sample_rate=RECORD_FORMAT.sample_rate_hz,
+                #               channels=RECORD_FORMAT.num_channels, sample_width=RECORD_FORMAT.bytes_per_sample)
 
                 # Put the chunk in the thread-safe queue
                 self.audio_queue.put(chunk)
