@@ -209,7 +209,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 if content['type'] == 'text':
                     yield content['text']
                 elif content['type'] == 'tool_use':
-                    yield await self._process_tool_use_async(content, message_list)
+                    async for response in self._process_tool_use_async(content, message_list):
+                        yield response
 
     async def _process_tool_use_async(self, content: Dict, message_list: List[Dict[str, str]]) -> AsyncGenerator[
         str, None]:
