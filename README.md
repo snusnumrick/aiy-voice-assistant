@@ -182,34 +182,41 @@ Note:
 
 13. **Set up the systemd service:**
     * Ensure you're in the project directory
-   * Run the setup script:
-    ```bash
+    * Run the setup script:
+    ```
     sudo ./setup_service.sh
     ```
-   * This script will:
-     * Make run.sh executable
-     * Create a systemd service file
-     * Enable the service to start on boot
-     * Start the service
-
-     After running the script, you can check the service status with:
-     ```bash
-     sudo systemctl status aiy.service
-     ```
-
-14. **Verify log rotation:**
-     The setup script automatically configures log rotation for the service logs. This helps manage log file sizes and prevents them from growing indefinitely. The logrotate configuration:
-   - Rotates logs daily
-   - Keeps 7 rotated logs
-   - Compresses old logs
-   - Creates new log files with the correct permissions and ownership
-
-   You can find the logrotate configuration in `/etc/logrotate.d/aiy`.
-
-   To manually rotate logs, you can run:
-    ```bash
-    sudo logrotate /etc/logrotate.d/aiy
+    * This script will:
+        * Make run.sh executable
+        * Create a systemd service file
+        * Create necessary logs directory
+        * Enable the service to start on boot
+        * Start the service
+        * Configure log rotation
+    
+    After running the script, you can check the service status with:
     ```
+    sudo systemctl status aiy.service
+    ```
+
+14. **Logging System:**
+The assistant uses a comprehensive logging system with the following features:
+* Daily log rotation with 5-day retention
+* Logs are stored in the logs directory within the project folder
+* System service logs are directed to the systemd journal
+* Log files follow the naming convention:
+  * Current day: assistant.log
+  * Previous days: assistant.log.YYYY-MM-DD
+  
+To view logs:
+    * Application logs: Check the logs directory
+    * Service logs: Use journalctl -u aiy.service
+
+You can modify the logging level when running manually:
+```
+python main.py --log-dir logs --log-level INFO
+```
+Available log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 After completing these steps, your AI Voice Assistant should be set up and ready to use on your Raspberry Pi.
 ## Usage
