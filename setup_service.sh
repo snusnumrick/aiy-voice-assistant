@@ -10,7 +10,7 @@ RUN_SCRIPT="${WORKING_DIR}/run.sh"
 LOGS_DIR="${WORKING_DIR}/logs"
 
 # Make run.sh executable
-sudo chmod +x "${RUN_SCRIPT}"
+chmod +x "${RUN_SCRIPT}"
 
 # Ensure logs directory exists with correct permissions
 mkdir -p "${LOGS_DIR}"

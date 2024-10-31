@@ -33,5 +33,4 @@ git pull
 amixer sset 'Master' 90% || amixer sset 'Speaker' 55% || echo "Failed to set volume"
 
 # Run the Python script with new logging flags
-echo $PATH
 poetry run python main.py --log-dir "${SCRIPT_DIR}/logs" --log-level INFO
