@@ -1,3 +1,4 @@
 {
-  "llm_streaming": true
+  "llm_streaming": true,
+  "audio_recording_chunk_duration_sec": 0.3
 }
