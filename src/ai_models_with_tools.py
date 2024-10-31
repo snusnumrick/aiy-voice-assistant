@@ -245,81 +245,81 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         assistant_message = ""
         expected_enumeration = [1]  # passed as a list to keep mutable
 
-        async def process_content_block_delta(event: Dict, current_tool_use: Optional[Dict] = None) -> \
+        async def process_content_block_delta(_event: Dict, _current_tool_use: Optional[Dict] = None) -> \
                 AsyncGenerator[str, None]:
             """
             Process a content block delta event.
 
             Args:
-                event (Dict): The event data.
-                current_tool_use (Optional[Dict]): The current tool use data, if any.
+                _event (Dict): The event data.
+                _current_tool_use (Optional[Dict]): The current tool use data, if any.
 
             Yields:
                 str: Complete sentences extracted from the current text.
             """
             nonlocal current_text, expected_enumeration
 
-            delta = event.get('delta', {})
+            delta = _event.get('delta', {})
             if delta.get('type') == 'text_delta':
                 text = delta.get('text', '')
                 current_text += text
                 sentences = extract_sentences(current_text, expected_enumeration)
 
                 if len(sentences) > 1:
-                    for sentence in sentences[:-1]:
-                        yield sentence
+                    for s in sentences[:-1]:
+                        yield s
                     current_text = sentences[-1]
 
             elif delta.get('type') == 'input_json_delta':
-                if current_tool_use is not None:
-                    current_tool_use['input'] = current_tool_use.get('input', '') + delta.get('partial_json', '')
+                if _current_tool_use is not None:
+                    _current_tool_use['input'] = _current_tool_use.get('input', '') + delta.get('partial_json', '')
 
-        def process_content_block_start(event: Dict) -> Optional[Dict]:
+        def process_content_block_start(_event: Dict) -> Optional[Dict]:
             """
             Process a content block start event.
 
             Args:
-                event (Dict): The event data.
+                _event (Dict): The event data.
 
             Returns:
                 Optional[Dict]: The tool use data if it's a tool use event, None otherwise.
             """
-            content_block = event.get('content_block', {})
+            content_block = _event.get('content_block', {})
             if content_block.get('type') == 'tool_use':
                 return {'type': 'tool_use', 'name': content_block.get('name'), 'id': content_block.get('id'),
                         'input': ''}
             return None
 
-        async def process_content_block_stop(current_tool_use: Optional[Dict], current_text: str,
-                                             message_list: List[Dict[str, str]]) \
+        async def process_content_block_stop(_current_tool_use: Optional[Dict], _current_text: str,
+                                             _message_list: List[Dict[str, str]]) \
                 -> AsyncGenerator[str, None]:
             """
             Process a content block stop event.
 
             Args:
-                current_tool_use (Optional[Dict]): The current tool use data, if any.
-                current_text (str): The current text.
-                message_list (List[Dict[str, str]]): The list of messages in the conversation.
+                _current_tool_use (Optional[Dict]): The current tool use data, if any.
+                _current_text (str): The current text.
+                _message_list (List[Dict[str, str]]): The list of messages in the conversation.
 
             Yields:
                 str: Any remaining text and the result of processing tool use, if applicable.
             """
-            sentences = extract_sentences(current_text)
-            for sentence in sentences:
-                yield sentence
+            sentences = extract_sentences(_current_text)
+            for s in sentences:
+                yield s
 
-            if current_tool_use:
-                async for r in self._process_tool_use_streaming(current_tool_use, message_list):
+            if _current_tool_use:
+                async for r in self._process_tool_use_streaming(_current_tool_use, _message_list):
                     yield r
 
-        async def process_message_stop(message_list: List[Dict[str, str]], assistant_message: str) -> \
+        async def process_message_stop(_message_list: List[Dict[str, str]], _assistant_message: str) -> \
                 AsyncGenerator[str, None]:
             """
             Process a message stop event.
 
             Args:
-                message_list (List[Dict[str, str]]): The list of messages in the conversation.
-                assistant_message (str): The complete assistant message.
+                _message_list (List[Dict[str, str]]): The list of messages in the conversation.
+                _assistant_message (str): The complete assistant message.
 
             Yields:
                 str: Any remaining text.
@@ -328,10 +328,10 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
             if current_text:
                 logger.debug(f"{self._time_str()}Yielding final text: {current_text}")
-                assistant_message += f"{current_text} "
+                _assistant_message += f"{current_text} "
                 yield current_text
 
-            message_list.append({"role": "assistant", "content": assistant_message})
+            _message_list.append({"role": "assistant", "content": _assistant_message})
 
         try:
             async for event in self._get_response_async(message_list, streaming=True):
@@ -409,6 +409,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
     """
 
     def __init__(self, config: Config, model_id: Optional[str] = None, tools: Optional[List[Tool]] = None):
+        super().__init__(config, model_id)
         sys_path = sys.path
         sys.path = [p for p in sys.path if p != os.getcwd()]
         import google.generativeai as genai
@@ -420,26 +421,15 @@ class GeminiAIModeWithTools(GeminiAIModel):
         self.tools = {t.name: t for t in tools} if tools else {}
         self.tools_description = self._create_tools_description(tools) if tools else None
         self.tools_processors = {t.name: t.processor for t in tools} if tools else {}
-
-        def add(a: int, b: int) -> int:
-            """returns a * b."""
-            return a+b
-
-        import inspect
-        sig = inspect.signature(add)
-
-        self.model = genai.GenerativeModel(model_id, tools=[add])
-
         self.model = genai.GenerativeModel(model_id, tools=self.tools_description)
         max_tokens = config.get('max_tokens', 4096)
         self.generation_config = genai.GenerationConfig(max_output_tokens=max_tokens)
 
     @classmethod
-    def _create_tools_description(self, tools: List[Tool]) -> dict:
+    def _create_tools_description(cls, tools: List[Tool]) -> dict:
         """Create a list of tool descriptions for the Gemini model."""
 
         def schema(t: Tool):
-            from google.generativeai.responder import to_type
             return {'type': 'object',
                     'properties': {p.name: {'type': p.type, 'description': p.description}
                                    for p in t.parameters},
@@ -459,7 +449,6 @@ class GeminiAIModeWithTools(GeminiAIModel):
             str: The generated response.
         """
         from google.generativeai import types
-        import google.generativeai as genai
 
         messages = normalize_messages(messages)
         system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
@@ -485,12 +474,20 @@ class GeminiAIModeWithTools(GeminiAIModel):
                     result = asyncio.run(self.tools_processors[fc.name](args))
                     if self.tools[fc.name].iterative:
                         response = chat.send_message(
-                            genai.protos.Content(
-                                parts=[genai.protos.Part(
-                                    function_response=genai.protos.FunctionResponse(
-                                        name='multiply',
-                                        response={'result': result}))]),
-                            generation_config=self.generation_config)
+                            {
+                                "parts": [
+                                    {
+                                        "function_response": {
+                                            "name": fc.name,
+                                            "response": {
+                                                "result": result
+                                            }
+                                        }
+                                    }
+                                ]
+                            },
+                            generation_config=self.generation_config
+                        )
         except Exception as e:
             logging.error(f"Error in Gemini API call: {str(e)}")
             raise
@@ -508,7 +505,6 @@ class GeminiAIModeWithTools(GeminiAIModel):
             str: Parts of the generated response.
         """
         from google.generativeai import types
-        import google.generativeai as genai
 
         messages = normalize_messages(messages)
         system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
@@ -529,15 +525,22 @@ class GeminiAIModeWithTools(GeminiAIModel):
                 yield part.text
             else:
                 fc = part.function_call
-                args = {p.name : fc.args[p.name] for p in self.tools[fc.name].parameters if p.name in fc.args}
+                args = {p.name: fc.args[p.name] for p in self.tools[fc.name].parameters if p.name in fc.args}
                 result = await self.tools_processors[fc.name](args)
                 if self.tools[fc.name].iterative:
                     response = await chat.send_message_async(
-                        genai.protos.Content(
-                            parts=[genai.protos.Part(
-                                function_response=genai.protos.FunctionResponse(
-                                    name='multiply',
-                                    response={'result': result}))]),
+                        {
+                            "parts": [
+                                {
+                                    "function_response": {
+                                        "name": fc.name,
+                                        "response": {
+                                            "result": result
+                                        }
+                                    }
+                                }
+                            ]
+                        },
                         generation_config=self.generation_config
                     )
                     yield response.text
@@ -569,7 +572,7 @@ class OpenAIModelWithTools(OpenAIModel):
         self.tools_description = self._create_tools_description(tools) if tools else []
 
     @classmethod
-    def _create_tools_description(self, tools: List[Tool]) -> List[Dict]:
+    def _create_tools_description(cls, tools: List[Tool]) -> List[Dict]:
         """Create a list of tool descriptions for the OpenAI model."""
 
         def schema(t: Tool):
@@ -708,17 +711,9 @@ async def main_async():
     """
     Asynchronous main function for testing the ClaudeAIModelWithTools.
     """
-    from src.web_search_tool import WebSearchTool
-    from src.stress_tool import StressTool
     from src.code_interpreter_tool import InterpreterTool
     # from src.interpreter_tool_judge0 import InterpreterTool
     config = Config()
-
-    system = """Today is August 6 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
-            Отвечай естественно, как в устной речи. Говори максимально просто и понятно. Не используй списки и нумерации. Например, не говори 1. что-то; 2.
-            что-то. говори во-первых, во-вторых или просто перечисляй. При ответе на вопрос где важно время, помни какое сегодня число. Если чего-то не знаешь,
-            так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов. 
-            Используй code_interpreter только для очень сложных запросов."""
 
     system = """Today is August 6 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
             Отвечай естественно, как в устной речи. Говори максимально просто и понятно. Не используй списки и нумерации. Например, не говори 1. что-то; 2.
@@ -736,7 +731,6 @@ async def main_async():
         m += response_part
     print()
     return
-
 
     stress_tool = StressTool(config)
     model = ClaudeAIModelWithTools(config, tools=[stress_tool.tool_definition()])
@@ -772,4 +766,3 @@ if __name__ == "__main__":
     load_dotenv()
     # asyncio.run(main_async())
     main()
-
