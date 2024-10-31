@@ -10,12 +10,12 @@ RUN_SCRIPT="${WORKING_DIR}/run.sh"
 LOGS_DIR="${WORKING_DIR}/logs"
 
 # Make run.sh executable
-chmod +x "${RUN_SCRIPT}"
+sudo chmod +x "${RUN_SCRIPT}"
 
 # Ensure logs directory exists with correct permissions
 mkdir -p "${LOGS_DIR}"
-chmod 755 "${LOGS_DIR}"
-chown "${USER}":"${GROUP}" "${LOGS_DIR}"
+sudo chmod 755 "${LOGS_DIR}"
+sudo chown "${USER}":"${GROUP}" "${LOGS_DIR}"
 
 # Create the service file content
 cat << EOF > "${SERVICE_NAME}.service"
