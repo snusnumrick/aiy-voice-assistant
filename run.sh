@@ -8,7 +8,10 @@ echo "--- End Audio Controls ---"
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
 # Navigate to the project directory
-cd "${SCRIPT_DIR}"
+cd "${SCRIPT_DIR}" || exit
+
+# Create logs directory if it doesn't exist
+mkdir -p "${SCRIPT_DIR}/logs"
 
 # wait for the network
 max_attempts=12
@@ -29,5 +32,5 @@ git pull
 # set audio volume
 amixer sset 'Master' 40% || amixer sset 'Speaker' 55% || echo "Failed to set volume"
 
-# Run the Python script
-poetry run python main.py
+# Run the Python script with new logging flags
+poetry run python main.py --log-dir "${SCRIPT_DIR}/logs" --log-level INFO

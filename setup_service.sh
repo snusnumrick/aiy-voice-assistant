@@ -7,11 +7,15 @@ USER=$(whoami)
 GROUP=$(id -gn)
 WORKING_DIR="$(dirname "$(readlink -f "$0")")"
 RUN_SCRIPT="${WORKING_DIR}/run.sh"
-LOG_FILE="${WORKING_DIR}/logfile.log"
-ERROR_LOG="${WORKING_DIR}/errorfile.log"
+LOGS_DIR="${WORKING_DIR}/logs"
 
 # Make run.sh executable
 chmod +x "${RUN_SCRIPT}"
+
+# Ensure logs directory exists with correct permissions
+mkdir -p "${LOGS_DIR}"
+chmod 755 "${LOGS_DIR}"
+chown "${USER}":"${GROUP}" "${LOGS_DIR}"
 
 # Create the service file content
 cat << EOF > "${SERVICE_NAME}.service"
@@ -30,8 +34,8 @@ ExecStart=/bin/bash -c "${RUN_SCRIPT}"
 WorkingDirectory=${WORKING_DIR}
 User=${USER}
 Group=${GROUP}
-StandardOutput=append:${LOG_FILE}
-StandardError=append:${ERROR_LOG}
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -42,15 +46,15 @@ sudo mv "${SERVICE_NAME}.service" /etc/systemd/system/
 
 # Create logrotate configuration
 cat << EOF > "${SERVICE_NAME}-logrotate"
-${LOG_FILE}
-${ERROR_LOG} {
+${LOGS_DIR}/*.log {
     daily
-    rotate 7
+    rotate 5
     compress
     delaycompress
     missingok
     notifempty
     create 0644 ${USER} ${GROUP}
+    su ${USER} ${GROUP}
 }
 EOF
 

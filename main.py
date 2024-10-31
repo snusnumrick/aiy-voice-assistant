@@ -12,7 +12,8 @@ import logging
 import signal
 import sys
 import time
-from logging.handlers import RotatingFileHandler
+from logging.handlers import TimedRotatingFileHandler
+from pathlib import Path
 
 from aiy.board import Board
 from aiy.leds import Leds, Color
@@ -37,9 +38,10 @@ signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
 load_dotenv()
 
 
-def setup_logging(log_level, log_file=None):
+def setup_logging(log_level, log_dir=None):
     """
-    Set up logging with the specified log level and optionally to a file.
+    Set up logging with the specified log level and daily log files.
+    Keeps only the last 5 days of logs.
     """
     numeric_level = getattr(logging, log_level.upper(), None)
     if not isinstance(numeric_level, int):
@@ -60,33 +62,45 @@ def setup_logging(log_level, log_file=None):
     # Add console handler to logger
     logger.addHandler(console_handler)
 
-    # If log_file is specified, add file handler
-    if log_file:
-        file_handler = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5)
+    # If log_dir is specified, set up daily rotating file handler
+    if log_dir:
+        # Create log directory if it doesn't exist
+        log_dir_path = Path(log_dir)
+        log_dir_path.mkdir(parents=True, exist_ok=True)
+
+        # Set up file handler for daily rotation
+        log_file = log_dir_path / 'assistant.log'
+        file_handler = TimedRotatingFileHandler(
+            filename=log_file,
+            when='midnight',
+            interval=1,
+            backupCount=5,
+            encoding='utf-8'
+        )
         file_handler.setLevel(numeric_level)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
     return logger
 
-
 def parse_arguments():
     """
     Parse command-line arguments.
     """
     parser = argparse.ArgumentParser(description="AI Voice Assistant")
-    parser.add_argument('--log-level', default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-        help='Set the logging level (default: INFO)')
-    parser.add_argument('--log-file', help='Specify a file to copy log output (optional)')
+    parser.add_argument('--log-level', default='INFO',
+                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                       help='Set the logging level (default: INFO)')
+    parser.add_argument('--log-dir', default='logs',
+                       help='Directory for storing log files (default: logs)')
     return parser.parse_args()
-
 
 def main():
     """
     Main function to initialize and run the AI Voice Assistant.
     """
     args = parse_arguments()
-    logger = setup_logging(args.log_level, args.log_file)
+    logger = setup_logging(args.log_level, args.log_dir)
 
     logger.info("Starting AI Voice Assistant")
 
