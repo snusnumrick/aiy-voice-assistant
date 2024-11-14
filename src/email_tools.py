@@ -6,6 +6,12 @@ from email.mime.text import MIMEText
 from typing import Dict
 import asyncio
 import aiosmtplib
+
+if __name__ == "__main__":
+    # add current directory to python path
+    import sys
+    sys.path.append(os.getcwd())
+
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 
