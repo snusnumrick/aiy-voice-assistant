@@ -143,41 +143,43 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
     ```
 
 11. **Configure the assistant:**
-    Customize `config.json` file in the project root directory. 
-    Refer to the provided json in the repository for the structure and available options.
 
-Note:
+    The assistant uses two configuration files:
+    * config.json: Main configuration file that should be kept in version control
+    * user.json: User-specific overrides that should not be committed to version control
 
-    * listed are default values.
+    The configuration system follows these precedence rules:
 
-   Adjust the following fields in the `config.json`:
-   - `assistant_email_address`: The email address the assistant will use to send emails
-   - `user_email_address`: Your email address to receive emails from the assistant
-   - `smtp_server`: SMTP server address for the email service
-   - `smtp_port`: SMTP port number (usually 587 for TLS or 465 for SSL)
-   - `assistant_email_username`: Username for the assistant's email account
+    1. Direct arguments passed to constructor
+    2. Environment variables (prefixed with APP_)
+    3. Values from user.json (user-specific overrides)
+    4. Values from config.json (shared configuration)
+
+    Start by copying the example configuration file:
+    ```shell
+    cp user.json.example user.json
+    ```
+    Customize user.json according to your needs. 
 
 12. **Set up environment variables:**
-    Create a `.env` file in the project root and 
-   add the following (replace with your actual API keys and sensitive information):
-   ```
-    OPENAI_API_KEY=your_openai_api_key
-    GOOGLE_API_KEY=your_google_api_key
-    YANDEX_API_KEY=your_yandex_api_key
-    ANTHROPIC_API_KEY=your_anthropic_api_key
-    EMAIL_PASSWORD=your_SMTP_server_password
-    GOOGLE_CUSTOMSEARCH_KEY=your_google_customsearch_key
-    TAVILY_API_KEY=your_tavily_api_key
-    OPENROUTER_API_KEY=your_open_router_api_key
-    PERPLEXITY_API_KEY=your_perplexity_api_key
-    ELEVENLABS_API_KEY=your_elevenlabs_api_key
-    GEMINI_API_KEY=your_gemini_api_key
-   ```
-
-   Notes
-
-    * Make sure to keep your `.env` file secure and never commit it to version control.
-    * Depending on configuration, some of these API keys may be unnecessary.
+    Create a `.env` file in the project root (Environment variables will override settings from both config files) 
+    and  add the following (replace with your actual API keys and sensitive information):
+       ```
+        OPENAI_API_KEY=your_openai_api_key
+        GOOGLE_API_KEY=your_google_api_key
+        YANDEX_API_KEY=your_yandex_api_key
+        ANTHROPIC_API_KEY=your_anthropic_api_key
+        EMAIL_PASSWORD=your_SMTP_server_password
+        GOOGLE_CUSTOMSEARCH_KEY=your_google_customsearch_key
+        TAVILY_API_KEY=your_tavily_api_key
+        OPENROUTER_API_KEY=your_open_router_api_key
+        PERPLEXITY_API_KEY=your_perplexity_api_key
+        ELEVENLABS_API_KEY=your_elevenlabs_api_key
+        GEMINI_API_KEY=your_gemini_api_key
+    ```
+    Notes
+    1. Make sure to keep your `.env` file secure and never commit it to version control.
+    2. Depending on configuration, some of these API keys may be unnecessary.
 
 
 13. **Set up the systemd service:**
@@ -305,6 +307,17 @@ Additional Features:
 
 ## Customization
 
+To modify settings:
+
+* For personal changes: Edit user.json
+* For project-wide changes: Edit config.json
+* For temporary changes: Use environment variables
+    
+*Never commit user.json to version control to protect sensitive information.*
+
+Possible customizations:
+
+- Change email addresses and SMTP server information
 - Switch between AI models (Claude, OpenAI, Gemini) in the `config.json` file.
 - Adjust the system prompt and other configuration options in `config.json`.
 - Customize TTS voices and languages in the configuration.
@@ -313,6 +326,7 @@ Additional Features:
 ## Project Structure
 
 - `main.py`: Entry point of the application
+- `user.json.example`: Example user-specific configuration file
 - `src/`: Contains core modules:
   - `ai_models.py`: AI model implementations
   - `ai_models_with_tools.py`: AI models with tool support
@@ -339,7 +353,10 @@ Additional Features:
 - For API rate limit issues, consider implementing backoff strategies
 - For email configuration issues, verify SMTP settings in `config.json`
 - Log files are automatically rotated to prevent disk space issues. You can find recent logs in the project directory and older, compressed logs with date suffixes.
-
+- For configuration issues:
+  - Check both config.json and user.json for conflicts
+  - Verify environment variables aren't overriding desired settings
+  - Use --debug flag to see which configuration source is being used
 
 ## Performance Considerations
 

@@ -1,0 +1,7 @@
+{
+  "assistant_email_address": "cubick@treskunov.net",
+  "user_email_address": "treskunov@gmail.com",
+  "smtp_server": "mail.treskunov.net",
+  "smtp_port": "26",
+  "assistant_email_username": "cubick@treskunov.net"
+}

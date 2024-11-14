@@ -2,7 +2,7 @@
 Configuration management module.
 
 This module provides a Config class for loading and managing application configuration
-from both JSON files and environment variables, using Pydantic for validation and typing.
+from both shared and user-specific JSON files and environment variables, using Pydantic for validation.
 """
 
 import os
@@ -15,18 +15,21 @@ class Config(BaseModel):
     """
     A class to manage configuration settings for the application.
 
-    This class loads configuration from a JSON file and environment variables,
-    providing a unified interface to access these settings with type validation.
+    This class loads configuration from multiple sources in the following order of precedence:
+    1. Direct arguments passed to constructor
+    2. Environment variables (prefixed with APP_)
+    3. user.json (user-specific overrides)
+    4. config.json (shared configuration)
     """
     class Config:
         extra = "allow"
         arbitrary_types_allowed = True
 
-    def __init__(self, config_file: str = "config.json", **data):
+    def __init__(self, config_file: str = "config.json", user_config_file: str = "user.json", **data):
         # First collect all configuration data
         init_data = {}
 
-        # Load from JSON file
+        # Load from shared config file (lowest precedence)
         if os.path.exists(config_file):
             try:
                 with open(config_file, 'r') as f:
@@ -35,7 +38,16 @@ class Config(BaseModel):
             except json.JSONDecodeError as e:
                 raise ValueError(f"Error parsing config file {config_file}: {str(e)}")
 
-        # Load from environment variables
+        # Load from user config file (overrides shared config)
+        if os.path.exists(user_config_file):
+            try:
+                with open(user_config_file, 'r') as f:
+                    user_config = json.load(f)
+                    init_data.update(user_config)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Error parsing user config file {user_config_file}: {str(e)}")
+
+        # Load from environment variables (overrides both config files)
         for key, value in os.environ.items():
             if key.startswith('APP_'):
                 try:
@@ -46,7 +58,7 @@ class Config(BaseModel):
                     # If not JSON, use the string value
                     init_data[key[4:].lower()] = value
 
-        # Update with any direct arguments
+        # Update with any direct arguments (highest precedence)
         init_data.update(data)
 
         # Initialize the Pydantic model with our collected data
