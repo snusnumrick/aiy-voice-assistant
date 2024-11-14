@@ -105,6 +105,7 @@ def main():
     logger.info("Starting AI Voice Assistant")
 
     config = Config()
+    print(config.dict())
     timezone = get_timezone()
 
     with Board() as board, Leds() as leds:
