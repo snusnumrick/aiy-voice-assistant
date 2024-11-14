@@ -48,7 +48,7 @@ def send_email(subject: str, body: str, config: Config):
 
             # Send email
             server.send_message(msg)
-        logger.debug("Email sent successfully")
+        logger.info(f"sent email about {subject}")
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}")
 
@@ -91,7 +91,7 @@ async def send_email_async(subject: str, body: str, config: Config):
 
             await server.login(username, password)
             await server.send_message(msg)
-        logger.debug("Email sent successfully")
+        logger.info(f"sent email about {subject}")
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}")
 
