@@ -322,7 +322,7 @@ class DialogManager:
                     if synthesis_tasks:
                         # logger.debug(f"Processing batch of {len(synthesis_tasks)} synthesis tasks")
                         next_response_index = await self.process_completed_tasks(synthesis_tasks, 0)
-                        processed_tasks = synthesis_tasks[:next_response_index]
+                        # processed_tasks = synthesis_tasks[:next_response_index]
                         synthesis_tasks = synthesis_tasks[next_response_index:]
                         # logger.debug(f"Processed {len(processed_tasks)} tasks, {len(synthesis_tasks)} remaining")
                     # else:

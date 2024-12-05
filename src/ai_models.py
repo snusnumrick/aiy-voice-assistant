@@ -14,12 +14,12 @@ import os
 import sys
 from abc import ABC, abstractmethod
 from typing import List, Dict, AsyncGenerator, Optional, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 import aiohttp
 import requests
 
 from src.config import Config
-from src.tools import time_string_ms, retry_async_generator, extract_sentences, yield_complete_sentences
+from src.tools import time_string_ms, retry_async_generator, yield_complete_sentences
 
 
 class MessageModel(BaseModel):

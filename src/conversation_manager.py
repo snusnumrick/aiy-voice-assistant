@@ -26,7 +26,6 @@ if __name__ == "__main__":
     # add current directory to python path
     sys.path.append(os.getcwd())
 
-from src.config import Config
 from src.web_search import WebSearcher
 from src.llm_tools import summarize_and_compress_history
 from src.ai_models import AIModel, ClaudeAIModel
@@ -337,7 +336,7 @@ class ConversationManager:
 
             # backup existing facts.json, rename it facts_prev.json
             if p.exists():
-                logger.info(f"backup existing facts.json")
+                logger.info("backup existing facts.json")
                 p.rename("facts_prev.json")
 
             self.save_facts(self.facts)
@@ -368,7 +367,7 @@ class ConversationManager:
             self.rules = optimized_rules
             # backup existing rules
             if p.exists():
-                logger.info(f"backup existing rules.json")
+                logger.info("backup existing rules.json")
                 p.rename("rules_prev.json")
             self.save_rules(self.rules)
 

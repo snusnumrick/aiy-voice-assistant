@@ -423,7 +423,7 @@ async def main():
     system_prompt = """
     Today is 3 August 2024. Now 02:56 PM PDT. """
 
-    timezone = get_timezone()
+    # timezone = get_timezone()
 
     # await test_optimize_facts(config,timezone)
     await test_optimize_rules(config, system_prompt)  # await test_summarize(config)

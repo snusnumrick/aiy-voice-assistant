@@ -4,10 +4,8 @@ from typing import Dict
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 import logging
-import base64
 import json
 import aiohttp
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

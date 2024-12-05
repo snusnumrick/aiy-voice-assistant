@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 import aiohttp
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 def _convert_stress_format(word: str) -> str:
     # Replace U+0301 with '+' before the vowel
-    vowels = 'аеёиоуыэюя'
+    # vowels = 'аеёиоуыэюя'
     result = ''
     i = 0
     while i < len(word):

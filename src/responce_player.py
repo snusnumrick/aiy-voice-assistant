@@ -355,7 +355,7 @@ class ResponsePlayer:
                     logger.debug(f"({time_string_ms(self.timezone)}) wait for condition")
                     self.condition.wait()
                 if not self._should_play:
-                    logger.info(f"should_play: False")
+                    logger.info("should_play: False")
                     break
                 try:
                     light, audio_file = self.playlist.get_nowait()

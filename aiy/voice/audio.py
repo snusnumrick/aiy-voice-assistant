@@ -64,7 +64,6 @@ Audio format
 
 """
 
-import contextlib
 import subprocess
 import threading
 import itertools

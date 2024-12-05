@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import patch, AsyncMock
 import asyncio
 from src.config import Config
 from src.ai_models import (
