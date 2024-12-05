@@ -10,6 +10,7 @@ import aiosmtplib
 if __name__ == "__main__":
     # add current directory to python path
     import sys
+
     sys.path.append(os.getcwd())
 
 from src.ai_models_with_tools import Tool, ToolParameter
@@ -29,7 +30,9 @@ def send_email(subject: str, body: str, config: Config):
     :return: None
 
     """
-    assistant_email_address = config.get("assistant_email_address", "cubick@treskunov.net")
+    assistant_email_address = config.get(
+        "assistant_email_address", "cubick@treskunov.net"
+    )
     user_email_address = config.get("user_email_address", "treskunov@gmail.com")
     smtp_server = config.get("smtp_server", "mail.treskunov.net")
     smtp_port = config.get("smtp_port", "26")
@@ -39,12 +42,12 @@ def send_email(subject: str, body: str, config: Config):
 
     # Create message
     msg = MIMEMultipart()
-    msg['From'] = assistant_email_address
-    msg['To'] = user_email_address
-    msg['Subject'] = subject
+    msg["From"] = assistant_email_address
+    msg["To"] = user_email_address
+    msg["Subject"] = subject
 
     # Attach body to the email
-    msg.attach(MIMEText(body, 'plain'))
+    msg.attach(MIMEText(body, "plain"))
 
     try:
         # Create SMTP session
@@ -69,7 +72,9 @@ async def send_email_async(subject: str, body: str, config: Config):
 
     :return: None
     """
-    assistant_email_address = config.get("assistant_email_address", "cubick@treskunov.net")
+    assistant_email_address = config.get(
+        "assistant_email_address", "cubick@treskunov.net"
+    )
     user_email_address = config.get("user_email_address", "treskunov@gmail.com")
     smtp_server = config.get("smtp_server", "mail.treskunov.net")
     smtp_port = config.get("smtp_port", 26)  # Note: Changed to int
@@ -79,12 +84,12 @@ async def send_email_async(subject: str, body: str, config: Config):
 
     # Create message
     msg = MIMEMultipart()
-    msg['From'] = assistant_email_address
-    msg['To'] = user_email_address
-    msg['Subject'] = subject
+    msg["From"] = assistant_email_address
+    msg["To"] = user_email_address
+    msg["Subject"] = subject
 
     # Attach body to the email
-    msg.attach(MIMEText(body, 'plain'))
+    msg.attach(MIMEText(body, "plain"))
 
     try:
         # Create SMTP client and send email
@@ -107,14 +112,23 @@ class SendEmailTool:
         self.config = config
 
     def tool_definition(self) -> Tool:
-        return Tool(name="send_email_to_user", description="Send an email with given subject and body to the user",
-                    iterative=False,
-                    parameters=[ToolParameter(name='subject', type='string',
-                                              description='Email subject'),
-                                ToolParameter(name='body', type='string',
-                                              description='Email body. Detailed message to convey.')],
-                    processor=self.do_send_email,
-                    required=['subject', 'body'])
+        return Tool(
+            name="send_email_to_user",
+            description="Send an email with given subject and body to the user",
+            iterative=False,
+            parameters=[
+                ToolParameter(
+                    name="subject", type="string", description="Email subject"
+                ),
+                ToolParameter(
+                    name="body",
+                    type="string",
+                    description="Email body. Detailed message to convey.",
+                ),
+            ],
+            processor=self.do_send_email,
+            required=["subject", "body"],
+        )
 
     async def do_send_email(self, parameters: Dict[str, any]):
         logger.info(f"Sending email {parameters}")
@@ -136,4 +150,3 @@ if __name__ == "__main__":
 
     load_dotenv()
     asyncio.run(main())
-

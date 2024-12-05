@@ -49,20 +49,30 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
         from google.oauth2 import service_account
 
         logger.debug("Setting up Google Speech client")
-        service_account_file = config.get('google_service_account_file', '~/gcloud.json')
+        service_account_file = config.get(
+            "google_service_account_file", "~/gcloud.json"
+        )
         service_account_file = os.path.expanduser(service_account_file)
-        credentials = service_account.Credentials.from_service_account_file(service_account_file)
+        credentials = service_account.Credentials.from_service_account_file(
+            service_account_file
+        )
         self.client = speech.SpeechClient(credentials=credentials)
 
     def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
-
         logger.debug("Transcribing audio stream (google)")
         streaming_config = speech.types.StreamingRecognitionConfig(
-            config=speech.types.RecognitionConfig(encoding=speech.types.RecognitionConfig.AudioEncoding.LINEAR16,
-                                                  sample_rate_hertz=config.get("sample_rate_hertz", 16000),
-                                                  language_code=config.get("language_code", "ru-RU"),
-                                                  enable_automatic_punctuation=True), interim_results=True)
-        requests = (speech.types.StreamingRecognizeRequest(audio_content=chunk) for chunk in audio_generator)
+            config=speech.types.RecognitionConfig(
+                encoding=speech.types.RecognitionConfig.AudioEncoding.LINEAR16,
+                sample_rate_hertz=config.get("sample_rate_hertz", 16000),
+                language_code=config.get("language_code", "ru-RU"),
+                enable_automatic_punctuation=True,
+            ),
+            interim_results=True,
+        )
+        requests = (
+            speech.types.StreamingRecognizeRequest(audio_content=chunk)
+            for chunk in audio_generator
+        )
         responses = self.client.streaming_recognize(streaming_config, requests)
 
         text = ""
@@ -80,26 +90,37 @@ class YandexSpeechRecognition(SpeechRecognitionService):
         import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
         import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 
-        self.api_key = os.environ.get('YANDEX_API_KEY') or config.get('yandex_api_key')
+        self.api_key = os.environ.get("YANDEX_API_KEY") or config.get("yandex_api_key")
         if not self.api_key:
-            raise ValueError("Yandex API key is not provided in environment variables or configuration")
+            raise ValueError(
+                "Yandex API key is not provided in environment variables or configuration"
+            )
 
         cred = grpc.ssl_channel_credentials()
-        self.channel = grpc.secure_channel('stt.api.cloud.yandex.net:443', cred)
+        self.channel = grpc.secure_channel("stt.api.cloud.yandex.net:443", cred)
         self.stub = stt_service_pb2_grpc.RecognizerStub(self.channel)
 
-        self.recognize_options = stt_pb2.StreamingOptions(recognition_model=stt_pb2.RecognitionModelOptions(
-            audio_format=stt_pb2.AudioFormatOptions(
-                raw_audio=stt_pb2.RawAudio(audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
-                                           sample_rate_hertz=config.get("sample_rate_hertz", 16000),
-                                           audio_channel_count=1)), text_normalization=stt_pb2.TextNormalizationOptions(
-                text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
-                profanity_filter=config.get("profanity_filter", False),
-                literature_text=config.get("literature_text", True)),
-            language_restriction=stt_pb2.LanguageRestrictionOptions(
-                restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
-                language_code=[config.get("language_code", "ru-RU")]),
-            audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME))
+        self.recognize_options = stt_pb2.StreamingOptions(
+            recognition_model=stt_pb2.RecognitionModelOptions(
+                audio_format=stt_pb2.AudioFormatOptions(
+                    raw_audio=stt_pb2.RawAudio(
+                        audio_encoding=stt_pb2.RawAudio.LINEAR16_PCM,
+                        sample_rate_hertz=config.get("sample_rate_hertz", 16000),
+                        audio_channel_count=1,
+                    )
+                ),
+                text_normalization=stt_pb2.TextNormalizationOptions(
+                    text_normalization=stt_pb2.TextNormalizationOptions.TEXT_NORMALIZATION_ENABLED,
+                    profanity_filter=config.get("profanity_filter", False),
+                    literature_text=config.get("literature_text", True),
+                ),
+                language_restriction=stt_pb2.LanguageRestrictionOptions(
+                    restriction_type=stt_pb2.LanguageRestrictionOptions.WHITELIST,
+                    language_code=[config.get("language_code", "ru-RU")],
+                ),
+                audio_processing_type=stt_pb2.RecognitionModelOptions.REAL_TIME,
+            )
+        )
 
     def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
         def request_generator():
@@ -110,25 +131,27 @@ class YandexSpeechRecognition(SpeechRecognitionService):
             for chunk in audio_generator:
                 yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=chunk))
 
-        metadata = [('authorization', f'Api-Key {self.api_key}')]
+        metadata = [("authorization", f"Api-Key {self.api_key}")]
         responses = self.stub.RecognizeStreaming(request_generator(), metadata=metadata)
 
         full_text = ""
         current_segment = ""
         try:
             for response in responses:
-                event_type = response.WhichOneof('Event')
-                if event_type == 'partial' and response.partial.alternatives:
+                event_type = response.WhichOneof("Event")
+                if event_type == "partial" and response.partial.alternatives:
                     logger.debug(f"Partial: {response.partial.alternatives[0].text}")
-                elif event_type == 'final':
+                elif event_type == "final":
                     current_segment = response.final.alternatives[0].text
                     logger.debug(f"Final: {current_segment}")
-                elif event_type == 'final_refinement':
-                    refined_text = response.final_refinement.normalized_text.alternatives[0].text
+                elif event_type == "final_refinement":
+                    refined_text = (
+                        response.final_refinement.normalized_text.alternatives[0].text
+                    )
                     logger.debug(f"Refined: {refined_text}")
                     full_text += refined_text + " "
                     current_segment = ""  # Reset current segment
-                elif event_type == 'eou_update':
+                elif event_type == "eou_update":
                     # If we have a current segment that wasn't refined, add it to full_text
                     if current_segment:
                         full_text += current_segment + " "
@@ -142,7 +165,7 @@ class YandexSpeechRecognition(SpeechRecognitionService):
         return full_text.strip()
 
     def __del__(self):
-        if hasattr(self, 'channel'):
+        if hasattr(self, "channel"):
             self.channel.close()
 
 
@@ -167,8 +190,14 @@ class SpeechTranscriber:
         streaming_config (speech.StreamingRecognitionConfig): Configuration for streaming recognition.
     """
 
-    def __init__(self, button: Button, leds: Leds, config, cleaning: Optional[Callable] = None,
-                 timezone: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        button: Button,
+        leds: Leds,
+        config,
+        cleaning: Optional[Callable] = None,
+        timezone: Optional[str] = None,
+    ) -> None:
         """
         Initialize the SpeechTranscriber.
 
@@ -184,17 +213,28 @@ class SpeechTranscriber:
         self.config = config
         self.button_is_pressed = False
         self.setup_speech_service()
-        self.breathing_period_ms = self.config.get('ready_breathing_period_ms', 10000)
-        self.led_breathing_color = self.config.get('ready_breathing_color', (0, 1, 0))  # dark green
-        self.led_recording_color = self.config.get('recording_color', (0, 255, 0))  # bright green
-        self.led_breathing_duration = self.config.get('ready_breathing_duration', 60)
-        self.led_processing_color = self.config.get('processing_color', (0, 1, 0))  # dark green
-        self.led_processing_blink_period_ms = self.config.get('processing_blink_period_ms', 300)
-        self.audio_sample_rate = self.config.get('audio_sample_rate', 16000)
-        self.audio_recording_chunk_duration_sec = self.config.get('audio_recording_chunk_duration_sec', 0.1)
-        self.max_number_of_chunks = self.config.get('max_number_of_chunks', 5)
+        self.breathing_period_ms = self.config.get("ready_breathing_period_ms", 10000)
+        self.led_breathing_color = self.config.get(
+            "ready_breathing_color", (0, 1, 0)
+        )  # dark green
+        self.led_recording_color = self.config.get(
+            "recording_color", (0, 255, 0)
+        )  # bright green
+        self.led_breathing_duration = self.config.get("ready_breathing_duration", 60)
+        self.led_processing_color = self.config.get(
+            "processing_color", (0, 1, 0)
+        )  # dark green
+        self.led_processing_blink_period_ms = self.config.get(
+            "processing_blink_period_ms", 300
+        )
+        self.audio_sample_rate = self.config.get("audio_sample_rate", 16000)
+        self.audio_recording_chunk_duration_sec = self.config.get(
+            "audio_recording_chunk_duration_sec", 0.1
+        )
+        self.max_number_of_chunks = self.config.get("max_number_of_chunks", 5)
         self.number_of_chuncks_to_record_after_button_depressed = self.config.get(
-            'number_of_chuncks_to_record_after_button_depressed', 3)
+            "number_of_chuncks_to_record_after_button_depressed", 3
+        )
         self.cleaning_routine: Callable = cleaning
         self.cleaning_task = None
         self.last_clean_date: Optional[datetime.date] = None
@@ -202,8 +242,12 @@ class SpeechTranscriber:
 
     async def check_and_schedule_cleaning(self) -> None:
         now: datetime.datetime = datetime.datetime.now()
-        cleaning_time_start = datetime.time(hour=self.config.get("cleaning_tine_start_hour", 3))  # 3 AM
-        cleaning_time_stop = datetime.time(hour=self.config.get("cleaning_time_stop_hour", 4))  # 4 AM
+        cleaning_time_start = datetime.time(
+            hour=self.config.get("cleaning_tine_start_hour", 3)
+        )  # 3 AM
+        cleaning_time_stop = datetime.time(
+            hour=self.config.get("cleaning_time_stop_hour", 4)
+        )  # 4 AM
 
         if cleaning_time_start <= now.time() < cleaning_time_stop:
             if self.last_clean_date != now.date():
@@ -212,16 +256,18 @@ class SpeechTranscriber:
                 self.last_clean_date = now.date()
 
     def setup_speech_service(self):
-        service_name = self.config.get('speech_recognition_service', 'yandex').lower()
-        if service_name == 'google':
+        service_name = self.config.get("speech_recognition_service", "yandex").lower()
+        if service_name == "google":
             self.speech_service = GoogleSpeechRecognition()
-        elif service_name == 'yandex':
+        elif service_name == "yandex":
             self.speech_service = YandexSpeechRecognition()
         else:
             raise ValueError(f"Unsupported speech recognition service: {service_name}")
         self.speech_service.setup_client(self.config)
 
-    async def transcribe_speech(self, player_process: Optional[ResponsePlayer] = None) -> str:
+    async def transcribe_speech(
+        self, player_process: Optional[ResponsePlayer] = None
+    ) -> str:
         """
         Transcribe speech from the microphone input, including pre and post buffering.
 
@@ -238,14 +284,20 @@ class SpeechTranscriber:
         async def generate_audio_chunks():
             nonlocal status, chunks_deque, player_process
 
-            audio_format = AudioFormat(sample_rate_hz=self.audio_sample_rate, num_channels=1, bytes_per_sample=2)
+            audio_format = AudioFormat(
+                sample_rate_hz=self.audio_sample_rate,
+                num_channels=1,
+                bytes_per_sample=2,
+            )
             record_more = 0
             breathing_on = False
 
             def start_idle() -> bool:
                 nonlocal status, time_breathing_started, breathing_on, player_process
                 if player_process is None or not player_process.is_playing():
-                    logger.info(f'({time_string_ms(self.timezone)}) Ready to listen...  LED: breathing')
+                    logger.info(
+                        f"({time_string_ms(self.timezone)}) Ready to listen...  LED: breathing"
+                    )
                     self.leds.pattern = Pattern.breathe(self.breathing_period_ms)
                     self.leds.update(Leds.rgb_pattern(self.led_breathing_color))
                     time_breathing_started = time.time()
@@ -256,21 +308,25 @@ class SpeechTranscriber:
 
             def start_listening():
                 nonlocal status, breathing_on, recoding_started_at
-                logger.info(f'({time_string_ms(self.timezone)}) Recording audio... LED solid')
+                logger.info(
+                    f"({time_string_ms(self.timezone)}) Recording audio... LED solid"
+                )
                 self.leds.update(Leds.rgb_on(self.led_recording_color))
                 breathing_on = False
                 recoding_started_at = time.time()
 
             def start_processing():
                 nonlocal status, record_more
-                logger.info(f'({time_string_ms(self.timezone)}) Processing audio... LED blinking')
+                logger.info(
+                    f"({time_string_ms(self.timezone)}) Processing audio... LED blinking"
+                )
                 self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_processing_color))
                 record_more = self.number_of_chuncks_to_record_after_button_depressed
 
             def stop_breathing():
                 nonlocal breathing_on
-                logger.info('Breathing off LED OFF')
+                logger.info("Breathing off LED OFF")
                 self.leds.update(Leds.rgb_off())
                 breathing_on = False
 
@@ -291,22 +347,29 @@ class SpeechTranscriber:
 
             recoding_started_at = time.time()
             time_breathing_started = time.time()
-            for chunk in recorder.record(audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec):
-
+            for chunk in recorder.record(
+                audio_format, chunk_duration_sec=self.audio_recording_chunk_duration_sec
+            ):
                 if status == RecordingStatus.NOT_STARTED and not idle:
                     idle = start_idle()
 
                 if self.cleaning_routine:
                     await self.check_and_schedule_cleaning()
 
-                if (time.time() - time_breathing_started > self.led_breathing_duration) and breathing_on:
+                if (
+                    time.time() - time_breathing_started > self.led_breathing_duration
+                ) and breathing_on:
                     stop_breathing()
 
-                if (status != RecordingStatus.FINISHED) or (status == RecordingStatus.FINISHED and record_more > 0):
+                if (status != RecordingStatus.FINISHED) or (
+                    status == RecordingStatus.FINISHED and record_more > 0
+                ):
                     if status == RecordingStatus.FINISHED:
                         record_more -= 1
                     chunks_deque.append(chunk)
-                    if (status == RecordingStatus.NOT_STARTED) and (len(chunks_deque) > self.max_number_of_chunks):
+                    if (status == RecordingStatus.NOT_STARTED) and (
+                        len(chunks_deque) > self.max_number_of_chunks
+                    ):
                         chunks_deque.popleft()
 
                 if (status == RecordingStatus.NOT_STARTED) and self.button_is_pressed:
@@ -339,7 +402,7 @@ class SpeechTranscriber:
                     status = RecordingStatus.FINISHED
 
         self.setup_button_callbacks()
-        logger.info('Press the button and speak')
+        logger.info("Press the button and speak")
 
         with Recorder() as recorder:
             audio_generator = generate_audio_chunks()
@@ -348,7 +411,7 @@ class SpeechTranscriber:
                 if status != RecordingStatus.NOT_STARTED:
                     break
 
-            logger.debug('Processing audio...')
+            logger.debug("Processing audio...")
 
             try:
                 audio_queue = queue.Queue()
@@ -369,8 +432,12 @@ class SpeechTranscriber:
                 fill_queue_task = asyncio.create_task(fill_queue())
 
                 loop = asyncio.get_event_loop()
-                text = await loop.run_in_executor(None, self.speech_service.transcribe_stream, sync_audio_generator(),
-                                                  self.config)
+                text = await loop.run_in_executor(
+                    None,
+                    self.speech_service.transcribe_stream,
+                    sync_audio_generator(),
+                    self.config,
+                )
 
                 # wait queue
                 await fill_queue_task
@@ -393,25 +460,25 @@ class SpeechTranscriber:
         Callback function for button press event.
         """
         self.button_is_pressed = True
-        logger.debug('Button pressed')
+        logger.debug("Button pressed")
 
     def button_released(self):
         """
         Callback function for button release event.
         """
         self.button_is_pressed = False
-        logger.debug('Button released')
+        logger.debug("Button released")
 
     def wait_for_button_press(self):
         """
         Wait for the button to be pressed, with visual LED feedback.
         """
-        logger.info('Waiting for button press... LED solid')
+        logger.info("Waiting for button press... LED solid")
         self.leds.pattern = Pattern.breathe(10000)
         self.leds.update(Leds.rgb_pattern((0, 1, 0)))
         self.button.wait_for_press()
         self.leds.update(Leds.rgb_off())
-        logger.info('Button pressed LED OFF')
+        logger.info("Button pressed LED OFF")
 
 
 def split_text(text: str, max_length: int) -> List[str]:
@@ -425,7 +492,7 @@ def split_text(text: str, max_length: int) -> List[str]:
     Returns:
         List[str]: A list of text chunks.
     """
-    sentences = re.split('(?<=[.!?]) +', text)
+    sentences = re.split("(?<=[.!?]) +", text)
     chunks = []
     current_chunk = ""
 
@@ -442,7 +509,9 @@ def split_text(text: str, max_length: int) -> List[str]:
     return chunks
 
 
-def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Config) -> bool:
+def synthesize_speech(
+    engine: TTSEngine, text: str, filename: str, config: Config
+) -> bool:
     """
     Synthesize speech from text, handling long texts by splitting and combining audio chunks.
 
@@ -455,7 +524,7 @@ def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Confi
     Returns:
         bool: True if the speech was successfully synthesized, False otherwise.
     """
-    logger.debug('Synthesizing speech for: %s', text)
+    logger.debug("Synthesizing speech for: %s", text)
     max_size_tts = engine.max_text_length()
     result = True
     if (max_size_tts > 0) and (len(text) > max_size_tts):
@@ -488,11 +557,13 @@ def synthesize_speech(engine: TTSEngine, text: str, filename: str, config: Confi
     return result
 
 
-async def synthesize_speech_async(engine: TTSEngine, text: str, filename: str, config: Config) -> bool:
+async def synthesize_speech_async(
+    engine: TTSEngine, text: str, filename: str, config: Config
+) -> bool:
     """
     Asynchronous version of synthesize_speech function.
     """
-    logger.debug('Synthesizing speech for: %s', text)
+    logger.debug("Synthesizing speech for: %s", text)
     max_size_tts = engine.max_text_length()
     result = True
     if (max_size_tts > 0) and (len(text) > max_size_tts):
@@ -505,7 +576,9 @@ async def synthesize_speech_async(engine: TTSEngine, text: str, filename: str, c
                 for i, chunk in enumerate(chunks):
                     chunk_file = os.path.join(temp_dir, f"chunk_{i}.wav")
                     logger.debug(f"Synthesizing chunk {i}: {chunk}")
-                    task = asyncio.create_task(engine.synthesize_async(session, chunk, chunk_file))
+                    task = asyncio.create_task(
+                        engine.synthesize_async(session, chunk, chunk_file)
+                    )
                     tasks.append(task)
 
                 await asyncio.gather(*tasks)

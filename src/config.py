@@ -21,18 +21,24 @@ class Config(BaseModel):
     3. user.json (user-specific overrides)
     4. config.json (shared configuration)
     """
+
     class Config:
         extra = "allow"
         arbitrary_types_allowed = True
 
-    def __init__(self, config_file: str = "config.json", user_config_file: str = "user.json", **data):
+    def __init__(
+        self,
+        config_file: str = "config.json",
+        user_config_file: str = "user.json",
+        **data,
+    ):
         # First collect all configuration data
         init_data = {}
 
         # Load from shared config file (lowest precedence)
         if os.path.exists(config_file):
             try:
-                with open(config_file, 'r') as f:
+                with open(config_file, "r") as f:
                     file_config = json.load(f)
                     init_data.update(file_config)
             except json.JSONDecodeError as e:
@@ -41,15 +47,17 @@ class Config(BaseModel):
         # Load from user config file (overrides shared config)
         if os.path.exists(user_config_file):
             try:
-                with open(user_config_file, 'r') as f:
+                with open(user_config_file, "r") as f:
                     user_config = json.load(f)
                     init_data.update(user_config)
             except json.JSONDecodeError as e:
-                raise ValueError(f"Error parsing user config file {user_config_file}: {str(e)}")
+                raise ValueError(
+                    f"Error parsing user config file {user_config_file}: {str(e)}"
+                )
 
         # Load from environment variables (overrides both config files)
         for key, value in os.environ.items():
-            if key.startswith('APP_'):
+            if key.startswith("APP_"):
                 try:
                     # Try to parse as JSON for complex types
                     parsed_value = json.loads(value)
@@ -127,7 +135,7 @@ class Config(BaseModel):
         return {
             key: value
             for key, value in self.__dict__.items()
-            if not key.startswith('_')
+            if not key.startswith("_")
         }
 
     def __str__(self) -> str:

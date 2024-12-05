@@ -46,12 +46,10 @@ class OpenAISTTEngine(STTEngine):
             str: The transcribed text.
         """
         import openai
-        with open(audio_file, 'rb') as f:
+
+        with open(audio_file, "rb") as f:
             return openai.audio.transcriptions.create(
-                model="whisper-1",
-                file=f,
-                language="en",
-                response_format="text"
+                model="whisper-1", file=f, language="en", response_format="text"
             )
 
 
@@ -71,6 +69,7 @@ class GoogleSTTEngine(STTEngine):
             str: The transcribed text.
         """
         import speech_recognition as sr
+
         recognizer = sr.Recognizer()
         with sr.AudioFile(audio_file) as source:
             audio = recognizer.record(source)
@@ -80,5 +79,7 @@ class GoogleSTTEngine(STTEngine):
             logger.error("Unknown error occurred")
             return ""
         except sr.RequestError:
-            logger.error("Could not request results from Google Speech Recognition service")
+            logger.error(
+                "Could not request results from Google Speech Recognition service"
+            )
             return ""

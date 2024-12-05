@@ -3,6 +3,7 @@ This module provides functionality for controlling LED behavior and playing audi
 based on emotional states. It includes utilities for adjusting RGB colors, changing LED
 patterns, and managing a playlist of audio files with corresponding LED behaviors.
 """
+
 import json
 import logging
 import queue
@@ -23,37 +24,41 @@ logger = logging.getLogger(__name__)
 
 def emotions_prompt() -> str:
     """
-        Returns a string containing instructions for expressing emotions using LED commands.
+    Returns a string containing instructions for expressing emotions using LED commands.
 
-        Returns:
-            str: A prompt explaining how to use LED commands to express emotions.
-        """
-    return ('Express emotions with light and tone of voice when appropriate, '
-            'especially for significant changes in mood or emphasis. Use this format before relevant text: '
-            '$emotion:{"light":{"color":[R,G,B] (0-255),"behavior":"continuous/blinking/breathing",'
-            '"brightness":"dark/medium/bright","period":X (sec)}}, {"voice":{"tone":"plain/happy"}}}$. '
-            'All fields within the emotion command are mandatory when used. '
-            'Use this format for notable emotional shifts or to highlight important points. '
-            'Emotions can persist across multiple sentences if the mood remains consistent. '
-            'Empty emotion or emotion with empty light turns off light. '
-            'Empty emotion or emotion with empty voice resets tone to plain.')
+    Returns:
+        str: A prompt explaining how to use LED commands to express emotions.
+    """
+    return (
+        "Express emotions with light and tone of voice when appropriate, "
+        "especially for significant changes in mood or emphasis. Use this format before relevant text: "
+        '$emotion:{"light":{"color":[R,G,B] (0-255),"behavior":"continuous/blinking/breathing",'
+        '"brightness":"dark/medium/bright","period":X (sec)}}, {"voice":{"tone":"plain/happy"}}}$. '
+        "All fields within the emotion command are mandatory when used. "
+        "Use this format for notable emotional shifts or to highlight important points. "
+        "Emotions can persist across multiple sentences if the mood remains consistent. "
+        "Empty emotion or emotion with empty light turns off light. "
+        "Empty emotion or emotion with empty voice resets tone to plain."
+    )
 
 
 def extract_emotions(text: str) -> List[Tuple[Optional[dict], str]]:
     """
-        This function parses the given text and extracts 'emotion' dictionaries (if any) and the associated text following them.
-        The structured data is returned as a list of tuples, each containing the dictionary and the corresponding text.
+    This function parses the given text and extracts 'emotion' dictionaries (if any) and the associated text following them.
+    The structured data is returned as a list of tuples, each containing the dictionary and the corresponding text.
 
-        An emotion dictionary is expected to be enclosed inside '$emotion:' and '$' markers in the input text.
-        Any text not preceded by an emotion marker is associated with an empty dictionary.
+    An emotion dictionary is expected to be enclosed inside '$emotion:' and '$' markers in the input text.
+    Any text not preceded by an emotion marker is associated with an empty dictionary.
 
-        :param text: str, Input text which includes 'emotion' dictionaries and text.
-        :return: List[Tuple[Dict, str]]. Each tuple contains:
-            - dict: The parsed 'emotion' dictionary or an empty dictionary if no dictionary was found.
-            - str: The associated text following the dictionary or preceding the next dictionary.
-        """
+    :param text: str, Input text which includes 'emotion' dictionaries and text.
+    :return: List[Tuple[Dict, str]]. Each tuple contains:
+        - dict: The parsed 'emotion' dictionary or an empty dictionary if no dictionary was found.
+        - str: The associated text following the dictionary or preceding the next dictionary.
+    """
 
-    pattern = re.compile(r'(.*?)\$emotion:\s*(\{.*?\})?\$(.*?)(?=\$emotion:|$)', re.DOTALL)
+    pattern = re.compile(
+        r"(.*?)\$emotion:\s*(\{.*?\})?\$(.*?)(?=\$emotion:|$)", re.DOTALL
+    )
 
     results = []
     pos = 0
@@ -68,7 +73,7 @@ def extract_emotions(text: str) -> List[Tuple[Optional[dict], str]]:
         if preceding_text:
             results.append((None, preceding_text))
 
-        emotion_dict_str = match.group(2) if match.group(2) else '{}'
+        emotion_dict_str = match.group(2) if match.group(2) else "{}"
         associated_text = match.group(3).strip()
         try:
             emotion_dict = json.loads(emotion_dict_str)
@@ -86,7 +91,7 @@ def language_prompt() -> str:
 
 def extract_language(text: str, default_lang="ru") -> List[Tuple[str, str]]:
     # Regular expression to match language codes and subsequent text
-    pattern = r'(?:^(.*?))?(?:\$lang:\s*(\w+)\$(.*?))?(?=\$lang:|$)'
+    pattern = r"(?:^(.*?))?(?:\$lang:\s*(\w+)\$(.*?))?(?=\$lang:|$)"
 
     # Find all matches in the text
     matches = re.findall(pattern, text, re.DOTALL)
@@ -116,7 +121,7 @@ def adjust_rgb_brightness(rgb: List[int], brightness: str) -> Tuple[int, int, in
     import colorsys
 
     # Define brightness factors
-    brightness_factors = {'low': 0.4, 'medium': 0.7, 'high': 1.0}
+    brightness_factors = {"low": 0.4, "medium": 0.7, "high": 1.0}
 
     # Get the brightness factor, default to medium if invalid input
     factor = brightness_factors.get(brightness.lower(), 0.7)
@@ -170,7 +175,9 @@ class ResponsePlayer:
         condition (threading.Condition): Condition variable for efficient thread synchronization.
     """
 
-    def __init__(self, playlist: List[Tuple[Optional[Dict], str, str]], leds: Leds, timezone: str):
+    def __init__(
+        self, playlist: List[Tuple[Optional[Dict], str, str]], leds: Leds, timezone: str
+    ):
         """
         Initialize the ResponsePlayer.
 
@@ -213,13 +220,17 @@ class ResponsePlayer:
         """
         with self.lock:
             if self._stopped:
-                logger.warning(f"Ignoring add request for {playitem} as player is stopped.")
+                logger.warning(
+                    f"Ignoring add request for {playitem} as player is stopped."
+                )
                 return
 
             emo, file, text = playitem
-            light = None if emo is None else emo.get('light', None)
+            light = None if emo is None else emo.get("light", None)
             m_item = MergeItem(light=light, filename=file, text=text)
-            logger.debug(f"({time_string_ms(self.timezone)}) Adding {m_item} to merge queue.")
+            logger.debug(
+                f"({time_string_ms(self.timezone)}) Adding {m_item} to merge queue."
+            )
             self.merge_queue.put(m_item)
 
         with self.condition:
@@ -246,20 +257,24 @@ class ResponsePlayer:
             logger.debug("empty behaviour, LED OFF")
             self.leds.update(Leds.rgb_off())
         else:
-            color = adjust_rgb_brightness(behaviour['color'], behaviour['brightness'])
+            color = adjust_rgb_brightness(behaviour["color"], behaviour["brightness"])
             if behaviour["behavior"] == "breathing":
                 self.leds.pattern = Pattern.breathe(behaviour["period"] * 1000)
                 self.leds.update(Leds.rgb_pattern(color))
                 logger.debug(
-                    f"breathing {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['period']} period")
+                    f"breathing {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['period']} period"
+                )
             elif behaviour["behavior"] == "blinking":
                 self.leds.pattern = Pattern.blink(behaviour["period"] * 1000)
                 self.leds.update(Leds.rgb_pattern(color))
                 logger.debug(
-                    f"blinking {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['period']} period")
+                    f"blinking {behaviour['color']} {behaviour['brightness']} ({color}) with {behaviour['period']} period"
+                )
             else:
                 self.leds.update(Leds.rgb_on(color))
-                logger.debug(f"solid {behaviour['color']} {behaviour['brightness']} ({color}) color")
+                logger.debug(
+                    f"solid {behaviour['color']} {behaviour['brightness']} ({color}) color"
+                )
 
     def _merge_audio_files(self):
         """
@@ -276,7 +291,8 @@ class ResponsePlayer:
                 try:
                     mi: MergeItem = self.merge_queue.get_nowait()
                     logger.debug(
-                        f"({time_string_ms(self.timezone)}) merging {mi.light} {mi.filename} {self.wav_list_light} {self.wav_list}")
+                        f"({time_string_ms(self.timezone)}) merging {mi.light} {mi.filename} {self.wav_list_light} {self.wav_list}"
+                    )
                     if not self.wav_list:
                         self.wav_list_light = mi.light
                         self.wav_list = [(mi.filename, mi.text)]
@@ -308,9 +324,14 @@ class ResponsePlayer:
                 return
 
             logger.debug(
-                f"({time_string_ms(self.timezone)}) merging {self.wav_list_light} {self.wav_list} {self.playlist}")
+                f"({time_string_ms(self.timezone)}) merging {self.wav_list_light} {self.wav_list} {self.playlist}"
+            )
 
-            light = self.wav_list_light if self.wav_list_light is not None else self.current_light
+            light = (
+                self.wav_list_light
+                if self.wav_list_light is not None
+                else self.current_light
+            )
             if len(self.wav_list) == 1:
                 self.playlist.put((light, self.wav_list[0][0]))
             else:
@@ -322,7 +343,9 @@ class ResponsePlayer:
             with self.condition:
                 self.condition.notify()
 
-            logger.debug(f"Processed and added merged audio to playlist: {self.wav_list_light}, {self.wav_list}")
+            logger.debug(
+                f"Processed and added merged audio to playlist: {self.wav_list_light}, {self.wav_list}"
+            )
             self.wav_list = []
 
     def play(self):
@@ -351,22 +374,31 @@ class ResponsePlayer:
         logger.debug("_play_sequence started")
         while True:
             with self.condition:
-                while self._should_play and self.playlist.empty() and self.merge_queue.empty():
-                    logger.debug(f"({time_string_ms(self.timezone)}) wait for condition")
+                while (
+                    self._should_play
+                    and self.playlist.empty()
+                    and self.merge_queue.empty()
+                ):
+                    logger.debug(
+                        f"({time_string_ms(self.timezone)}) wait for condition"
+                    )
                     self.condition.wait()
                 if not self._should_play:
                     logger.info("should_play: False")
                     break
                 try:
                     light, audio_file = self.playlist.get_nowait()
-                    logger.debug(f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}")
+                    logger.debug(
+                        f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}"
+                    )
                 except queue.Empty:
                     # If playlist is empty, process wav_list and continue
                     self._process_wav_list()
                     continue
 
             logger.debug(
-                f"({time_string_ms(self.timezone)}) Playing {audio_file} with {light}")
+                f"({time_string_ms(self.timezone)}) Playing {audio_file} with {light}"
+            )
 
             self.change_light_behavior(light)
             self.current_process = play_wav_async(audio_file)
@@ -421,7 +453,9 @@ class ResponsePlayer:
         if self.merge_thread and self.merge_thread.is_alive():
             self.merge_thread.join(timeout=1.0)
 
-        logger.debug("Playback stopped, all queues cleared, and player set to stopped state")
+        logger.debug(
+            "Playback stopped, all queues cleared, and player set to stopped state"
+        )
 
     def is_playing(self) -> bool:
         """
@@ -431,5 +465,12 @@ class ResponsePlayer:
             bool: True if audio is playing or queued, False otherwise.
         """
         with self.lock:
-            return (self._should_play and not self._stopped and (
-                    not self.playlist.empty() or not self.merge_queue.empty() or self.current_process is not None))
+            return (
+                self._should_play
+                and not self._stopped
+                and (
+                    not self.playlist.empty()
+                    or not self.merge_queue.empty()
+                    or self.current_process is not None
+                )
+            )

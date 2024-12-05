@@ -8,6 +8,7 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
+
 class InterpreterTool:
     """
     This class represents an interpreter tool that can be used to execute Python code in a sandbox environment.
@@ -52,36 +53,40 @@ The result is JSON dictionary with keys stdout and stderr.
             description=self.base_description,
             iterative=True,
             parameters=[
-                ToolParameter(name='code', type='string', description='Python code to execute')
+                ToolParameter(
+                    name="code", type="string", description="Python code to execute"
+                )
             ],
             required=["code"],
-            processor=self.execute_code_async
+            processor=self.execute_code_async,
         )
 
     def __init__(self, config: Config):
         self.api_key = os.environ["RAPID_API_KEY"]
-        self.api_base = config.get('judge0_api_base', 'https://judge0-ce.p.rapidapi.com')
+        self.api_base = config.get(
+            "judge0_api_base", "https://judge0-ce.p.rapidapi.com"
+        )
         self.headers: Dict[str, str] = {
             "x-rapidapi-host": "judge0-ce.p.rapidapi.com",
             "x-rapidapi-key": self.api_key,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
         self.python_language_id: int = 71
 
     async def execute_code_async(self, parameters: Dict[str, Any]) -> str:
-        if 'code' not in parameters:
+        if "code" not in parameters:
             logger.error("Missing 'code' parameter")
             return "Error: Missing required parameter 'code'"
 
-        code = parameters['code']
+        code = parameters["code"]
         # code = """
-# for dist in __import__('pkg_resources').working_set:
-#     print (dist.project_name.replace('Python', ''))"""
+        # for dist in __import__('pkg_resources').working_set:
+        #     print (dist.project_name.replace('Python', ''))"""
 
         submission_data = {
             "source_code": code,
             "language_id": self.python_language_id,
-            "stdin": parameters.get('stdin', ""),
+            "stdin": parameters.get("stdin", ""),
         }
 
         try:
@@ -89,7 +94,7 @@ The result is JSON dictionary with keys stdout and stderr.
             if not submission:
                 return "Error: Failed to create submission"
 
-            result = await self._get_submission_result(submission['token'])
+            result = await self._get_submission_result(submission["token"])
             if not result:
                 return "Error: Failed to get submission result"
 
@@ -104,13 +109,15 @@ The result is JSON dictionary with keys stdout and stderr.
             logger.error(f"Unexpected error occurred: {e}")
             return f"Error: An unexpected error occurred - {e}"
 
-    async def _create_submission(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def _create_submission(
+        self, data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                    f"{self.api_base}/submissions?base64_encoded=false&wait=false",
-                    headers=self.headers,
-                    json=data,
-                    timeout=10  # 10 seconds timeout
+                f"{self.api_base}/submissions?base64_encoded=false&wait=false",
+                headers=self.headers,
+                json=data,
+                timeout=10,  # 10 seconds timeout
             ) as response:
                 if response.status == 201:
                     return await response.json()
@@ -123,16 +130,21 @@ The result is JSON dictionary with keys stdout and stderr.
         for attempt in range(max_attempts):
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                        f"{self.api_base}/submissions/{token}?base64_encoded=false",
-                        headers=self.headers,
-                        timeout=10  # 10 seconds timeout
+                    f"{self.api_base}/submissions/{token}?base64_encoded=false",
+                    headers=self.headers,
+                    timeout=10,  # 10 seconds timeout
                 ) as response:
                     if response.status == 200:
                         result = await response.json()
-                        if result['status']['id'] not in [1, 2]:  # Not In Queue or Processing
+                        if result["status"]["id"] not in [
+                            1,
+                            2,
+                        ]:  # Not In Queue or Processing
                             return result
                     else:
-                        logger.error(f"Failed to get submission result: {response.status}")
+                        logger.error(
+                            f"Failed to get submission result: {response.status}"
+                        )
                         return None
             await asyncio.sleep(1)  # Wait before next attempt
         logger.error("Max attempts reached while waiting for submission result")
@@ -141,15 +153,15 @@ The result is JSON dictionary with keys stdout and stderr.
     def _format_result(self, result: Dict[str, Any]) -> str:
         formatted_result = f"Status: {result['status']['description']}\n"
 
-        if result.get('compile_output'):
+        if result.get("compile_output"):
             formatted_result += f"Compile Output:\n{result['compile_output']}\n"
-        if result.get('stdout'):
+        if result.get("stdout"):
             formatted_result += f"Standard Output:\n{result['stdout']}\n"
-        if result.get('stderr'):
+        if result.get("stderr"):
             formatted_result += f"Standard Error:\n{result['stderr']}\n"
-        if result.get('time'):
+        if result.get("time"):
             formatted_result += f"Execution Time: {result['time']} seconds\n"
-        if result.get('memory'):
+        if result.get("memory"):
             formatted_result += f"Memory Used: {result['memory']} KB\n"
 
         return formatted_result
@@ -157,16 +169,16 @@ The result is JSON dictionary with keys stdout and stderr.
     async def get_python_version(self) -> str:
         languages = await self.get_languages()
         for lang in languages:
-            if lang['id'] == self.python_language_id:
-                return lang['name']
+            if lang["id"] == self.python_language_id:
+                return lang["name"]
         return "Python version information not found"
 
     async def get_languages(self) -> List[Dict[str, Any]]:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                    f"{self.api_base}/languages",
-                    headers=self.headers,
-                    timeout=10  # 10 seconds timeout
+                f"{self.api_base}/languages",
+                headers=self.headers,
+                timeout=10,  # 10 seconds timeout
             ) as response:
                 if response.status == 200:
                     return await response.json()

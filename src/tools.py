@@ -7,7 +7,18 @@ import re
 import time
 from datetime import datetime
 from functools import wraps
-from typing import List, Dict, Union, Any, Callable, AsyncGenerator, Iterable, Tuple, AsyncIterator, Optional
+from typing import (
+    List,
+    Dict,
+    Union,
+    Any,
+    Callable,
+    AsyncGenerator,
+    Iterable,
+    Tuple,
+    AsyncIterator,
+    Optional,
+)
 
 import aiofiles
 import geocoder
@@ -27,7 +38,7 @@ def estimate_tokens(text: str) -> int:
     Returns:
         int: Estimated number of tokens.
     """
-    words = len(re.findall(r'\b\w+\b', text))
+    words = len(re.findall(r"\b\w+\b", text))
     punctuation = len(re.findall(r'[.,!?;:"]', text))
     return int(words * 1.5 + punctuation)
 
@@ -44,20 +55,25 @@ def get_token_count(messages: List[Dict[str, Union[str, Dict]]]) -> int:
     """
     count = 0
     for msg in messages:
-        content = msg['content']
+        content = msg["content"]
         if isinstance(content, str):
             count += estimate_tokens(content)
         elif isinstance(content, dict):
-            if 'text' in content:
-                count += estimate_tokens(content['text'])
-            elif 'content' in content:
+            if "text" in content:
+                count += estimate_tokens(content["text"])
+            elif "content" in content:
                 count += get_token_count(content)
         elif isinstance(content, list):
             for item in content:
                 if isinstance(item, str):
                     count += estimate_tokens(item)
-                elif isinstance(item, dict) and 'type' in item and item['type'] == 'text' and 'text' in item:
-                    count += estimate_tokens(item['text'])
+                elif (
+                    isinstance(item, dict)
+                    and "type" in item
+                    and item["type"] == "text"
+                    and "text" in item
+                ):
+                    count += estimate_tokens(item["text"])
         else:
             logger.error(f"unknown message type {content}")
 
@@ -75,9 +91,9 @@ def get_timezone() -> str:
     import googlemaps
     import time
 
-    g = geocoder.ip('me')
+    g = geocoder.ip("me")
 
-    key = os.environ.get('GOOGLE_API_KEY')
+    key = os.environ.get("GOOGLE_API_KEY")
     gmaps = googlemaps.Client(key=key)
     timezone = gmaps.timezone(g.latlng, time.time())
 
@@ -86,7 +102,11 @@ def get_timezone() -> str:
 
 def time_string_ms(timezone_string: str) -> str:
     # 07:00.989
-    return datetime.now(pytz.utc).astimezone(pytz.timezone(timezone_string)).strftime("%M:%S.%f")[:-3]
+    return (
+        datetime.now(pytz.utc)
+        .astimezone(pytz.timezone(timezone_string))
+        .strftime("%M:%S.%f")[:-3]
+    )
 
 
 def get_location_string() -> str:
@@ -104,9 +124,13 @@ def get_location_string() -> str:
     San Francisco, CA, United States
     ```
     """
-    g = geocoder.ip('me')
+    g = geocoder.ip("me")
     location_parts = [g.city, g.state, g.country]
-    location = ', '.join([part for part in location_parts if part]) if any(location_parts) else ''
+    location = (
+        ", ".join([part for part in location_parts if part])
+        if any(location_parts)
+        else ""
+    )
     return location
 
 
@@ -138,8 +162,20 @@ def get_current_date_time_tuple(timezone_string: str) -> Tuple[str, str]:
     now_local = now_utc.astimezone(timezone)
 
     # Format the date with the month as a word
-    months = {1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля', 5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
-              9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'}
+    months = {
+        1: "января",
+        2: "февраля",
+        3: "марта",
+        4: "апреля",
+        5: "мая",
+        6: "июня",
+        7: "июля",
+        8: "августа",
+        9: "сентября",
+        10: "октября",
+        11: "ноября",
+        12: "декабря",
+    }
     date_str = now_local.strftime(f"%d {months[now_local.month]} %Y")
 
     # Format the time in 12-hour format with AM/PM and timezone
@@ -185,9 +221,13 @@ def get_location() -> str:
 
     :return: a string representing the location of the user based on their IP address.
     """
-    g = geocoder.ip('me')
+    g = geocoder.ip("me")
     location_parts = [g.city, g.state, g.country]
-    location = ', '.join([part for part in location_parts if part]) if any(location_parts) else ''
+    location = (
+        ", ".join([part for part in location_parts if part])
+        if any(location_parts)
+        else ""
+    )
 
     return f"In {location}."
 
@@ -244,8 +284,20 @@ def get_current_date_time_for_facts(timezone_string: str) -> str:
     now_local = now_utc.astimezone(timezone)
 
     # Format the date with the month as a word
-    months = {1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля', 5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
-              9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'}
+    months = {
+        1: "января",
+        2: "февраля",
+        3: "марта",
+        4: "апреля",
+        5: "мая",
+        6: "июня",
+        7: "июля",
+        8: "августа",
+        9: "сентября",
+        10: "октября",
+        11: "ноября",
+        12: "декабря",
+    }
     date_str = now_local.strftime(f"%d {months[now_local.month]} %Y")
 
     # Format the time in 12-hour format with AM/PM and timezone
@@ -275,11 +327,11 @@ def indent_content(content, max_width=120):
 
     def replace_special(match):
         special_parts.append(match.group(0))
-        return f'\n{{{len(special_parts) - 1}}}\n'
+        return f"\n{{{len(special_parts) - 1}}}\n"
 
-    content = re.sub(r'\$\w+:.+?\$', replace_special, content)
+    content = re.sub(r"\$\w+:.+?\$", replace_special, content)
     # Split content into sentences
-    sentences = re.split(r'(?<=[.!?])\s+', content.strip())
+    sentences = re.split(r"(?<=[.!?])\s+", content.strip())
     formatted_lines = []
 
     current_line = []
@@ -288,16 +340,16 @@ def indent_content(content, max_width=120):
         words = sentence.split()
 
         for word in words:
-            if word.startswith('{') and word.endswith('}'):
+            if word.startswith("{") and word.endswith("}"):
                 # This is a placeholder for a special part
                 if current_line:
-                    formatted_lines.append(' '.join(current_line))
+                    formatted_lines.append(" ".join(current_line))
                 formatted_lines.append(special_parts[int(word[1:-1])])
                 current_line = []
                 current_length = 0
 
             elif current_length + len(word) + (1 if current_line else 0) > max_width:
-                formatted_lines.append(' '.join(current_line))
+                formatted_lines.append(" ".join(current_line))
                 current_line = [word]
                 current_length = len(word)
             else:
@@ -305,17 +357,19 @@ def indent_content(content, max_width=120):
                 current_length += len(word) + (1 if current_line else 0)
 
     if current_line:
-        formatted_lines.append(' '.join(current_line))
+        formatted_lines.append(" ".join(current_line))
 
         # Add a blank line after each sentence, except the last one
         if sentence != sentences[-1]:
-            formatted_lines.append('')
+            formatted_lines.append("")
 
     # Join all lines with newline and indentation
-    return '    ' + '\n    '.join(formatted_lines)
+    return "    " + "\n    ".join(formatted_lines)
 
 
-def format_message_history(message_history: Iterable[Dict[str, str]], max_width=120) -> str:
+def format_message_history(
+    message_history: Iterable[Dict[str, str]], max_width=120
+) -> str:
     """
     Format the message history into a formatted string with a specified maximum width.
 
@@ -323,7 +377,12 @@ def format_message_history(message_history: Iterable[Dict[str, str]], max_width=
     :param max_width: An optional parameter specifying the maximum width of the formatted string. Default is 120.
     :return: The formatted message history as a string.
     """
-    return "\n\n".join([f'{msg["role"]}:\n{indent_content(msg["content"], max_width)}' for msg in message_history])
+    return "\n\n".join(
+        [
+            f'{msg["role"]}:\n{indent_content(msg["content"], max_width)}'
+            for msg in message_history
+        ]
+    )
 
 
 async def save_to_conversation(role: str, message: str, timezone: str, max_width=120):
@@ -343,9 +402,10 @@ def extract_json(text):
         pass  # If it fails, continue to other methods
 
     # Patterns to match JSON content within triple backticks
-    patterns = [r'```json\s*([\s\S]*?)\s*```',  # For ```json
-                r'```\s*([\s\S]*?)\s*```'  # For ```
-                ]
+    patterns = [
+        r"```json\s*([\s\S]*?)\s*```",  # For ```json
+        r"```\s*([\s\S]*?)\s*```",  # For ```
+    ]
 
     for pattern in patterns:
         matches = re.findall(pattern, text)
@@ -367,11 +427,16 @@ def clean_response(response: str) -> str:
     :param response: The response string with placeholders.
     :return: The response string with placeholders removed.
     """
-    pattern = r'\$\w+:[^$]*\$'
-    return re.sub(pattern, '', response)
+    pattern = r"\$\w+:[^$]*\$"
+    return re.sub(pattern, "", response)
 
 
-def retry(max_retries: int = 5, initial_retry_delay: float = 1, backoff_factor: float = 2, jitter_factor: float = 0.1):
+def retry(
+    max_retries: int = 5,
+    initial_retry_delay: float = 1,
+    backoff_factor: float = 2,
+    jitter_factor: float = 0.1,
+):
     """
     A decorator for implementing retry logic with exponential backoff and jitter.
 
@@ -395,10 +460,12 @@ def retry(max_retries: int = 5, initial_retry_delay: float = 1, backoff_factor: 
                     if attempt == (max_retries - 1):
                         logger.error(f"Failed after {max_retries} attempts: {str(e)}")
                         raise
-                    retry_time = initial_retry_delay * (backoff_factor ** attempt)
+                    retry_time = initial_retry_delay * (backoff_factor**attempt)
                     jitter = random.uniform(0, jitter_factor * retry_time)
                     total_delay = retry_time + jitter
-                    logger.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {total_delay:.2f} seconds...")
+                    logger.warning(
+                        f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {total_delay:.2f} seconds..."
+                    )
                     time.sleep(total_delay)
 
         return wrapper
@@ -406,8 +473,12 @@ def retry(max_retries: int = 5, initial_retry_delay: float = 1, backoff_factor: 
     return decorator
 
 
-def retry_async(max_retries: int = 5, initial_retry_delay: float = 1, backoff_factor: float = 2,
-                jitter_factor: float = 0.1):
+def retry_async(
+    max_retries: int = 5,
+    initial_retry_delay: float = 1,
+    backoff_factor: float = 2,
+    jitter_factor: float = 0.1,
+):
     """
     A decorator for implementing retry logic with exponential backoff and jitter.
 
@@ -431,10 +502,12 @@ def retry_async(max_retries: int = 5, initial_retry_delay: float = 1, backoff_fa
                     if attempt == (max_retries - 1):
                         logger.error(f"Failed after {max_retries} attempts: {str(e)}")
                         raise
-                    retry_time = initial_retry_delay * (backoff_factor ** attempt)
+                    retry_time = initial_retry_delay * (backoff_factor**attempt)
                     jitter = random.uniform(0, jitter_factor * retry_time)
                     total_delay = retry_time + jitter
-                    logger.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {total_delay:.2f} seconds...")
+                    logger.warning(
+                        f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {total_delay:.2f} seconds..."
+                    )
                     await asyncio.sleep(total_delay)
 
         return wrapper
@@ -442,8 +515,12 @@ def retry_async(max_retries: int = 5, initial_retry_delay: float = 1, backoff_fa
     return decorator
 
 
-def retry_async_generator(max_retries: int = 5, initial_retry_delay: float = 1, backoff_factor: float = 2,
-                          jitter_factor: float = 0.1):
+def retry_async_generator(
+    max_retries: int = 5,
+    initial_retry_delay: float = 1,
+    backoff_factor: float = 2,
+    jitter_factor: float = 0.1,
+):
     """
     A decorator for implementing retry logic with exponential backoff and jitter.
 
@@ -457,7 +534,9 @@ def retry_async_generator(max_retries: int = 5, initial_retry_delay: float = 1, 
         Callable: Decorated function with retry logic.
     """
 
-    def decorator(func: Callable[..., AsyncGenerator[Any, None]]) -> Callable[..., AsyncGenerator[Any, None]]:
+    def decorator(
+        func: Callable[..., AsyncGenerator[Any, None]],
+    ) -> Callable[..., AsyncGenerator[Any, None]]:
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> AsyncGenerator[Any, None]:
             for attempt in range(max_retries):
@@ -469,10 +548,12 @@ def retry_async_generator(max_retries: int = 5, initial_retry_delay: float = 1, 
                     if attempt == max_retries - 1:
                         logger.error(f"Failed after {max_retries} attempts: {str(e)}")
                         raise
-                    retry_time = initial_retry_delay * (backoff_factor ** attempt)
+                    retry_time = initial_retry_delay * (backoff_factor**attempt)
                     jitter = random.uniform(0, jitter_factor * retry_time)
                     total_delay = retry_time + jitter
-                    logger.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {total_delay:.2f} seconds...")
+                    logger.warning(
+                        f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {total_delay:.2f} seconds..."
+                    )
                     await asyncio.sleep(total_delay)
 
         return wrapper
@@ -480,7 +561,9 @@ def retry_async_generator(max_retries: int = 5, initial_retry_delay: float = 1, 
     return decorator
 
 
-def extract_sentences(text: str, expected_enumeration: Optional[List[int]] = None) -> List[str]:
+def extract_sentences(
+    text: str, expected_enumeration: Optional[List[int]] = None
+) -> List[str]:
     """
     Extracts sentences from the given text while preserving special patterns and numbered lists.
 
@@ -517,9 +600,9 @@ def extract_sentences(text: str, expected_enumeration: Optional[List[int]] = Non
     logger.debug(f"Extracting sentences from: {text}")
 
     # Define patterns
-    special_pattern = r'\$[^$]+(?:\$|$)'
-    sentence_end_pattern = r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!|:|\))\s'
-    numbered_list_pattern = r'\s*\d+\.(?:\s|$)'
+    special_pattern = r"\$[^$]+(?:\$|$)"
+    sentence_end_pattern = r"(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!|:|\))\s"
+    numbered_list_pattern = r"\s*\d+\.(?:\s|$)"
 
     # Find all special patterns and their positions
     special_matches = list(re.finditer(special_pattern, text))
@@ -529,7 +612,7 @@ def extract_sentences(text: str, expected_enumeration: Optional[List[int]] = Non
     last_end = 0
     for match in special_matches:
         if match.start() > last_end:
-            segments.append(text[last_end:match.start()])
+            segments.append(text[last_end : match.start()])
         segments.append(match.group())
         last_end = match.end()
     if last_end < len(text):
@@ -537,28 +620,35 @@ def extract_sentences(text: str, expected_enumeration: Optional[List[int]] = Non
 
     # Combine segments into sentences
     sentences = []
-    current_sentence = ''
+    current_sentence = ""
     for segment in segments:
-        if segment.startswith('$'):
+        if segment.startswith("$"):
             current_sentence += segment
         else:
             # Split the non-special segment by sentence endings and numbered list items
-            parts = re.split(f'({sentence_end_pattern})|({numbered_list_pattern})', segment)
+            parts = re.split(
+                f"({sentence_end_pattern})|({numbered_list_pattern})", segment
+            )
             parts = [p for p in parts if p is not None]
             for i, part in enumerate(parts):
-                if (re.match(sentence_end_pattern, part) or
-                        (i > 0 and not part.strip() and re.search(sentence_end_pattern, parts[i - 1] + part))):
+                if re.match(sentence_end_pattern, part) or (
+                    i > 0
+                    and not part.strip()
+                    and re.search(sentence_end_pattern, parts[i - 1] + part)
+                ):
                     # End the current sentence if we encounter sentence-ending punctuation
                     # or if we have a space after sentence-ending punctuation
                     if current_sentence:
                         sentences.append(current_sentence.strip())
-                        current_sentence = ''
+                        current_sentence = ""
                 elif re.match(numbered_list_pattern, part.strip()):
                     # Check if this matches our expected enumeration
-                    match = re.match(r'\s*(\d+)\.', part)
+                    match = re.match(r"\s*(\d+)\.", part)
                     if match:
                         num = int(match.group(1))
-                        if expected_enumeration is None or (expected_enumeration and num == expected_enumeration[0]):
+                        if expected_enumeration is None or (
+                            expected_enumeration and num == expected_enumeration[0]
+                        ):
                             if current_sentence:
                                 sentences.append(current_sentence.strip())
                             current_sentence = part
@@ -582,7 +672,10 @@ def extract_sentences(text: str, expected_enumeration: Optional[List[int]] = Non
     logger.debug(f"Extracted sentences: {sentences}")
     return sentences
 
-def yield_complete_sentences(func: Callable[..., AsyncIterator[str]]) -> Callable[..., AsyncIterator[str]]:
+
+def yield_complete_sentences(
+    func: Callable[..., AsyncIterator[str]],
+) -> Callable[..., AsyncIterator[str]]:
     """
     A decorator that modifies an async generator function to yield complete sentences.
 
@@ -702,16 +795,16 @@ def fix_stress_marks_russian(s: str) -> str:
     pipelines for Russian language learning materials or linguistic analysis tools.
     """
     # fix stress marks in a string by moving any '+' sign that's incorrectly placed before a consonant forward to the next vowel.
-    vowels = 'аеёиоуыэюяАЕЁИОУЫЭЮЯaeiouAEIOU'
-    non_consonants = vowels + 'ьъЬЪ'  # Include soft and hard signs
+    vowels = "аеёиоуыэюяАЕЁИОУЫЭЮЯaeiouAEIOU"
+    non_consonants = vowels + "ьъЬЪ"  # Include soft and hard signs
     result = []
     stress_pending = False
 
     for char in s:
-        if char == '+':
+        if char == "+":
             stress_pending = True
         elif char in vowels and stress_pending:
-            result.append('+')
+            result.append("+")
             result.append(char)
             stress_pending = False
         elif char in non_consonants:
@@ -724,9 +817,9 @@ def fix_stress_marks_russian(s: str) -> str:
 
     # If there's a pending stress at the end, just append it
     if stress_pending:
-        result.append('+')
+        result.append("+")
 
-    result = ''.join(result)
+    result = "".join(result)
     if result != s:
         logger.info(f"fixed stress mark: {s} -> {result}")
     return result
@@ -770,7 +863,7 @@ def test():
     pass
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     from dotenv import load_dotenv
 
     logging.basicConfig(level=logging.INFO)

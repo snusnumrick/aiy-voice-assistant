@@ -24,6 +24,7 @@ from src.config import Config
 
 logger = logging.getLogger(__name__)
 
+
 class VolumeControlTool:
     """
     A tool for controlling the speaker volume adaptively.
@@ -64,8 +65,12 @@ class VolumeControlTool:
             List[str]: A list of available volume control names.
         """
         try:
-            result = subprocess.run(['amixer', 'scontrols'], capture_output=True, text=True)
-            controls = [line.split("'")[1] for line in result.stdout.splitlines() if "'" in line]
+            result = subprocess.run(
+                ["amixer", "scontrols"], capture_output=True, text=True
+            )
+            controls = [
+                line.split("'")[1] for line in result.stdout.splitlines() if "'" in line
+            ]
             return controls
         except Exception as e:
             logger.error(f"Failed to get available controls: {str(e)}")
@@ -80,7 +85,7 @@ class VolumeControlTool:
         Returns:
             Optional[str]: The name of the selected control, or None if no controls are available.
         """
-        preferred_controls = ['Master', 'Speaker']
+        preferred_controls = ["Master", "Speaker"]
         for control in preferred_controls:
             if control in self.available_controls:
                 return control
@@ -114,18 +119,18 @@ Returns the new volume level after adjustment.
             iterative=True,
             parameters=[
                 ToolParameter(
-                    name='action',
-                    type='string',
-                    description='Action to perform: "increase", "decrease", or "set"'
+                    name="action",
+                    type="string",
+                    description='Action to perform: "increase", "decrease", or "set"',
                 ),
                 ToolParameter(
-                    name='value',
-                    type='integer',
-                    description='Volume value (0-100) for "set" action, or step size for increase/decrease. Use default step size if not specified.'
-                )
+                    name="value",
+                    type="integer",
+                    description='Volume value (0-100) for "set" action, or step size for increase/decrease. Use default step size if not specified.',
+                ),
             ],
             processor=self.adjust_volume,
-            required=['action']
+            required=["action"],
         )
 
     async def adjust_volume(self, parameters: Dict[str, any]) -> str:
@@ -179,8 +184,10 @@ Returns the new volume level after adjustment.
             Exception: If there's an error in fetching the current volume.
         """
         try:
-            result = subprocess.run(['amixer', 'get', self.current_control], capture_output=True, text=True)
-            volume = int(result.stdout.split('[')[1].split('%')[0])
+            result = subprocess.run(
+                ["amixer", "get", self.current_control], capture_output=True, text=True
+            )
+            volume = int(result.stdout.split("[")[1].split("%")[0])
             return volume
         except Exception as e:
             logger.error(f"Failed to get current volume: {str(e)}")
@@ -197,10 +204,13 @@ Returns the new volume level after adjustment.
             subprocess.CalledProcessError: If the 'amixer' command fails.
         """
         try:
-            subprocess.run(['amixer', 'set', self.current_control, f'{volume}%'], check=True)
+            subprocess.run(
+                ["amixer", "set", self.current_control, f"{volume}%"], check=True
+            )
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to set volume: {str(e)}")
             raise
+
 
 # Example usage:
 # config = Config()

@@ -9,6 +9,7 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
+
 class InterpreterTool:
     """
     This class represents an interpreter tool that can be used to execute Python code in a sandbox environment.
@@ -53,32 +54,37 @@ Convey all results through print(), so you can capture the output.
             description=self.base_description,
             iterative=True,
             parameters=[
-                ToolParameter(name='code', type='string', description='Python code to execute')
+                ToolParameter(
+                    name="code", type="string", description="Python code to execute"
+                )
             ],
             required=["code"],
-            processor=self.execute_code_async
+            processor=self.execute_code_async,
         )
 
     def __init__(self, config: Config):
         self.api_key = os.environ["OPENAI_API_KEY"]
-        self.openai_api_base = config.get('openai_api_base', 'https://api.openai.com/v1')
-        self.model = config.get('code_interpreter_model', 'gpt-4o')
+        self.openai_api_base = config.get(
+            "openai_api_base", "https://api.openai.com/v1"
+        )
+        self.model = config.get("code_interpreter_model", "gpt-4o")
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "OpenAI-Beta": "assistants=v2"
+            "OpenAI-Beta": "assistants=v2",
         }
 
     async def execute_code_async(self, parameters: Dict[str, any]) -> str:
-        if 'code' not in parameters:
+        if "code" not in parameters:
             logger.error("Missing 'code' parameter")
             return "Error: Missing 'code' parameter"
 
-        code = parameters['code']
+        code = parameters["code"]
         logger.info(f"Executing code: \n{code}")
-        message = (f"run interpreter for this code```\n{code}\n```\n; "
-                   f"return json dictionary only with keys stdout and stderr, omit explanations"
-                   )
+        message = (
+            f"run interpreter for this code```\n{code}\n```\n; "
+            f"return json dictionary only with keys stdout and stderr, omit explanations"
+        )
 
         # Create an Assistant
         assistant = await self._create_assistant()
@@ -87,29 +93,29 @@ Convey all results through print(), so you can capture the output.
         thread = await self._create_thread()
 
         # Add a Message to the Thread
-        await self._add_message_to_thread(thread['id'], message)
+        await self._add_message_to_thread(thread["id"], message)
 
         # Run the Assistant
-        run = await self._run_assistant(thread['id'], assistant['id'])
+        run = await self._run_assistant(thread["id"], assistant["id"])
 
         # Wait for the Run to complete
-        run = await self._wait_for_run(thread['id'], run['id'])
+        run = await self._wait_for_run(thread["id"], run["id"])
 
         # Retrieve the results
-        messages = await self._get_messages(thread['id'])
+        messages = await self._get_messages(thread["id"])
 
         # Extract and return the last assistant message
-        for message in reversed(messages['data']):
-            if message['role'] == 'assistant':
-                result = message['content'][0]['text']['value']
+        for message in reversed(messages["data"]):
+            if message["role"] == "assistant":
+                result = message["content"][0]["text"]["value"]
 
                 # Remove the ```json and ``` markers
-                json_string = result.strip().replace('```json', '').replace('```', '')
+                json_string = result.strip().replace("```json", "").replace("```", "")
 
                 # Parse the JSON string
                 data = json.loads(json_string)
 
-                if data['stderr']:
+                if data["stderr"]:
                     result = f"there was an error: {data['stderr']}"
                 else:
                     result = f"the result is {data['stdout']}"
@@ -124,18 +130,14 @@ Convey all results through print(), so you can capture the output.
             async with session.post(
                 f"{self.openai_api_base}/assistants",
                 headers=self.headers,
-                json={
-                    "model": self.model,
-                    "tools": [{"type": "code_interpreter"}]
-                }
+                json={"model": self.model, "tools": [{"type": "code_interpreter"}]},
             ) as response:
                 return await response.json()
 
     async def _create_thread(self):
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{self.openai_api_base}/threads",
-                headers=self.headers
+                f"{self.openai_api_base}/threads", headers=self.headers
             ) as response:
                 return await response.json()
 
@@ -144,10 +146,7 @@ Convey all results through print(), so you can capture the output.
             async with session.post(
                 f"{self.openai_api_base}/threads/{thread_id}/messages",
                 headers=self.headers,
-                json={
-                    "role": "user",
-                    "content": content
-                }
+                json={"role": "user", "content": content},
             ) as response:
                 return await response.json()
 
@@ -156,7 +155,7 @@ Convey all results through print(), so you can capture the output.
             async with session.post(
                 f"{self.openai_api_base}/threads/{thread_id}/runs",
                 headers=self.headers,
-                json={"assistant_id": assistant_id}
+                json={"assistant_id": assistant_id},
             ) as response:
                 return await response.json()
 
@@ -165,10 +164,10 @@ Convey all results through print(), so you can capture the output.
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     f"{self.openai_api_base}/threads/{thread_id}/runs/{run_id}",
-                    headers=self.headers
+                    headers=self.headers,
                 ) as response:
                     run = await response.json()
-                    if run['status'] in ['completed', 'failed', 'cancelled']:
+                    if run["status"] in ["completed", "failed", "cancelled"]:
                         return run
                     await asyncio.sleep(1)
 
@@ -176,6 +175,6 @@ Convey all results through print(), so you can capture the output.
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 f"{self.openai_api_base}/threads/{thread_id}/messages",
-                headers=self.headers
+                headers=self.headers,
             ) as response:
                 return await response.json()
