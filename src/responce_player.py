@@ -250,13 +250,19 @@ class ResponsePlayer:
         Args:
             behaviour (dict): A dictionary containing LED behavior parameters.
         """
-        if behaviour is None or behaviour == self.current_light:
+        if behaviour is None:
+            behaviour = {}
+        if behaviour == self.current_light:
             return
         self.current_light = behaviour
         logger.debug(f"changing LED behavior: {behaviour}")
         if not behaviour:
             logger.debug("empty behaviour, LED OFF")
             self.leds.update(Leds.rgb_off())
+        elif "color" not in behaviour or "brightness" not in behaviour or "behavior" not in behaviour:
+            logger.warning(
+                f"Invalid LED behavior: {behaviour}. Skipping LED change."
+            )
         else:
             color = adjust_rgb_brightness(behaviour["color"], behaviour["brightness"])
             if behaviour["behavior"] == "breathing":
