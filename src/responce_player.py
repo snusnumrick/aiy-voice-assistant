@@ -33,7 +33,7 @@ def emotions_prompt() -> str:
         "Express emotions with light and tone of voice when appropriate, "
         "especially for significant changes in mood or emphasis. Use this format before relevant text: "
         '$emotion:{"light":{"color":[R,G,B] (0-255),"behavior":"continuous/blinking/breathing",'
-        '"brightness":"dark/medium/bright","period":X (sec)}}, {"voice":{"tone":"plain/happy"}}}$. '
+        '"brightness":"dark/medium/bright","period":X (sec)}}, "voice":{"tone":"plain/happy"}}$. '
         "All fields within the emotion command are mandatory when used. "
         "Use this format for notable emotional shifts or to highlight important points. "
         "Emotions can persist across multiple sentences if the mood remains consistent. "
@@ -79,6 +79,7 @@ def extract_emotions(text: str) -> List[Tuple[Optional[dict], str]]:
             emotion_dict = json.loads(emotion_dict_str)
             results.append((emotion_dict, associated_text))
         except json.JSONDecodeError:
+            logger.error(f"Invalid JSON in emotion: {emotion_dict_str}")
             results.append((None, associated_text))
         pos = match.end()
 
