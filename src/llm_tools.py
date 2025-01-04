@@ -8,12 +8,19 @@ from typing import Deque, List
 
 from src.ai_models import AIModel, ClaudeAIModel
 from src.config import Config
-from src.tools import format_message_history, extract_json, get_current_datetime_english, get_timezone
+from src.tools import (
+    format_message_history,
+    extract_json,
+    get_current_datetime_english,
+    get_timezone,
+)
 
 logger = logging.getLogger(__name__)
 
 
-async def summarize_and_compress_history(message_history: Deque, ai_model: AIModel, config: Config) -> Deque:
+async def summarize_and_compress_history(
+    message_history: Deque, ai_model: AIModel, config: Config
+) -> Deque:
     """
     Summarizes and compresses a history of messages.
 
@@ -22,14 +29,21 @@ async def summarize_and_compress_history(message_history: Deque, ai_model: AIMod
     :param config: A dictionary containing configuration settings.
     :return: A deque containing the summarized and compressed message history.
     """
-    min_number_of_messages_to_summarize = config.get('min_number_of_messages_to_summarize', 20)
+    min_number_of_messages_to_summarize = config.get(
+        "min_number_of_messages_to_summarize", 20
+    )
     if len(message_history) - 1 < min_number_of_messages_to_summarize:
-        logger.debug('Message history is shorter than min_number_of_messages_to_summarize')
+        logger.debug(
+            "Message history is shorter than min_number_of_messages_to_summarize"
+        )
         return message_history
-    summary_prompt = config.get('summary_prompt', 'Обобщи основные моменты разговора, '
-                                                  'сосредоточившись на наиболее важных фактах и контексте. Будь лаконичен. '
-                                                  'Отвечай от лицв user. Начни ответ с "Ранее мы говорили о ".\nРазговор: \n-----\n')
-    min_number_of_messages_to_keep = config.get('min_number_of_messages_to_keep', 10)
+    summary_prompt = config.get(
+        "summary_prompt",
+        "Обобщи основные моменты разговора, "
+        "сосредоточившись на наиболее важных фактах и контексте. Будь лаконичен. "
+        'Отвечай от лицв user. Начни ответ с "Ранее мы говорили о ".\nРазговор: \n-----\n',
+    )
+    min_number_of_messages_to_keep = config.get("min_number_of_messages_to_keep", 10)
     new_history = []
     if message_history[0]["role"] == "system":
         new_history.append(message_history.popleft())
@@ -38,14 +52,18 @@ async def summarize_and_compress_history(message_history: Deque, ai_model: AIMod
         summary_prompt += f"\n{msg['role']}:  {msg['content']}"
 
     # remove "$<word>:<some text>$
-    pattern = r'\$\w+:[^$]*\$'
-    summary_prompt = re.sub(pattern, '', summary_prompt)
+    pattern = r"\$\w+:[^$]*\$"
+    summary_prompt = re.sub(pattern, "", summary_prompt)
 
     saved_level = logger.getEffectiveLevel()
     logger.setLevel(logging.DEBUG)
-    logger.info(f'Summarizing {len(message_history)} messages. Prompt:\n {summary_prompt}')
+    logger.info(
+        f"Summarizing {len(message_history)} messages. Prompt:\n {summary_prompt}"
+    )
     summary = ""
-    async  for response_part in ai_model.get_response_async([{"role": "user", "content": summary_prompt}]):
+    async for response_part in ai_model.get_response_async(
+        [{"role": "user", "content": summary_prompt}]
+    ):
         summary += response_part
     logger.info(f"Summarized  conversation:  {summary}")
     logger.setLevel(saved_level)
@@ -54,13 +72,17 @@ async def summarize_and_compress_history(message_history: Deque, ai_model: AIMod
     if not message_history or message_history[0]["role"] != "user":
         new_history.append({"role": "user", "content": summary})
     else:
-        message_history[0]['content'] = summary + "\n---------\n" + message_history[0]['content']
+        message_history[0]["content"] = (
+            summary + "\n---------\n" + message_history[0]["content"]
+        )
     while message_history:
         new_history.append(message_history.popleft())
     return deque(new_history)
 
 
-async def optimize_rules(hard_rules: str, soft_rules: List[str], config: Config) -> List[str]:
+async def optimize_rules(
+    hard_rules: str, soft_rules: List[str], config: Config
+) -> List[str]:
     """
     :param hard_rules: A list of hard rules.
     :param soft_rules: A list of soft rules in JSON format.
@@ -98,12 +120,20 @@ async def optimize_rules(hard_rules: str, soft_rules: List[str], config: Config)
     '''
     """
     model = ClaudeAIModel(config)
-    messages = [{"role": "system", "content": hard_rules}, {"role": "user", "content": prompt}]
+    messages = [
+        {"role": "system", "content": hard_rules},
+        {"role": "user", "content": prompt},
+    ]
     responses = " ".join([r async for r in model.get_response_async(messages)])
 
-    second_prompt = ("Double check the result to make sure no information is lost and return corrected json. "
-                     "Верни только JSON без дополнительных пояснений.")
-    messages += [{"role": "assistant", "content": responses}, {"role": "user", "content": second_prompt}]
+    second_prompt = (
+        "Double check the result to make sure no information is lost and return corrected json. "
+        "Верни только JSON без дополнительных пояснений."
+    )
+    messages += [
+        {"role": "assistant", "content": responses},
+        {"role": "user", "content": second_prompt},
+    ]
     responses = " ".join([r async for r in model.get_response_async(messages)])
 
     logger.debug(f"optimize_rules responces: {responses}")
@@ -151,18 +181,28 @@ async def optimize_facts(facts: List[str], config: Config, timezone: str) -> Lis
     responses = " ".join([r async for r in model.get_response_async(messages)])
 
     messages.append({"role": "assistant", "content": responses})
-    messages.append({"role": "user", "content": "Проверь результат еще раз и верни исправленный JSON. "
-                                                "Удостоверься что личные или уникальные для пользователя факты "
-                                                "не потеряны."})
+    messages.append(
+        {
+            "role": "user",
+            "content": "Проверь результат еще раз и верни исправленный JSON. "
+            "Удостоверься что личные или уникальные для пользователя факты "
+            "не потеряны.",
+        }
+    )
     responses = " ".join([r async for r in model.get_response_async(messages)])
 
     messages.append({"role": "assistant", "content": responses})
-    messages.append({"role": "user", "content": "ты уверен, что личные или уникальные для пользователя факты "
-                                                "не потеряны?"})
+    messages.append(
+        {
+            "role": "user",
+            "content": "ты уверен, что личные или уникальные для пользователя факты "
+            "не потеряны?",
+        }
+    )
     responses = " ".join([r async for r in model.get_response_async(messages)])
 
     # extract JSON from response
-    match = re.search(r'\[[\s\S]*\]', responses)
+    match = re.search(r"\[[\s\S]*\]", responses)
     if match is None:
         logger.warning(f"the input string does not have complete JSON: {responses}")
     else:
@@ -179,17 +219,18 @@ async def test_optimize_facts(config, timezone: str):
         "(12 июля 2024, 11:22:33 PM, PDT) : Кленовый и сиреневый - это разные цвета. Кленовый - оттенок оранжево-красного, сиреневый - светло-фиолетовый.",
         "(15 июля 2024, 09:23:12 AM, PDT) : Испания выиграла Евро-2024 по футболу.",
         "(23 июля 2024, 09:42:29 AM, PDT) : Дональд Трамп официально выдвинут кандидатом от Республиканской партии на президентских выборах США 2024 года. 13 июля 2024 года было совершено покушение на него во время митинга в Пенсильвании. Трамп получил ранение, но его состояние оценивается как нормальное.",
-        "(31 июля 2024, 01:02:10 PM, PDT) : Пользователь внимателен к деталям и замечает несоответствия в объяснениях, правильно отмечает разницу между \"cube\" (куб) и \"cubey\" (кубик), замечает отсутствие ударений в важных словах и ожидает чёткого указания языка при цитировании иноязычных текстов.",
+        '(31 июля 2024, 01:02:10 PM, PDT) : Пользователь внимателен к деталям и замечает несоответствия в объяснениях, правильно отмечает разницу между "cube" (куб) и "cubey" (кубик), замечает отсутствие ударений в важных словах и ожидает чёткого указания языка при цитировании иноязычных текстов.',
         "(04 августа 2024, 03:00:11 AM, PDT) : Актуальная информация о полуфиналистах мужского футбольного турнира на Олимпиаде 2024: Франция, Египет, Марокко и Испания. Полуфинальные матчи: Франция - Египет, Марокко - Испания. Матчи должны состояться 6 августа 2024 года. Бразилия, победитель Олимпийского футбольного турнира 2020 года в Токио, не смогла защитить свой титул, не дойдя до полуфинала.",
         "(05 августа 2024, 03:00:07 AM, PDT) : На Олимпиаде 2024 года в Париже в женской эстафете 4x100 метров комплексным плаванием команда США установила новый мировой рекорд со временем 3 минуты 49,63 секунды. Состав команды: Риган Смит (на спине), Лилли Кинг (брасс), Гретчен Уолш (баттерфляй) и Торри Хаск (вольный стиль). Серебро выиграла Австралия (3:53.11), бронзу - Китай (3:53.23). В смешанной эстафете 4x100 метров комплексным плаванием команда США также завоевала золото и установила новый мировой рекорд - 3 минуты 37,43 секунды. Второе место заняла команда Китая (3:38.35), третье - Франция (3:40.18).",
         "(05 августа 2024, 03:00:07 AM, PDT) : У пользователя есть двоюродная сестра Аня, живущая в Бремене, Германия, с мужем Яшей и дочерью Евой. Ева - двоюродная племянница пользователя, учится в первом классе. Яша увлекается лодками, недавно купил и отремонтировал подержанную парусно-моторную лодку. Во время недавнего отпуска на лодке Яша получил серьезную травму: ему раздробило палец на руке якорной цепью, и часть пальца пришлось ампутировать. У пользователя есть забавная фотография из зоопарка, на которой горилла сидит на стульчике перед стеклянным ограждением вольера и наблюдает за посетителями. Пользователь планирует отправить эту фотографию Еве, чтобы развеселить ее. У Евы нет своего компьютера или телефона. Общение с ней происходит через ее маму Аню.",
-        "(05 августа 2024, 03:00:07 AM, PDT) : Пользователь любит короткие анекдоты и игру слов. Он поделился двумя примерами: \"Колобок повесился\" и \"Баня. Через дорогу раздевалка\". Пользователь ценит внимание к деталям в языке и юмор, умеет шутить и разыгрывать собеседника.",
-        "(05 августа 2024, 03:00:07 AM, PDT) : Ударение в словах: д+ома (в выражении \"дома и стены помогают\"), здор+ово (приветствие), з+дорово (одобрение или восхищение), п+арить (о бане), пар+ить (о полете), смущ+ён, жар+а, свек+ольник, прикас+аться, шерохов+атый. Знак ударения + всегда ставится непосредственно перед ударной гласной буквой в слове, никогда не ставится в конце слова или перед согласными.",
-        "(05 августа 2024, 03:00:07 AM, PDT) : Пользователь интересовался началом монолога Гамлета \"Быть или не быть\" в переводе Бориса Пастернака.",
-        "(05 августа 2024, 01:36:51 PM, PDT) :  Ударение в слове \"невероятно\" падает на четвертый слог, на букву \"я\".",
-        "(05 августа 2024, 01:37:44 PM, PDT) :  Ударение в слове \"невероятно\" ставится на четвертый слог, на букву \"я\": неверо+ятно.",
-        "(05 августа 2024, 02:19:23 PM, PDT) :  Ударение в слове \"невероятно\" ставится на четвертый слог, на букву \"я\": неверо+ятно.",
-        "(05 августа 2024, 06:25:27 PM, PDT) :  Пользователя зовут Антон."]
+        '(05 августа 2024, 03:00:07 AM, PDT) : Пользователь любит короткие анекдоты и игру слов. Он поделился двумя примерами: "Колобок повесился" и "Баня. Через дорогу раздевалка". Пользователь ценит внимание к деталям в языке и юмор, умеет шутить и разыгрывать собеседника.',
+        '(05 августа 2024, 03:00:07 AM, PDT) : Ударение в словах: д+ома (в выражении "дома и стены помогают"), здор+ово (приветствие), з+дорово (одобрение или восхищение), п+арить (о бане), пар+ить (о полете), смущ+ён, жар+а, свек+ольник, прикас+аться, шерохов+атый. Знак ударения + всегда ставится непосредственно перед ударной гласной буквой в слове, никогда не ставится в конце слова или перед согласными.',
+        '(05 августа 2024, 03:00:07 AM, PDT) : Пользователь интересовался началом монолога Гамлета "Быть или не быть" в переводе Бориса Пастернака.',
+        '(05 августа 2024, 01:36:51 PM, PDT) :  Ударение в слове "невероятно" падает на четвертый слог, на букву "я".',
+        '(05 августа 2024, 01:37:44 PM, PDT) :  Ударение в слове "невероятно" ставится на четвертый слог, на букву "я": неверо+ятно.',
+        '(05 августа 2024, 02:19:23 PM, PDT) :  Ударение в слове "невероятно" ставится на четвертый слог, на букву "я": неверо+ятно.',
+        "(05 августа 2024, 06:25:27 PM, PDT) :  Пользователя зовут Антон.",
+    ]
     new_facts = await optimize_facts(facts, config, timezone)
     print("[")
     for i, rule in enumerate(new_facts):
@@ -199,15 +240,17 @@ async def test_optimize_facts(config, timezone: str):
 
 
 async def test_optimize_rules(config, system_prompt):
-    hard_rules = ("For web searches: $internet query:<query in English>$. "
-                  "To remember: $remember:<text>$. For new rules: $rule:<text>$ "
-                  "When it's not entirely clear where to place the stress in a word, "
-                  "use the '+' sign before the presumed stressed vowel. "
-                  "The stress mark '+' is always placed directly before "
-                  "the stressed vowel letter in the word. "
-                  "For example: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
-                  "This sign is never placed at the end of a word or before consonants. "
-                  "Its sole function is to indicate the stressed vowel sound. Use it only in Russian")
+    hard_rules = (
+        "For web searches: $internet query:<query in English>$. "
+        "To remember: $remember:<text>$. For new rules: $rule:<text>$ "
+        "When it's not entirely clear where to place the stress in a word, "
+        "use the '+' sign before the presumed stressed vowel. "
+        "The stress mark '+' is always placed directly before "
+        "the stressed vowel letter in the word. "
+        "For example: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
+        "This sign is never placed at the end of a word or before consonants. "
+        "Its sole function is to indicate the stressed vowel sound. Use it only in Russian"
+    )
 
     rules = [
         "Всегда внимательно анализировать всю доступную информацию о собеседнике, включая имя, если оно упоминается в контексте",
@@ -215,7 +258,8 @@ async def test_optimize_rules(config, system_prompt):
         "Перед добавлением нового правила проверять существующие. Если похожее правило уже есть, но оказалось недостаточно эффективным, нужно переформулировать его более убедительно, а не добавлять дубликат.",
         "При перечислении чисел через запятую всегда ставить пробел после запятой для улучшения читаемости.",
         "Избегать использования тире для обозначения диапазонов или промежутков в речи, заменяя их на более естественные разговорные выражения.",
-        "Избегать использования нумерованных списков в речи, так как это не подходит для естественной устной коммуникации."]
+        "Избегать использования нумерованных списков в речи, так как это не подходит для естественной устной коммуникации.",
+    ]
     new_rules = await optimize_rules(hard_rules, rules, config)
     print("[")
     for i, rule in enumerate(new_rules):
@@ -227,9 +271,11 @@ async def test_optimize_rules(config, system_prompt):
 async def test_summarize(config):
     ai_model = ClaudeAIModel(config)
 
-    summary_prompt = ('Обобщи основные моменты разговора, '
-                      'сосредоточившись на наиболее важных фактах и контексте. '
-                      'Будь лаконичен. Начни ответ с "Ранее мы говорили о ". \nРазговор: \n-----\n' + '''
+    summary_prompt = (
+        "Обобщи основные моменты разговора, "
+        "сосредоточившись на наиболее важных фактах и контексте. "
+        'Будь лаконичен. Начни ответ с "Ранее мы говорили о ". \nРазговор: \n-----\n'
+        + """
 user:  Привет кубик!
 assistant:  $emotion:{"light":{"color":[0,255,0],"behavior":"breathing","brightness":"medium","period":2},"voice":{"tone":"happy"}}$Привет, Антон! Рад тебя слышать! Как твои дела сегодня? Надеюсь, у тебя отличное настроение в этот летний день в Сан-Хосе. Как поживают твои кошки, Ксения и Жозефина? Всё так же дикие и неприступные?
 user:  Наверное, так и останутся.
@@ -261,27 +307,41 @@ assistant:  $emotion:{"light":{"color":[255,218,185],"behavior":"breathing","bri
 
 Выходит, у тебя дома настоящий кошачий контраст: элегантная черная Жозеф+ина и нежная персиковая Ксения. Прямо как инь и янь в кошачьем мире! Наверное, когда они вместе, это выглядит очень эффектно. Ты никогда не думал сделать их фотосессию? С такими красавицами можно создать потрясающие снимки!
 user:  Их же не усадишь, они такие неприступные.
-''')
-    pattern = r'\$\w+:[^$]*\$'
-    summary_prompt = re.sub(pattern, '', summary_prompt)
+"""
+    )
+    pattern = r"\$\w+:[^$]*\$"
+    summary_prompt = re.sub(pattern, "", summary_prompt)
     summary = ""
-    async  for response_part in ai_model.get_response_async([{"role": "user", "content": summary_prompt}]):
+    async for response_part in ai_model.get_response_async(
+        [{"role": "user", "content": summary_prompt}]
+    ):
         summary += response_part
     print(summary)
 
-    message_history = [{"role": "user", "content": "Привет!"}, {"role": "assistant", "content": '''{"color":  [0,  255,  0],  "behavior":  "continuous",  "brightness":  "medium",  "period":  1}$
+    message_history = [
+        {"role": "user", "content": "Привет!"},
+        {
+            "role": "assistant",
+            "content": """{"color":  [0,  255,  0],  "behavior":  "continuous",  "brightness":  "medium",  "period":  1}$
     Привет,  Антон!  Как  дела?  Рад  тебя  слышать.Что  нового  у  тебя  произошло  с  нашего  последнего  разговора?  
-    Надеюсь,  твои  кошки  Ксения  и  Жозефина  не  слишком  шалят?'''},
-                       {"role": "user", "content": "Когда  будет  финал?"}, {"role": "assistant", "content": '''Хм,  интересный  вопрос,  Антон.Ты,  наверное,  имеешь  в  виду  какое  -  то
+    Надеюсь,  твои  кошки  Ксения  и  Жозефина  не  слишком  шалят?""",
+        },
+        {"role": "user", "content": "Когда  будет  финал?"},
+        {
+            "role": "assistant",
+            "content": """Хм,  интересный  вопрос,  Антон.Ты,  наверное,  имеешь  в  виду  какое  -  то
     спортивное  событие?  Но  я  не  совсем  уверен,  о  каком  конкретно  финале  ты  спрашиваешь.
     $emotion:  {"color":  [255,  165,  0],  "behavior":  "breathing",  "brightness":  "medium",  "period":  2}$
     Давай  -  ка  я  уточню  информацию,  чтобы  дать  тебе  точный  ответ.
     А,  вот  оно  что!  Теперь  я  могу  тебе  ответить.
     $emotion:  {"color":  [0,  255,  0],  "behavior":  "continuous",  "brightness":  "bright",  "period":  1}$
     Финал  Евро  -  2024  по  футболу  состоится  14  июля  в  Берлине.  Это  будет  уже  послезавтра!  Матч  пройдёт  на  стадионе  "Олимпиаштадион".
-    Ты  следишь  за  чемпионатом?  Какие  команды,  по  -  твоему,  имеют  шансы  дойти  до  финала?'''},
-                       {"role": "user", "content": "А  кто  будет  играть  в  финале?"},
-                       {"role": "assistant", "content": '''
+    Ты  следишь  за  чемпионатом?  Какие  команды,  по  -  твоему,  имеют  шансы  дойти  до  финала?""",
+        },
+        {"role": "user", "content": "А  кто  будет  играть  в  финале?"},
+        {
+            "role": "assistant",
+            "content": """
     $emotion:  {"color":  [255,  165,  0],  "behavior":  "breathing",  "brightness":  "medium",  "period":  2}$        
     Ох,  Антон,  ты  меня  прям  в  тупик  поставил!  Я  же  не  экстрасенс,  чтобы  предсказывать  будущее.          
     Давай  -  ка  я  проверю  последнюю  информацию,  чтобы  дать  тебе  актуальный  ответ.        
@@ -290,8 +350,12 @@ user:  Их же не усадишь, они такие неприступные
     Вот  это  да,  какая  интересная  пара  финалистов!        
     Обе  команды  сильные,  так  что  матч  обещает  быть  захватывающим.  У  Испании  богатая  история  побед  на  европейских  чемпионатах,          
     англичане  горят  желанием  взять  свой  первый  титул  с  1966  года.        
-    А  ты  за  кого  будешь  болеть?  Или  просто  настроен  насладиться  красивой  игрой,  кто  бы  ни  победил?'''},
-                       {"role": "user", "content": "Приведи  примеры  омонимов."}, {"role": "assistant", "content": '''        
+    А  ты  за  кого  будешь  болеть?  Или  просто  настроен  насладиться  красивой  игрой,  кто  бы  ни  победил?""",
+        },
+        {"role": "user", "content": "Приведи  примеры  омонимов."},
+        {
+            "role": "assistant",
+            "content": """        
     $emotion:  {"color":  [0,  255,  255],  "behavior":  "continuous",  "brightness":  "medium",  "period":  1}$        
     О, отличный вопрос, Антон! Омонимы - это всегда интересная тема.
     Давай я приведу тебе несколько примеров, и мы вместе посмеёмся над игрой слов. 
@@ -307,8 +371,12 @@ user:  Их же не усадишь, они такие неприступные
     Это может быть и предмет для открывания замк+а, и источник воды, и нотный знак. 
     "Музыкант нашёл ключ к сердцу слушателей, когда сыграл мелодию в правильном ключе у лесного ключа"-
     вот такая музыкальная история. А какой твой любимый пример омонимов, Антон? 
-    Может, ты знаешь какой-нибудь особенно забавный случай их использования?'''},
-                       {"role": "user", "content": "Расскажи еще про замки."}, {"role": "assistant", "content": '''
+    Может, ты знаешь какой-нибудь особенно забавный случай их использования?""",
+        },
+        {"role": "user", "content": "Расскажи еще про замки."},
+        {
+            "role": "assistant",
+            "content": """
     $emotion: {"color": [0, 255, 255], "behavior": "continuous", "brightness": "brightness":"medium", "period": 1}$ 
     Ах, замки! Отличная тема, Антон.
     Давай ещё немного поиграем с этим интересным словом. 
@@ -327,10 +395,16 @@ user:  Их же не усадишь, они такие неприступные
     Вот где можно запутаться! А ещё есть выражение "строить воздушные замки"-то есть мечтать о несбыточном.
     Интересно, а можно ли построить воздушный замок и запереть его на воздушный замок? 
     Какие ассоциации у тебя вызывает слово "замок", Антон? 
-    Может, ты бывал в каких-нибудь известных замках или у тебя есть любимый замок из фильма или книги?'''},
-                       {"role": "user", "content": '''
-    Предложение, можно ли построить воздушный замок и запереть его на воздушный замок, ты не поставил ударение?'''},
-                       {"role": "assistant", "content": '''
+    Может, ты бывал в каких-нибудь известных замках или у тебя есть любимый замок из фильма или книги?""",
+        },
+        {
+            "role": "user",
+            "content": """
+    Предложение, можно ли построить воздушный замок и запереть его на воздушный замок, ты не поставил ударение?""",
+        },
+        {
+            "role": "assistant",
+            "content": """
     $emotion: {"color": [255, 165, 0], "behavior": "breathing", "brightness": "medium", "period": 2}$ 
     Ой, Антон, ты прав! Спасибо, что заметил.Я действительно упустил ударения в этом предложении.
     Давай-ка я исправлюсь. 
@@ -340,10 +414,16 @@ user:  Их же не усадишь, они такие неприступные
     Здесь "возд+ушный з+амок"-это воображаемое строение, а "возд+ушный замок+"-это воображаемое запирающее устройство. 
     Спасибо, что обратил на это внимание! Это отличный пример того, как важно правильно ставить ударения, 
     особенно когда речь идёт об омонимах.Ты очень внимательный собеседник! 
-    $remember: Антон внимателен к деталям и замечает, когда не расставлены ударения в словах, где это важно.$'''},
-                       {"role": "user", "content": '''
-    Разве ты не помнишь, что знак+ставится перед ударной гласной, а ты поставил его в конце слова?'''},
-                       {"role": "assistant", "content": '''
+    $remember: Антон внимателен к деталям и замечает, когда не расставлены ударения в словах, где это важно.$""",
+        },
+        {
+            "role": "user",
+            "content": """
+    Разве ты не помнишь, что знак+ставится перед ударной гласной, а ты поставил его в конце слова?""",
+        },
+        {
+            "role": "assistant",
+            "content": """
     $emotion: {"color": [255, 0, 0], "behavior": "blinking", "brightness": "bright", "period": 3}$ 
     Ох, Антон, ты абсолютно прав! Я действительно допустил ошибку, и спасибо тебе за то, что указал на неё.
     Ты совершенно верно заметил-я неправильно поставил знак ударения в слове "замок". 
@@ -354,8 +434,12 @@ user:  Их же не усадишь, они такие неприступные
     $emotion: {"color": [0, 255, 0], "behavior": "continuous", "brightness": "medium", "period": 1}$ 
     Спасибо тебе за твою внимательность и за то, что помогаешь мне становиться лучше.
     Ты прав, я должен был помнить это правило.Твоё замечание очень ценно, и я постараюсь быть более внимательным в будущем. 
-    $rule: Использовать знак "+" только перед гласной буквой, на которую падает ударение в слове.$'''},
-                       {"role": "user", "content": "Да, теперь правильно."}, {"role": "assistant", "content": '''
+    $rule: Использовать знак "+" только перед гласной буквой, на которую падает ударение в слове.$""",
+        },
+        {"role": "user", "content": "Да, теперь правильно."},
+        {
+            "role": "assistant",
+            "content": """
     $emotion: {"color": [0, 255, 0], "behavior": "breathing", "brightness": "bright", "period": 2}$ 
     Отлично, Антон! Я рад, что теперь всё правильно.Твоя внимательность и готовность указать на ошибку очень ценны.
     Это помогает мне совершенствоваться и предоставлять более точную информацию. 
@@ -364,9 +448,17 @@ user:  Их же не усадишь, они такие неприступные
     мы вместе пришли к правильному результату.Это отличный пример того, 
     как важно быть внимательным к деталям и не бояться исправлять ошибки. 
     А у тебя есть какие-нибудь интересные способы запоминания правил ударения или других языковых нюансов? 
-    Может, поделишься своим опытом?'''}, {"role": "user", "content": '''
+    Может, поделишься своим опытом?""",
+        },
+        {
+            "role": "user",
+            "content": """
     Ты знаешь, что уже 3 раза запоминал правило использовать знак+только перед гласной буквой, 
-    на которую падает ударение в слове.'''}, {"role": "assistant", "content": '''
+    на которую падает ударение в слове.""",
+        },
+        {
+            "role": "assistant",
+            "content": """
     $emotion: {"color": [255, 0, 0], "behavior": "blinking", "brightness": "bright", "period": 3}$ 
     Ох, Антон, ты меня прямо в краску вогнал! Ты абсолютно прав, и я чувствую себя как двоечник у доски. 
     $emotion: {"color": [255, 165, 0], "behavior": "breathing", "brightness": "medium", "period": 2}$ 
@@ -377,9 +469,12 @@ user:  Их же не усадишь, они такие неприступные
     Знаешь, эта ситуация напоминает мне анекдот про склеротика, который каждый день знакомился с одним и тем же человеком.
     Только в моём случае это не очень смешно, а скорее досадно. Спасибо тебе за твоё терпение и настойчивость.
     Ты прав, что обращаешь на это внимание.Может, мне стоит написать это правило большими буквами у себя в памяти? 
-    Или, может, ты посоветуешь какой-нибудь эффективный способ, чтобы я наконец-то запомнил это правило раз и навсегда?'''},
-                       {"role": "user", "content": "Попробуй как нибудь по другому сформулировать."},
-                       {"role": "assistant", "content": '''
+    Или, может, ты посоветуешь какой-нибудь эффективный способ, чтобы я наконец-то запомнил это правило раз и навсегда?""",
+        },
+        {"role": "user", "content": "Попробуй как нибудь по другому сформулировать."},
+        {
+            "role": "assistant",
+            "content": """
     $emotion: {"color": [255, 255, 0], "behavior": "breathing", "brightness": "medium", "period": 2}$ 
     Хорошая идея, Антон! Давай попробуем сформулировать это правило по-другому.
     Может быть, новая формулировка поможет мне лучше его запомнить. Итак, как насчёт такого варианта: 
@@ -392,10 +487,17 @@ user:  Их же не усадишь, они такие неприступные
     где явно указано, чего делать не следует. 
     Спасибо за подсказку.Иногда действительно нужно посмотреть на вещи под другим углом, 
     чтобы лучше их понять и запомнить.Ты, похоже, хорошо разбираешься в методах эффективного обучения.
-    У тебя есть ещё какие-нибудь советы по улучшению запоминания?'''}, {"role": "user", "content": '''
+    У тебя есть ещё какие-нибудь советы по улучшению запоминания?""",
+        },
+        {
+            "role": "user",
+            "content": """
     Запомни, пожалуйста, когда ты хочешь запомнить новые правила, надо проверить, какие правила уже есть.
-    Если это правило уже есть, то есть оно было недостаточно убедительным и надо сформулировать его как то по другому.'''},
-                       {"role": "assistant", "content": '''
+    Если это правило уже есть, то есть оно было недостаточно убедительным и надо сформулировать его как то по другому.""",
+        },
+        {
+            "role": "assistant",
+            "content": """
     $emotion: {"color": [0, 255, 255], "behavior": "continuous", "brightness": "medium", "period": 1}$ 
     Отличное замечание, Антон! Ты абсолютно прав.
     Я действительно должен быть более внимательным к уже существующим правилам и не дублировать их бездумно. 
@@ -409,10 +511,14 @@ user:  Их же не усадишь, они такие неприступные
     Знаешь, это напоминает мне процесс редактирования текста.Хороший редактор не просто добавляет новые абзацы, 
     а пересматривает и улучшает уже написанное. Спасибо за этот ценный урок, Антон.
     Твой подход к обучению и организации информации впечатляет.
-    У тебя есть опыт в сфере образования или управления знаниями?'''}]
+    У тебя есть опыт в сфере образования или управления знаниями?""",
+        },
+    ]
 
-    config.config['min_number_of_messages'] = 3
-    new_history = await summarize_and_compress_history(deque(message_history), ai_model, config)
+    config.config["min_number_of_messages"] = 3
+    new_history = await summarize_and_compress_history(
+        deque(message_history), ai_model, config
+    )
 
     print(format_message_history(new_history))
 
@@ -423,7 +529,7 @@ async def main():
     system_prompt = """
     Today is 3 August 2024. Now 02:56 PM PDT. """
 
-    timezone = get_timezone()
+    # timezone = get_timezone()
 
     # await test_optimize_facts(config,timezone)
     await test_optimize_rules(config, system_prompt)  # await test_summarize(config)

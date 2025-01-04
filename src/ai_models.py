@@ -14,12 +14,12 @@ import os
 import sys
 from abc import ABC, abstractmethod
 from typing import List, Dict, AsyncGenerator, Optional, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 import aiohttp
 import requests
 
 from src.config import Config
-from src.tools import time_string_ms, retry_async_generator, extract_sentences, yield_complete_sentences
+from src.tools import time_string_ms, retry_async_generator, yield_complete_sentences
 
 
 class MessageModel(BaseModel):
@@ -64,7 +64,9 @@ class AIModel(ABC):
         """
         pass
 
-    async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
+    async def get_response_async(
+        self, messages: MessageList
+    ) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response based on the conversation history.
 
@@ -86,12 +88,13 @@ class GeminiAIModel(AIModel):
         sys_path = sys.path
         sys.path = [p for p in sys.path if p != os.getcwd()]
         import google.generativeai as genai
+
         sys.path = sys_path
 
         genai.configure(api_key=os.environ["GEMINI_API_KEY"])
         model_id = model_id or config.get("gemini_model_id", "gemini-1.5-pro-exp-0801")
         self.model = genai.GenerativeModel(model_id)
-        max_tokens = config.get('max_tokens', 4096)
+        max_tokens = config.get("max_tokens", 4096)
         self.generation_config = genai.GenerationConfig(max_output_tokens=max_tokens)
 
     def get_response(self, messages: MessageList) -> str:
@@ -107,19 +110,28 @@ class GeminiAIModel(AIModel):
         from google.generativeai import types
 
         messages = normalize_messages(messages)
-        system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
-        non_system_messages = [m for m in messages if m["role"] != 'system']
+        system_message_combined = " ".join(
+            [m["content"] for m in messages if m["role"] == "system"]
+        )
+        non_system_messages = [m for m in messages if m["role"] != "system"]
         adapted_messages = []
         for m in non_system_messages:
-            a = {"role": "model" if m["role"] == "assistant" else "user", "parts": m["content"]}
+            a = {
+                "role": "model" if m["role"] == "assistant" else "user",
+                "parts": m["content"],
+            }
             adapted_messages.append(a)
         history = adapted_messages[:-1] if adapted_messages else []
 
         try:
             if system_message_combined:
-                self.model._system_instruction = types.content_types.to_content(system_message_combined)
+                self.model._system_instruction = types.content_types.to_content(
+                    system_message_combined
+                )
             chat = self.model.start_chat(history=history)
-            response = chat.send_message(adapted_messages[-1], generation_config=self.generation_config)
+            response = chat.send_message(
+                adapted_messages[-1], generation_config=self.generation_config
+            )
             return response.text.strip()
         except Exception as e:
             logging.error(f"Error in Gemini API call: {str(e)}")
@@ -127,7 +139,9 @@ class GeminiAIModel(AIModel):
 
     @retry_async_generator()
     @yield_complete_sentences
-    async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
+    async def get_response_async(
+        self, messages: MessageList
+    ) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response using Google gemini model.
 
@@ -140,21 +154,30 @@ class GeminiAIModel(AIModel):
         from google.generativeai import types
 
         messages = normalize_messages(messages)
-        system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
-        non_system_messages = [m for m in messages if m["role"] != 'system']
+        system_message_combined = " ".join(
+            [m["content"] for m in messages if m["role"] == "system"]
+        )
+        non_system_messages = [m for m in messages if m["role"] != "system"]
         adapted_messages = []
         for m in non_system_messages:
-            a = {"role": "model" if m["role"] == "assistant" else "user", "parts": m["content"]}
+            a = {
+                "role": "model" if m["role"] == "assistant" else "user",
+                "parts": m["content"],
+            }
             adapted_messages.append(a)
         history = adapted_messages[:-1] if adapted_messages else []
 
         try:
             if system_message_combined:
-                self.model._system_instruction = types.content_types.to_content(system_message_combined)
+                self.model._system_instruction = types.content_types.to_content(
+                    system_message_combined
+                )
             chat = self.model.start_chat(history=history)
-            async for response in await chat.send_message_async(adapted_messages[-1],
-                                                                generation_config=self.generation_config,
-                                                                stream=True):
+            async for response in await chat.send_message_async(
+                adapted_messages[-1],
+                generation_config=self.generation_config,
+                stream=True,
+            ):
                 yield response.text
 
         except Exception as e:
@@ -167,8 +190,13 @@ class OpenAIModel(AIModel):
     Implementation of AIModel using OpenAI's GPT model.
     """
 
-    def __init__(self, config: Config, base_url: Optional[str] = None, api_key: Optional[str] = None,
-                 model_id: Optional[str] = None):
+    def __init__(
+        self,
+        config: Config,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        model_id: Optional[str] = None,
+    ):
         """
         Initialize the OpenAI model.
 
@@ -179,8 +207,9 @@ class OpenAIModel(AIModel):
             model_id (Optional[str]): The specific model ID to use.
         """
         from openai import OpenAI, AsyncOpenAI
-        self.model = model_id or config.get('openai_model', 'gpt-4o')
-        self.max_tokens = config.get('max_tokens', 4096)
+
+        self.model = model_id or config.get("openai_model", "gpt-4o")
+        self.max_tokens = config.get("max_tokens", 4096)
         self.client = OpenAI(base_url=base_url, api_key=api_key)
         self.client_async = AsyncOpenAI(base_url=base_url, api_key=api_key)
 
@@ -196,8 +225,9 @@ class OpenAIModel(AIModel):
         """
         messages = normalize_messages(messages)
         try:
-            response = self.client.chat.completions.create(model=self.model, messages=messages,
-                                                           max_tokens=self.max_tokens)
+            response = self.client.chat.completions.create(
+                model=self.model, messages=messages, max_tokens=self.max_tokens
+            )
             return response.choices[0].message.content.strip()
         except Exception as e:
             logging.error(f"Error in OpenAI API call: {str(e)}")
@@ -205,7 +235,9 @@ class OpenAIModel(AIModel):
 
     @retry_async_generator()
     @yield_complete_sentences
-    async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
+    async def get_response_async(
+        self, messages: MessageList
+    ) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response using OpenAI's GPT model.
 
@@ -216,7 +248,9 @@ class OpenAIModel(AIModel):
             str: Parts of the generated response.
         """
         messages = normalize_messages(messages)
-        stream = await self.client_async.chat.completions.create(model=self.model, messages=messages, stream=True)
+        stream = await self.client_async.chat.completions.create(
+            model=self.model, messages=messages, stream=True
+        )
         async for chunk in stream:
             yield chunk.choices[0].delta.content or ""
 
@@ -234,11 +268,14 @@ class ClaudeAIModel(AIModel):
             config (Config): The application configuration object.
             timezone (str): The timezone to use for timestamps.
         """
-        self.model = config.get('claude_model', 'claude-3-5-sonnet-20240620')
-        self.max_tokens = config.get('max_tokens', 4096)
+        self.model = config.get("claude_model", "claude-3-5-sonnet-20240620")
+        self.max_tokens = config.get("max_tokens", 4096)
         self.url = "https://api.anthropic.com/v1/messages"
-        self.headers = {"content-type": "application/json", "x-api-key": os.getenv('ANTHROPIC_API_KEY'),
-                        "anthropic-version": "2023-06-01"}
+        self.headers = {
+            "content-type": "application/json",
+            "x-api-key": os.getenv("ANTHROPIC_API_KEY"),
+            "anthropic-version": "2023-06-01",
+        }
         self.config = config
         self.timezone = timezone
 
@@ -261,14 +298,20 @@ class ClaudeAIModel(AIModel):
         Returns:
             dict: The API response as a dictionary.
         """
-        system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
-        non_system_message = [m for m in messages if m["role"] != 'system']
-        data = {"model": self.model, "max_tokens": self.max_tokens, "messages": non_system_message}
+        system_message_combined = " ".join(
+            [m["content"] for m in messages if m["role"] == "system"]
+        )
+        non_system_message = [m for m in messages if m["role"] != "system"]
+        data = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "messages": non_system_message,
+        }
         if system_message_combined:
             data["system"] = system_message_combined
 
         response = requests.post(self.url, headers=self.headers, json=data)
-        return json.loads(response.content.decode('utf-8'))
+        return json.loads(response.content.decode("utf-8"))
 
     async def _get_response_async(self, messages: List[Dict[str, str]]) -> dict:
         """
@@ -280,15 +323,23 @@ class ClaudeAIModel(AIModel):
         Returns:
             dict: The API response as a dictionary.
         """
-        system_message_combined = " ".join([m["content"] for m in messages if m["role"] == "system"])
-        non_system_message = [m for m in messages if m["role"] != 'system']
+        system_message_combined = " ".join(
+            [m["content"] for m in messages if m["role"] == "system"]
+        )
+        non_system_message = [m for m in messages if m["role"] != "system"]
 
-        data = {"model": self.model, "max_tokens": self.max_tokens, "messages": non_system_message}
+        data = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "messages": non_system_message,
+        }
         if system_message_combined:
             data["system"] = system_message_combined
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(self.url, headers=self.headers, json=data) as response:
+            async with session.post(
+                self.url, headers=self.headers, json=data
+            ) as response:
                 res = await response.text()
                 return json.loads(res)
 
@@ -305,14 +356,16 @@ class ClaudeAIModel(AIModel):
         messages = normalize_messages(messages)
         response_dict = self._get_response(messages)
         response_text = ""
-        for content in response_dict['content']:
-            if content['type'] == 'text':
-                response_text += content['text']
+        for content in response_dict["content"]:
+            if content["type"] == "text":
+                response_text += content["text"]
         return response_text
 
     @retry_async_generator()
     @yield_complete_sentences
-    async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
+    async def get_response_async(
+        self, messages: MessageList
+    ) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response using Anthropic's Claude model.
 
@@ -327,11 +380,11 @@ class ClaudeAIModel(AIModel):
         """
         messages = normalize_messages(messages)
         response_dict = await self._get_response_async(messages)
-        if 'error' in response_dict:
-            raise Exception(response_dict['error'])
-        for content in response_dict['content']:
-            if content['type'] == 'text':
-                yield content['text']
+        if "error" in response_dict:
+            raise Exception(response_dict["error"])
+        for content in response_dict["content"]:
+            if content["type"] == "text":
+                yield content["text"]
 
 
 class OpenRouterModel(OpenAIModel):
@@ -348,11 +401,18 @@ class OpenRouterModel(OpenAIModel):
             use_simple_model (bool): Whether to use the simple model or not.
         """
         if use_simple_model:
-            model = config.get('openrouter_model_simple', 'anthropic/claude-3-haiku')
+            model = config.get("openrouter_model_simple", "anthropic/claude-3-haiku")
         else:
-            model = config.get('openrouter_model', 'anthropic/claude-3.5-sonnet')
-        base_url = config.get('openrouter_model_base_url', 'https://openrouter.ai/api/v1')
-        super().__init__(config, base_url=base_url, api_key=os.getenv("OPENROUTER_API_KEY"), model_id=model)
+            model = config.get("openrouter_model", "anthropic/claude-3.5-sonnet")
+        base_url = config.get(
+            "openrouter_model_base_url", "https://openrouter.ai/api/v1"
+        )
+        super().__init__(
+            config,
+            base_url=base_url,
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+            model_id=model,
+        )
 
 
 class PerplexityModel(OpenAIModel):
@@ -367,7 +427,7 @@ class PerplexityModel(OpenAIModel):
         Args:
             config (Config): The application configuration object.
         """
-        model = config.get('perplexity_model', 'llama-3.1-sonar-small-128k-online')
+        model = config.get("perplexity_model", "llama-3.1-sonar-small-128k-online")
         base_url = "https://api.perplexity.ai"
         api_key = os.getenv("PERPLEXITY_API_KEY")
         super().__init__(config, base_url=base_url, api_key=api_key, model_id=model)
@@ -402,7 +462,9 @@ async def main_async():
     ai_model = ClaudeAIModel(config)
     # ai_model = OpenAIModel(config, model_id="gpt-4o-mini")
     result = ""
-    async for response_part in ai_model.get_response_async([{"role": "user", "content": prompt}]):
+    async for response_part in ai_model.get_response_async(
+        [{"role": "user", "content": prompt}]
+    ):
         print(response_part)
         result += response_part
     print(result)
@@ -414,8 +476,10 @@ def main():
     """
     config = Config()
     model = GeminiAIModel(config)
-    messages = [{"role": "system", "content": "Your name is Cubie."},
-                {"role": "user", "content": "Hi! What's your name?"}]
+    messages = [
+        {"role": "system", "content": "Your name is Cubie."},
+        {"role": "user", "content": "Hi! What's your name?"},
+    ]
     response = model.get_response(messages)
     print(response)
 

@@ -20,18 +20,27 @@ from typing import List, Tuple, AsyncGenerator, Deque, Dict
 
 from src.llm_tools import optimize_rules, optimize_facts
 from src.responce_player import extract_emotions, extract_language
-from src.tools import format_message_history, clean_response, time_string_ms, fix_stress_marks_russian
+from src.tools import (
+    format_message_history,
+    clean_response,
+    time_string_ms,
+    fix_stress_marks_russian,
+)
 
 if __name__ == "__main__":
     # add current directory to python path
     sys.path.append(os.getcwd())
 
-from src.config import Config
 from src.web_search import WebSearcher
 from src.llm_tools import summarize_and_compress_history
 from src.ai_models import AIModel, ClaudeAIModel
-from src.tools import get_token_count, get_location, get_timezone, get_current_datetime_english, \
-    get_current_date_time_for_facts
+from src.tools import (
+    get_token_count,
+    get_location,
+    get_timezone,
+    get_current_datetime_english,
+    get_current_date_time_for_facts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +57,7 @@ def extract_facts(text: str, timezone: str) -> Tuple[str, List[str]]:
         Tuple[str, List[str]]: A tuple containing the modified text and a list of extracted facts.
     """
     # Regular expression to match {remember: xxx} pattern
-    pattern = r'\$remember:(.*?)\$'
+    pattern = r"\$remember:(.*?)\$"
 
     # Find all matches
     matches = re.findall(pattern, text)
@@ -63,10 +72,10 @@ def extract_facts(text: str, timezone: str) -> Tuple[str, List[str]]:
         extracted_facts.append(fact)
 
     # Remove all {remember: xxx} substrings from the input string
-    modified_text = re.sub(pattern, '', text)
+    modified_text = re.sub(pattern, "", text)
 
     # Remove any extra whitespace that might have been left
-    modified_text = ' '.join(modified_text.split())
+    modified_text = " ".join(modified_text.split())
 
     return modified_text, extracted_facts
 
@@ -82,7 +91,7 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
         Tuple[str, List[str]]: A tuple containing the modified text and a list of extracted rules.
     """
     # Regular expression to match {remember: xxx} pattern
-    pattern = r'\$rule:(.*?)\$'
+    pattern = r"\$rule:(.*?)\$"
 
     # Find all matches
     matches = re.findall(pattern, text, re.DOTALL)
@@ -98,10 +107,10 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
         extracted_rules.append(rule)
 
     # Remove all {remember: xxx} substrings from the input string
-    modified_text = re.sub(pattern, '', text)
+    modified_text = re.sub(pattern, "", text)
 
     # Remove any extra whitespace that might have been left
-    modified_text = ' '.join(modified_text.split())
+    modified_text = " ".join(modified_text.split())
 
     return modified_text, extracted_rules
 
@@ -203,13 +212,15 @@ class ConversationManager:
 
         self.default_system_prompt = self.default_system_prompt_russian
 
-        self.message_history: Deque[dict] = deque([{"role": "system", "content": self.get_system_prompt()}])
+        self.message_history: Deque[dict] = deque(
+            [{"role": "system", "content": self.get_system_prompt()}]
+        )
 
     def get_system_prompt(self):
         from src.responce_player import emotions_prompt, language_prompt
 
         prompt = f"{get_current_datetime_english(self.timezone)} {self.location} "
-        prompt += self.config.get('system_prompt', self.default_system_prompt)
+        prompt += self.config.get("system_prompt", self.default_system_prompt)
         prompt += self.hard_rules
         prompt += emotions_prompt()
         prompt += language_prompt()
@@ -222,7 +233,9 @@ class ConversationManager:
 
         return prompt
 
-    async def get_response(self, text: str) -> AsyncGenerator[List[Dict[str, any]], None]:
+    async def get_response(
+        self, text: str
+    ) -> AsyncGenerator[List[Dict[str, any]], None]:
         """
         Get an AI response based on the current conversation state and new input.
 
@@ -236,30 +249,43 @@ class ConversationManager:
         logger.debug(f"call to get_response for: {text}")
 
         # update system message
-        self.message_history[0] = {"role": "system", "content": self.get_system_prompt()}
+        self.message_history[0] = {
+            "role": "system",
+            "content": self.get_system_prompt(),
+        }
 
         # cleanup in case of previous errors
-        if self.message_history[-1]['role'] == "user":
-            logger.warning(f"ignoring previous user message: {self.message_history[-1]['content']}")
+        if self.message_history[-1]["role"] == "user":
+            logger.warning(
+                f"ignoring previous user message: {self.message_history[-1]['content']}"
+            )
             self.message_history.pop()
 
         self.message_history.append({"role": "user", "content": text})
 
-        if get_token_count(list(self.message_history)) > self.config.get('token_threshold', 2500):
-            new_message_history = await summarize_and_compress_history(self.message_history, self.summarize_model,
-                                                                       self.config)
+        if get_token_count(list(self.message_history)) > self.config.get(
+            "token_threshold", 2500
+        ):
+            new_message_history = await summarize_and_compress_history(
+                self.message_history, self.summarize_model, self.config
+            )
             if new_message_history != self.message_history:
                 self.message_history = new_message_history
                 newline_str = "\n\n"
                 logger.debug(
-                    f'Compressed  conversation:  {(newline_str + self.formatted_message_history(150) + newline_str)}')
+                    f"Compressed  conversation:  {(newline_str + self.formatted_message_history(150) + newline_str)}"
+                )
 
         # logger.debug(f"Message history: \n{self.formatted_message_history()}")
 
-        async for response_text in self.ai_model.get_response_async(list(self.message_history)):
+        async for response_text in self.ai_model.get_response_async(
+            list(self.message_history)
+        ):
             crt = clean_response(response_text)
 
-            logger.debug(f"{time_string_ms(self.timezone)}) AI response: {text} -> {response_text}")
+            logger.debug(
+                f"{time_string_ms(self.timezone)}) AI response: {text} -> {response_text}"
+            )
             if self.message_history[-1]["role"] != "assistant":
                 self.message_history.append({"role": "assistant", "content": crt})
             else:
@@ -282,12 +308,16 @@ class ConversationManager:
             result = []
             for emo, t in extract_emotions(response_text):
                 logger.debug(f"Emotion: {emo} -> {t}")
-                for lang, clean_text in extract_language(t, default_lang=self.current_language_code):
+                for lang, clean_text in extract_language(
+                    t, default_lang=self.current_language_code
+                ):
                     logger.debug(f"Language: {lang} -> {clean_text}")
                     self.current_language_code = lang
                     if text:
                         clean_text = fix_stress_marks_russian(clean_text)
-                        result.append({"emotion": emo, "language": lang, "text": clean_text})
+                        result.append(
+                            {"emotion": emo, "language": lang, "text": clean_text}
+                        )
 
             logger.debug(f"yielding {result}")
             yield result
@@ -304,7 +334,7 @@ class ConversationManager:
     def save_dialog(self):
         # save message history to dialog.txt
         dialog_file_name = "dialog.txt"
-        with open(dialog_file_name, "w", encoding='utf-8') as dialog_file:
+        with open(dialog_file_name, "w", encoding="utf-8") as dialog_file:
             dialog_file.write("\n\n" + self.formatted_message_history(150) + "\n\n")
 
     async def _run_sync_in_thread(self, func, *args):
@@ -322,7 +352,9 @@ class ConversationManager:
         mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(p))
 
         cutoff = datetime.datetime.now() - datetime.timedelta(days=1)
-        cutoff = cutoff.replace(hour=cleaning_time_stop_hour, minute=0, second=0, microsecond=0)
+        cutoff = cutoff.replace(
+            hour=cleaning_time_stop_hour, minute=0, second=0, microsecond=0
+        )
 
         # if there were no modifications today
         if mod_time < cutoff:
@@ -337,7 +369,7 @@ class ConversationManager:
 
             # backup existing facts.json, rename it facts_prev.json
             if p.exists():
-                logger.info(f"backup existing facts.json")
+                logger.info("backup existing facts.json")
                 p.rename("facts_prev.json")
 
             self.save_facts(self.facts)
@@ -353,7 +385,9 @@ class ConversationManager:
         mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(p))
 
         cutoff = datetime.datetime.now() - datetime.timedelta(days=1)
-        cutoff = cutoff.replace(hour=cleaning_time_stop_hour, minute=0, second=0, microsecond=0)
+        cutoff = cutoff.replace(
+            hour=cleaning_time_stop_hour, minute=0, second=0, microsecond=0
+        )
 
         # if there were no modifications today
         if mod_time < cutoff:
@@ -368,7 +402,7 @@ class ConversationManager:
             self.rules = optimized_rules
             # backup existing rules
             if p.exists():
-                logger.info(f"backup existing rules.json")
+                logger.info("backup existing rules.json")
                 p.rename("rules_prev.json")
             self.save_rules(self.rules)
 
@@ -381,29 +415,38 @@ class ConversationManager:
         # form new memories
         if self.config.get("form_new_memories_at_night", True):
             if len(self.message_history) > 2:
-                prompt = self.config.get("form_new_memories_prompt",
-                                         "Это необязательно, но может хочешь еще что-нибудь запомнить "
-                                         "из нашего разговора перед тем как его удалю?")
+                prompt = self.config.get(
+                    "form_new_memories_prompt",
+                    "Это необязательно, но может хочешь еще что-нибудь запомнить "
+                    "из нашего разговора перед тем как его удалю?",
+                )
                 logger.info(f"form new memory by asking {prompt}")
                 num_facts_begore = len(self.facts)
                 async for ai_response in self.get_response(prompt):
-                    logger.info('AI response: %s', ai_response)
+                    logger.info("AI response: %s", ai_response)
                 num_facts_after_clean = len(self.facts)
                 if num_facts_after_clean == num_facts_begore:
                     logger.info("no new memories formed")
                 else:
-                    logger.info(f"{num_facts_after_clean - num_facts_begore} new facts remembered")
+                    logger.info(
+                        f"{num_facts_after_clean - num_facts_begore} new facts remembered"
+                    )
 
         if self.config.get("clean_message_history_at_night", True):
             # cleanup conversation
-            self.message_history: Deque[dict] = deque([{"role": "system", "content": self.get_system_prompt()}])
+            self.message_history: Deque[dict] = deque(
+                [{"role": "system", "content": self.get_system_prompt()}]
+            )
 
         # process existing facts and rules (run both operations concurrently)
         existing_facts = set(self.facts)
         existing_rules = set(self.rules)
         loop = asyncio.get_event_loop()
         # asyncio.gather allows us to wait for multiple coroutines concurrently
-        await asyncio.gather(loop.create_task(self._process_facts()), loop.create_task(self._process_rules()))
+        await asyncio.gather(
+            loop.create_task(self._process_facts()),
+            loop.create_task(self._process_rules()),
+        )
 
         removed_facts = list(existing_facts - set(self.facts))
         if removed_facts:
@@ -430,13 +473,15 @@ class ConversationManager:
                     logger.debug(f"File {filepath} has been removed successfully")
                     num_removed += 1
                 except Exception as e:
-                    logger.warning(f"Error occurred while trying to remove {filepath}. Error: {e}")
+                    logger.warning(
+                        f"Error occurred while trying to remove {filepath}. Error: {e}"
+                    )
         logger.info(f"removed {num_removed} temp wav files")
 
     @staticmethod
     def load_facts():
         try:
-            with open('facts.json', 'r') as f:
+            with open("facts.json", "r") as f:
                 return json.load(f)
         except FileNotFoundError:
             return []
@@ -446,13 +491,13 @@ class ConversationManager:
 
     @staticmethod
     def save_facts(facts):
-        with open('facts.json', 'w', encoding='utf8') as f:
+        with open("facts.json", "w", encoding="utf8") as f:
             json.dump(facts, f, ensure_ascii=False, indent=4)
 
     @staticmethod
     def load_rules() -> List[str]:
         try:
-            with open('rules.json', 'r') as f:
+            with open("rules.json", "r") as f:
                 result = json.load(f)
                 if isinstance(result, dict):
                     result = result["rules"]
@@ -465,7 +510,7 @@ class ConversationManager:
 
     @staticmethod
     def save_rules(rules):
-        with open('rules.json', 'w', encoding='utf8') as f:
+        with open("rules.json", "w", encoding="utf8") as f:
             json.dump(rules, f, ensure_ascii=False, indent=4)
 
 
@@ -473,7 +518,7 @@ def test():
     print(get_current_datetime_english(get_timezone()) + " " + get_location())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     from dotenv import load_dotenv
 
     logging.basicConfig(level=logging.INFO)

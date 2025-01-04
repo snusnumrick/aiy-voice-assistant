@@ -34,16 +34,31 @@ class WebSearchTool:
         Performs an asynchronous web search using the given parameters. It starts the processing indicator, performs the asynchronous search using the web_searcher object, stops the processing indicator, and returns the result.
 
     """
+
     def tool_definition(self) -> Tool:
-        return Tool(name="internet_search", description="Search Internet for actual information", iterative=True, parameters=[
-            ToolParameter(name='query', type='string', description='A query to search for, preferable in English')],
-                    required=["query"],
-                    processor=self.do_search_async)
+        return Tool(
+            name="internet_search",
+            description="Search Internet for actual information",
+            iterative=True,
+            parameters=[
+                ToolParameter(
+                    name="query",
+                    type="string",
+                    description="A query to search for, preferable in English",
+                )
+            ],
+            required=["query"],
+            processor=self.do_search_async,
+        )
 
     def __init__(self, config: Config):
         self.web_searcher = WebSearcher(config)
-        self.led_processing_color = config.get('processing_color', (0, 1, 0))  # dark green
-        self.led_processing_blink_period_ms = config.get('processing_blink_period_ms', 300)
+        self.led_processing_color = config.get(
+            "processing_color", (0, 1, 0)
+        )  # dark green
+        self.led_processing_blink_period_ms = config.get(
+            "processing_blink_period_ms", 300
+        )
 
     def _start_processing(self):
         pass
@@ -52,21 +67,19 @@ class WebSearchTool:
         pass
 
     def do_search(self, parameters: Dict[str, any]) -> str:
-        if 'query' in parameters:
+        if "query" in parameters:
             self._start_processing()
-            result = self.web_searcher.search(parameters['query'])
+            result = self.web_searcher.search(parameters["query"])
             self._stop_processing()
             return result
         logger.error(f"missing  parameter  query:  {parameters}")
         return ""
 
     async def do_search_async(self, parameters: Dict[str, any]) -> str:
-        if 'query' in parameters:
+        if "query" in parameters:
             self._start_processing()
-            result = await  self.web_searcher.search_async(parameters['query'])
+            result = await self.web_searcher.search_async(parameters["query"])
             self._stop_processing()
             return result
         logger.error(f"missing  parameter  query:  {parameters}")
         return ""
-
-
