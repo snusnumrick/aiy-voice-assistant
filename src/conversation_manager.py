@@ -283,7 +283,7 @@ class ConversationManager:
         ):
             crt = clean_response(response_text)
 
-            logger.debug(
+            logger.info(
                 f"{time_string_ms(self.timezone)}) AI response: {text} -> {response_text}"
             )
             if self.message_history[-1]["role"] != "assistant":
