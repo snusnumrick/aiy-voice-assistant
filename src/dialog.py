@@ -341,7 +341,7 @@ class DialogManager:
                     )
                     for response in ai_response:
                         response_count += 1
-                        logger.info(
+                        logger.debug(
                             f'({time_string_ms(self.timezone)}) Processing AI response {response_count}: {response["text"][:50]}...'
                         )
 

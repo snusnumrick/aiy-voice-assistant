@@ -251,7 +251,8 @@ class ResponsePlayer:
             behaviour (dict): A dictionary containing LED behavior parameters.
         """
         if behaviour is None:
-            behaviour = {}
+            logger.debug("None behaviour, no change")
+            return
         if behaviour == self.current_light:
             return
         self.current_light = behaviour
