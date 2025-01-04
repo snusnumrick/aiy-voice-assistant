@@ -422,13 +422,22 @@ def extract_json(text):
 
 def clean_response(response: str) -> str:
     """
-    Clean the response by removing the meta tags $tagname: tagcontent$.
+    Clean the response by removing:
+    1. Meta tags in format $tagname: tagcontent$
+    2. Text surrounded by asterisks only if:
+       - No spaces between asterisks and text
+       - Text inside is not a number
 
-    :param response: The response string with placeholders.
-    :return: The response string with placeholders removed.
+    :param response: The response string
+    :return: The cleaned response string
     """
-    pattern = r"\$\w+:[^$]*\$"
-    return re.sub(pattern, "", response)
+    # Remove meta tags
+    pattern_tags = r"\$\w+:[^$]*\$"
+    response = re.sub(pattern_tags, "", response)
+
+    # Remove text surrounded by asterisks that meets conditions
+    pattern_asterisks = r"\*(?!\d+\*)([^\s*]+)\*"
+    return re.sub(pattern_asterisks, "", response)
 
 
 def retry(
