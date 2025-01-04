@@ -307,7 +307,7 @@ class ConversationManager:
 
             result = []
             for emo, t in extract_emotions(response_text):
-                logger.debug(f"Emotion: {emo} -> {t}")
+                logger.info(f"Emotion: {emo} -> {t}")
                 for lang, clean_text in extract_language(
                     t, default_lang=self.current_language_code
                 ):
