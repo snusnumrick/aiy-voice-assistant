@@ -180,6 +180,9 @@ class OpenAITTSEngine(TTSEngine):
         Raises:
             Exception: If the OpenAI API request fails.
         """
+        if not text:
+            logger.warning("Empty text to synthesize, skipping")
+            return
         response = self.client.with_streaming_response.audio.speech.create(
             model=self.model, voice=self.voice, response_format="wav", input=text
         )
@@ -209,6 +212,10 @@ class OpenAITTSEngine(TTSEngine):
         Raises:
             Exception: If the OpenAI API request fails.
         """
+        if not text:
+            logger.warning("Empty text to synthesize, skipping")
+            return True
+
         url = "https://api.openai.com/v1/audio/speech"
         headers = {
             "Authorization": f"Bearer {self.client.api_key}",
@@ -281,6 +288,10 @@ class GoogleTTSEngine(TTSEngine):
         """
         from google.cloud import texttospeech
 
+        if not text:
+            logger.warning("Empty text to synthesize, skipping")
+            return
+
         synthesis_input = texttospeech.SynthesisInput(text=text)
 
         voice = texttospeech.VoiceSelectionParams(
@@ -310,6 +321,10 @@ class GoogleTTSEngine(TTSEngine):
         lang=Language.RUSSIAN,
     ) -> bool:
         from google.cloud import texttospeech
+
+        if not text:
+            logger.warning("Empty text to synthesize, skipping")
+            return True
 
         # Google Cloud TTS doesn't have an async API, so we'll run it in an executor
         synthesis_input = texttospeech.SynthesisInput(text=text)
@@ -410,6 +425,10 @@ class YandexTTSEngine(TTSEngine):
             tone (tone): The tone to use.
             lang (Language): The language to use.
         """
+        if not text:
+            logger.warning("Empty text to synthesize, skipping")
+            return
+
         model = self.voice_model(tone=tone, lang=lang)
         try:
             logger.debug(f"Synthesizing text: {text[:50]}...")
@@ -433,6 +452,10 @@ class YandexTTSEngine(TTSEngine):
         lang=Language.RUSSIAN,
     ) -> bool:
         # Yandex SpeechKit doesn't have an async API, so we'll run it in an executor
+
+        if not text:
+            logger.warning("Empty text to synthesize, skipping")
+            return True
 
         def synthesize_wrapper(par: dict) -> bytes:
             """Wrapper method to call synthesize with the correct parameters."""
@@ -741,7 +764,9 @@ class ElevenLabsTTSEngine(TTSEngine):
             ElevenLabsAPIError: If there's an error in the API request or response during synthesis.
         """
         if not text:
-            raise ValueError("Text cannot be empty")
+            logger.warning("Empty text to synthesize, skipping")
+            return True
+
         if len(text) > self.max_text_length():
             raise ValueError(
                 f"Text exceeds maximum length of {self.max_text_length()} characters"
@@ -852,7 +877,9 @@ class ElevenLabsTTSEngine(TTSEngine):
             ElevenLabsAPIError: If there's an error in the API request or response during synthesis.
         """
         if not text:
-            raise ValueError("Text cannot be empty")
+            logger.warning("Empty text to synthesize, skipping")
+            return
+
         if len(text) > self.max_text_length():
             raise ValueError(
                 f"Text exceeds maximum length of {self.max_text_length()} characters"
