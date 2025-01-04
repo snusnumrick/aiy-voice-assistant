@@ -250,6 +250,7 @@ class ResponsePlayer:
         Args:
             behaviour (dict): A dictionary containing LED behavior parameters.
         """
+        logger.info(f"change_light_behavior {behaviour}")
         if behaviour is None:
             logger.debug("None behaviour, no change")
             return
@@ -335,11 +336,8 @@ class ResponsePlayer:
                 f"({time_string_ms(self.timezone)}) merging {self.wav_list_light} {self.wav_list} {self.playlist}"
             )
 
-            light = (
-                self.wav_list_light
-                if self.wav_list_light is not None
-                else self.current_light
-            )
+            light = self.wav_list_light
+
             if len(self.wav_list) == 1:
                 self.playlist.put((light, self.wav_list[0][0]))
             else:
