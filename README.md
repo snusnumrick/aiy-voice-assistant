@@ -38,6 +38,8 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 - **Russian Stress Marking**: Ability to add stress marks to Russian words, enhancing pronunciation guidance and language learning.
 - **Code Interpretation**: Can execute Python code, allowing for complex computations and data analysis, with results conveyed verbally.
 - **Volume Control**: Ability to adjust speaker volume through voice commands, enhancing user comfort and accessibility.
+- **Weather Information**: Provides current weather conditions and forecasts for any location worldwide, supporting current conditions, hourly, and daily forecasts.
+
 
 ## Hardware Requirements
 
@@ -53,7 +55,7 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 - Poetry for dependency management
 - Rust compiler
 - ZSH shell with Oh My Zsh
-- API keys for: OpenAI, Google, **Yandex**, **Anthropic**, **ElevenLabs**, **Tavily**, OpenRouter, **Perplexity** 
+- API keys for: OpenAI, Google, **Yandex**, **Anthropic**, **ElevenLabs**, **Tavily**, OpenRouter, **Perplexity**, **Tomorrow.io**, **Maps.co Geocoding** 
 (in **bold** are keys for default configuration)
 - Additional system packages and development tools (detailed in setup instructions)
 
@@ -176,6 +178,8 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
         PERPLEXITY_API_KEY=your_perplexity_api_key
         ELEVENLABS_API_KEY=your_elevenlabs_api_key
         GEMINI_API_KEY=your_gemini_api_key
+        TOMORROW_API_KEY=your_tomorrow_io_api_key
+        GEOCODE_API_KEY=your_maps_co_geocoding_api_key
     ```
     Notes
     1. Make sure to keep your `.env` file secure and never commit it to version control.
@@ -290,6 +294,18 @@ Once the assistant is running, here's how to interact with it:
      - To set a specific volume: "Установи громкость на 50 процентов" (Set the volume to 50 percent)
    - The assistant will confirm the volume change after adjusting it.
 
+8. **Weather Information:**
+   - Get current weather: "Какая сейчас погода в Москве?" (What's the current weather in Moscow?)
+   - Get hourly forecast: "Почасовой прогноз погоды для Санкт-Петербурга" (Hourly weather forecast for Saint Petersburg)
+   - Get daily forecast: "Прогноз погоды на неделю в Лондоне" (Weekly weather forecast for London)
+   - Use coordinates: "Текущая погода на координатах 55.7558,37.6173" (Current weather at coordinates 55.7558,37.6173)
+
+   The assistant can provide:
+   - Current temperature, humidity, and wind speed
+   - Hourly forecasts for the next 24 hours
+   - Daily forecasts with high and low temperatures
+   - Weather information for any location worldwide using either city names or coordinates
+
 Remember, the assistant is primarily configured to interact in Russian. It will adapt its conversation style and content based on the user's age and interests as indicated in the initial introduction.
 
 While the assistant is designed to be safe and educational for children, it can also engage in more complex discussions with adult users. However, for young children, parental supervision is recommended to ensure a safe and productive experience.
@@ -357,6 +373,11 @@ Possible customizations:
   - Check both config.json and user.json for conflicts
   - Verify environment variables aren't overriding desired settings
   - Use --debug flag to see which configuration source is being used
+- For weather-related issues:
+  - Verify Tomorrow.io API key is valid and has sufficient quota
+  - Check geocoding API key if location queries fail
+  - For coordinate-based queries, ensure format is "latitude,longitude"
+  - Weather data might be temporarily unavailable due to API limits or service issues
 
 ## Performance Considerations
 
