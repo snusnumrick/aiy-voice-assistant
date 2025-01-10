@@ -74,7 +74,7 @@ def _format_weather_response(weather_data: Dict, timeframe: str) -> str:
 
     if timeframe == "current":
         current = weather_data["data"]["values"]
-        return "Current weather:\n" + "\n".join(_format(current))
+        result = "Current weather:\n" + "\n".join(_format(current))
     elif timeframe == "hourly":
         hours = weather_data["timelines"]["hourly"][:24]
         result = "Hourly forecast (time: temperature, wind speed, precipitation, pressure, description)\n"
@@ -82,7 +82,6 @@ def _format_weather_response(weather_data: Dict, timeframe: str) -> str:
             result += (
                 f"{hour['time']}: {', '.join(_format_hourly(hour['values']))}\n"
             )
-        return result
     else:  # daily
         days = weather_data["timelines"]["daily"][:7]
         result = "Daily forecast:\n"
@@ -91,7 +90,8 @@ def _format_weather_response(weather_data: Dict, timeframe: str) -> str:
                 f"{day['time'][:10]}: "
                 f"{', '.join(_format_daily(day['values']))}\n"
             )
-        return result
+    logger.info(f"Weather response: {result}")
+    return result
 
 
 class WeatherTool:
