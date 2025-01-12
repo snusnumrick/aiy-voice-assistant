@@ -299,33 +299,45 @@ class EnhancedWeatherTool:
             # Get coordinates
             lat, lon = await self.base_weather_tool.get_lat_lng(parameters["location"])
 
-            # Get basic weather data
-            weather_data = await self.base_weather_tool.get_weather_async(parameters)
-            result = [weather_data.strip()]
-            extended_result = ""
+            # Get moon phase (local calculation, no API call needed)
+            now = datetime.now()
+            moon_data = self.moon.phase(
+                now.year, now.month, now.day,
+                now.hour, now.minute, now.second
+            )
+            moon_phase_name = self.moon.get_phase_name(moon_data[6])
 
-            timeframe = parameters.get("timeframe", "current")
-            if timeframe == "current":
-                # Get moon phase (local calculation, no API call needed)
-                now = datetime.now()
-                moon_data = self.moon.phase(
-                    now.year, now.month, now.day,
-                    now.hour, now.minute, now.second
+            # Make concurrent API calls
+            try:
+                weather_data, uv_data, air_quality, solar_data = await asyncio.gather(
+                    self.base_weather_tool.get_weather_async(parameters),
+                    get_uv_index_async(lat, lon, self.openuv_api_key),
+                    get_air_quality_async(lat, lon, self.waqi_token),
+                    get_solar_data_async(
+                        latitude=lat,
+                        longitude=lon,
+                        time_format="24"
+                    ),
+                    return_exceptions=True
                 )
-                moon_phase_name = self.moon.get_phase_name(moon_data[6])
 
-                # Make concurrent API calls
-                try:
-                    uv_data, air_quality, solar_data = await asyncio.gather(
-                        get_uv_index_async(lat, lon, self.openuv_api_key),
-                        get_air_quality_async(lat, lon, self.waqi_token),
-                        get_solar_data_async(
-                            latitude=lat,
-                            longitude=lon,
-                            time_format="24"
-                        ),
-                        return_exceptions=True
-                    )
+                # Handle any exceptions from the API calls
+                if isinstance(weather_data, Exception):
+                    logger.warning(f"Weather API error: {str(weather_data)}")
+                    weather_data = None
+                if isinstance(uv_data, Exception):
+                    logger.warning(f"UV index API error: {str(uv_data)}")
+                    uv_data = None
+                if isinstance(air_quality, Exception):
+                    logger.warning(f"Air quality API error: {str(air_quality)}")
+                    air_quality = None
+                if isinstance(solar_data, Exception):
+                    logger.warning(f"Solar data API error: {str(solar_data)}")
+                    solar_data = None
+
+                # Format the base weather data
+                result = [weather_data.strip()] if weather_data else ["Weather data unavailable"]
+                extended_result = ""
 
                     # Handle any exceptions from the API calls
                     if isinstance(uv_data, Exception):
