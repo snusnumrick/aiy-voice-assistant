@@ -306,25 +306,42 @@ class EnhancedWeatherTool:
 
             timeframe = parameters.get("timeframe", "current")
             if timeframe == "current":
+                # Get moon phase (local calculation, no API call needed)
+                now = datetime.now()
+                moon_data = self.moon.phase(
+                    now.year, now.month, now.day,
+                    now.hour, now.minute, now.second
+                )
+                moon_phase_name = self.moon.get_phase_name(moon_data[6])
 
-                # Get additional data
+                # Make concurrent API calls
                 try:
-                    uv_data = await get_uv_index_async(lat, lon, self.openuv_api_key)
-                except (UVIndexError, ValueError) as e:
-                    uv_data = None
-
-                try:
-                    air_quality = await get_air_quality_async(lat, lon, self.waqi_token)
-                except Exception as e:
-                    air_quality = None
-
-                try:
-                    solar_data = await get_solar_data_async(
-                        latitude=lat,
-                        longitude=lon,
-                        time_format="24"
+                    uv_data, air_quality, solar_data = await asyncio.gather(
+                        get_uv_index_async(lat, lon, self.openuv_api_key),
+                        get_air_quality_async(lat, lon, self.waqi_token),
+                        get_solar_data_async(
+                            latitude=lat,
+                            longitude=lon,
+                            time_format="24"
+                        ),
+                        return_exceptions=True
                     )
+
+                    # Handle any exceptions from the API calls
+                    if isinstance(uv_data, Exception):
+                        logger.warning(f"UV index API error: {str(uv_data)}")
+                        uv_data = None
+                    if isinstance(air_quality, Exception):
+                        logger.warning(f"Air quality API error: {str(air_quality)}")
+                        air_quality = None
+                    if isinstance(solar_data, Exception):
+                        logger.warning(f"Solar data API error: {str(solar_data)}")
+                        solar_data = None
+
                 except Exception as e:
+                    logger.error(f"Error in concurrent API calls: {str(e)}")
+                    uv_data = None
+                    air_quality = None
                     solar_data = None
 
                 # Get moon phase
