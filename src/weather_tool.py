@@ -302,7 +302,7 @@ class EnhancedWeatherTool:
             # Get basic weather data
             weather_data = await self.base_weather_tool.get_weather_async(parameters)
             result = [weather_data.strip()]
-
+            extended_result = ""
 
             timeframe = parameters.get("timeframe", "current")
             if timeframe == "current":
@@ -336,23 +336,22 @@ class EnhancedWeatherTool:
                 moon_phase_name = self.moon.get_phase_name(moon_data[6])
 
                 # Combine all data
+                extended_result_data = []
                 if uv_data:
                     uv_info = [
                         "\nUV Index Information:",
-                        f"Current UV Index: {uv_data['uv']:.1f}",
-                        f"Max UV Index: {uv_data['uv_max']:.1f} at {uv_data['uv_max_time']}",
+                        f"Current Ultra Violet Index: {uv_data['uv']:.1f}",
                         f"Ozone Level: {uv_data['ozone']} DU"
                     ]
-                    result.extend(uv_info)
+                    extended_result_data.extend(uv_info)
 
                 if air_quality and air_quality.get("status") == "ok":
                     aqi_info = [
                         "\nAir Quality Information:",
                         f"Air Quality Index: {air_quality['data']['aqi']}",
-                        f"Station: {air_quality['data']['city']['name']}",
                         f"Last Updated: {air_quality['data']['time']['s']}"
                     ]
-                    result.extend(aqi_info)
+                    extended_result_data.extend(aqi_info)
 
                 if solar_data:
                     solar_info = [
@@ -363,18 +362,19 @@ class EnhancedWeatherTool:
                         f"Dusk: {solar_data['dusk']}",
                         f"Day Length: {solar_data['day_length']}"
                     ]
-                    result.extend(solar_info)
+                    extended_result_data.extend(solar_info)
 
                 moon_info = [
                     "\nLunar Information:",
                     f"Moon Phase: {moon_phase_name}",
-                    f"Illumination: {moon_data[0]:.1%}",
                     f"Moon Age: {moon_data[1]:.1f} days",
-                    f"Moon Distance: {moon_data[2]:,.0f} km"
                 ]
-                result.extend(moon_info)
+                extended_result_data.extend(moon_info)
 
-            return "\n".join(result)
+                extended_result = '\n'.join(extended_result_data)
+                logger.info(f"Extended weather data: {extended_result}")
+
+            return "\n".join(result) + "\n" + extended_result
 
         except Exception as e:
             return f"Error fetching comprehensive weather data: {str(e)}"
