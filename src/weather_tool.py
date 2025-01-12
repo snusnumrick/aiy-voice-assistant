@@ -280,7 +280,7 @@ class EnhancedWeatherTool:
         self.moon = Moon()
         self.base_weather_tool = WeatherTool(config)
         self.openuv_api_key = os.getenv("OPENUV_API_KEY")
-        self.waqi_token = os.getenv("WAQI_API_KEY")
+        self.waqi_token = os.getenv("WAQI_TOKEN")
 
     async def get_weather_async(self, parameters: Dict[str, any]) -> str:
         """
@@ -299,6 +299,12 @@ class EnhancedWeatherTool:
             # Get coordinates
             lat, lon = await self.base_weather_tool.get_lat_lng(parameters["location"])
 
+            timeframe = parameters.get("timeframe", "current")
+            if timeframe != "current":
+                return await self.base_weather_tool.get_weather_async(parameters)
+
+            # Current weather
+
             # Get moon phase (local calculation, no API call needed)
             now = datetime.now()
             moon_data = self.moon.phase(
@@ -308,100 +314,74 @@ class EnhancedWeatherTool:
             moon_phase_name = self.moon.get_phase_name(moon_data[6])
 
             # Make concurrent API calls
-            try:
-                weather_data, uv_data, air_quality, solar_data = await asyncio.gather(
-                    self.base_weather_tool.get_weather_async(parameters),
-                    get_uv_index_async(lat, lon, self.openuv_api_key),
-                    get_air_quality_async(lat, lon, self.waqi_token),
-                    get_solar_data_async(
-                        latitude=lat,
-                        longitude=lon,
-                        time_format="24"
-                    ),
-                    return_exceptions=True
-                )
+            weather_data, uv_data, air_quality, solar_data = await asyncio.gather(
+                self.base_weather_tool.get_weather_async(parameters),
+                get_uv_index_async(lat, lon, self.openuv_api_key),
+                get_air_quality_async(lat, lon, self.waqi_token),
+                get_solar_data_async(
+                    latitude=lat,
+                    longitude=lon,
+                    time_format="24"
+                ),
+                return_exceptions=True
+            )
 
-                # Handle any exceptions from the API calls
-                if isinstance(weather_data, Exception):
-                    logger.warning(f"Weather API error: {str(weather_data)}")
-                    weather_data = None
-                if isinstance(uv_data, Exception):
-                    logger.warning(f"UV index API error: {str(uv_data)}")
-                    uv_data = None
-                if isinstance(air_quality, Exception):
-                    logger.warning(f"Air quality API error: {str(air_quality)}")
-                    air_quality = None
-                if isinstance(solar_data, Exception):
-                    logger.warning(f"Solar data API error: {str(solar_data)}")
-                    solar_data = None
-
-                # Format the base weather data
-                result = [weather_data.strip()] if weather_data else ["Weather data unavailable"]
-                extended_result = ""
-
-                # Handle any exceptions from the API calls
-                if isinstance(uv_data, Exception):
-                    logger.warning(f"UV index API error: {str(uv_data)}")
-                    uv_data = None
-                if isinstance(air_quality, Exception):
-                    logger.warning(f"Air quality API error: {str(air_quality)}")
-                    air_quality = None
-                if isinstance(solar_data, Exception):
-                    logger.warning(f"Solar data API error: {str(solar_data)}")
-                    solar_data = None
-
-            except Exception as e:
-                logger.error(f"Error in concurrent API calls: {str(e)}")
+            # Handle any exceptions from the API calls
+            if isinstance(weather_data, Exception):
+                logger.warning(f"Weather API error: {str(weather_data)}")
+                weather_data = None
+            if isinstance(uv_data, Exception):
+                logger.warning(f"UV index API error: {str(uv_data)}")
                 uv_data = None
+            if isinstance(air_quality, Exception):
+                logger.warning(f"Air quality API error: {str(air_quality)}")
                 air_quality = None
+            if isinstance(solar_data, Exception):
+                logger.warning(f"Solar data API error: {str(solar_data)}")
                 solar_data = None
 
-                # Get moon phase
-                now = datetime.now()
-                moon_data = self.moon.phase(
-                    now.year, now.month, now.day,
-                    now.hour, now.minute, now.second
-                )
-                moon_phase_name = self.moon.get_phase_name(moon_data[6])
+            # Format the base weather data
+            result = [weather_data.strip()] if weather_data else ["Weather data unavailable"]
+            extended_result = ""
 
-                # Combine all data
-                extended_result_data = []
-                if uv_data:
-                    uv_info = [
-                        "\nUV Index Information:",
-                        f"Current Ultra Violet Index: {uv_data['uv']:.1f}",
-                        f"Ozone Level: {uv_data['ozone']} DU"
-                    ]
-                    extended_result_data.extend(uv_info)
-
-                if air_quality and air_quality.get("status") == "ok":
-                    aqi_info = [
-                        "\nAir Quality Information:",
-                        f"Air Quality Index: {air_quality['data']['aqi']}",
-                        f"Last Updated: {air_quality['data']['time']['s']}"
-                    ]
-                    extended_result_data.extend(aqi_info)
-
-                if solar_data:
-                    solar_info = [
-                        "\nSolar Information:",
-                        f"Sunrise: {solar_data['sunrise']}",
-                        f"Sunset: {solar_data['sunset']}",
-                        f"Dawn: {solar_data['dawn']}",
-                        f"Dusk: {solar_data['dusk']}",
-                        f"Day Length: {solar_data['day_length']}"
-                    ]
-                    extended_result_data.extend(solar_info)
-
-                moon_info = [
-                    "\nLunar Information:",
-                    f"Moon Phase: {moon_phase_name}",
-                    f"Moon Age: {moon_data[1]:.1f} days",
+            # Combine all data
+            extended_result_data = []
+            if uv_data:
+                uv_info = [
+                    "\nUV Index Information:",
+                    f"Current Ultra Violet Index: {uv_data['uv']:.1f}",
+                    f"Ozone Level: {uv_data['ozone']} DU"
                 ]
-                extended_result_data.extend(moon_info)
+                extended_result_data.extend(uv_info)
 
-                extended_result = '\n'.join(extended_result_data)
-                logger.info(f"Extended weather data: {extended_result}")
+            if air_quality and air_quality.get("status") == "ok":
+                aqi_info = [
+                    "\nAir Quality Information:",
+                    f"Air Quality Index: {air_quality['data']['aqi']}",
+                    f"Last Updated: {air_quality['data']['time']['s']}"
+                ]
+                extended_result_data.extend(aqi_info)
+
+            if solar_data:
+                solar_info = [
+                    "\nSolar Information:",
+                    f"Sunrise: {solar_data['sunrise']}",
+                    f"Sunset: {solar_data['sunset']}",
+                    f"Dawn: {solar_data['dawn']}",
+                    f"Dusk: {solar_data['dusk']}",
+                    f"Day Length: {solar_data['day_length']}"
+                ]
+                extended_result_data.extend(solar_info)
+
+            moon_info = [
+                "\nLunar Information:",
+                f"Moon Phase: {moon_phase_name}",
+                f"Moon Age: {moon_data[1]:.1f} days",
+            ]
+            extended_result_data.extend(moon_info)
+
+            extended_result = '\n'.join(extended_result_data)
+            logger.info(f"Extended weather data: {extended_result}")
 
             return "\n".join(result) + "\n" + extended_result
 
@@ -437,6 +417,7 @@ if __name__ == "__main__":
     from dataclasses import dataclass
     from dotenv import load_dotenv
 
+    logger.setLevel(logging.INFO)
     load_dotenv()
 
     # Mock Config class for testing
