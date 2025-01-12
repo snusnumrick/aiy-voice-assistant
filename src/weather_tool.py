@@ -339,22 +339,22 @@ class EnhancedWeatherTool:
                 result = [weather_data.strip()] if weather_data else ["Weather data unavailable"]
                 extended_result = ""
 
-                    # Handle any exceptions from the API calls
-                    if isinstance(uv_data, Exception):
-                        logger.warning(f"UV index API error: {str(uv_data)}")
-                        uv_data = None
-                    if isinstance(air_quality, Exception):
-                        logger.warning(f"Air quality API error: {str(air_quality)}")
-                        air_quality = None
-                    if isinstance(solar_data, Exception):
-                        logger.warning(f"Solar data API error: {str(solar_data)}")
-                        solar_data = None
-
-                except Exception as e:
-                    logger.error(f"Error in concurrent API calls: {str(e)}")
+                # Handle any exceptions from the API calls
+                if isinstance(uv_data, Exception):
+                    logger.warning(f"UV index API error: {str(uv_data)}")
                     uv_data = None
+                if isinstance(air_quality, Exception):
+                    logger.warning(f"Air quality API error: {str(air_quality)}")
                     air_quality = None
+                if isinstance(solar_data, Exception):
+                    logger.warning(f"Solar data API error: {str(solar_data)}")
                     solar_data = None
+
+            except Exception as e:
+                logger.error(f"Error in concurrent API calls: {str(e)}")
+                uv_data = None
+                air_quality = None
+                solar_data = None
 
                 # Get moon phase
                 now = datetime.now()
