@@ -5,10 +5,10 @@ from src.config import Config
 from src.web_search import WebSearcher
 import logging
 import aiohttp
-from moon import Moon
-from openuv import get_uv_index, UVIndexError
-from aqi import get_air_quality
-from sunrise import get_solar_data
+from src.moon import Moon
+from src.openuv import get_uv_index, UVIndexError
+from src.aqi import get_air_quality
+from src.sunrise import get_solar_data
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
