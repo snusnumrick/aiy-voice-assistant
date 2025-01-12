@@ -295,9 +295,11 @@ class EnhancedWeatherTool:
         Returns:
             str: Formatted weather information including all available data
         """
+        logger.info(f"get_weather_async parameters: {parameters}")
         try:
             # Get coordinates
             lat, lon = await self.base_weather_tool.get_lat_lng(parameters["location"])
+            logger.info(f"Latitude: {lat}, Longitude: {lon}")
 
             timeframe = parameters.get("timeframe", "current")
             if timeframe != "current":
@@ -312,6 +314,7 @@ class EnhancedWeatherTool:
                 now.hour, now.minute, now.second
             )
             moon_phase_name = self.moon.get_phase_name(moon_data[6])
+            logger.info(f"Moon phase: {moon_phase_name}")
 
             # Make concurrent API calls
             weather_data, uv_data, air_quality, solar_data = await asyncio.gather(
