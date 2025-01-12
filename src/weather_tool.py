@@ -6,9 +6,9 @@ from src.web_search import WebSearcher
 import logging
 import aiohttp
 from src.moon import Moon
-from src.openuv import get_uv_index, UVIndexError
-from src.aqi import get_air_quality
-from src.sunrise import get_solar_data
+from src.openuv import get_uv_index_async, UVIndexError
+from src.aqi import get_air_quality_async
+from src.sunrise import get_solar_data_async
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -309,17 +309,17 @@ class EnhancedWeatherTool:
 
                 # Get additional data
                 try:
-                    uv_data = get_uv_index(lat, lon, self.openuv_api_key)
+                    uv_data = await get_uv_index_async(lat, lon, self.openuv_api_key)
                 except (UVIndexError, ValueError) as e:
                     uv_data = None
 
                 try:
-                    air_quality = get_air_quality(lat, lon, self.waqi_token)
+                    air_quality = await get_air_quality_async(lat, lon, self.waqi_token)
                 except Exception as e:
                     air_quality = None
 
                 try:
-                    solar_data = get_solar_data(
+                    solar_data = await get_solar_data_async(
                         latitude=lat,
                         longitude=lon,
                         time_format="24"
