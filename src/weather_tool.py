@@ -316,18 +316,25 @@ class EnhancedWeatherTool:
             moon_phase_name = self.moon.get_phase_name(moon_data[6])
             logger.info(f"Moon phase: {moon_phase_name}")
 
-            # Make concurrent API calls
-            weather_data, uv_data, air_quality, solar_data = await asyncio.gather(
-                self.base_weather_tool.get_weather_async(parameters),
-                get_uv_index_async(lat, lon, self.openuv_api_key),
-                get_air_quality_async(lat, lon, self.waqi_token),
-                get_solar_data_async(
-                    latitude=lat,
-                    longitude=lon,
-                    time_format="24"
-                ),
-                return_exceptions=True
-            )
+            try:
+                # Make concurrent API calls
+                weather_data, uv_data, air_quality, solar_data = await asyncio.gather(
+                    self.base_weather_tool.get_weather_async(parameters),
+                    get_uv_index_async(lat, lon, self.openuv_api_key),
+                    get_air_quality_async(lat, lon, self.waqi_token),
+                    get_solar_data_async(
+                        latitude=lat,
+                        longitude=lon,
+                        time_format="24"
+                    ),
+                    return_exceptions=True
+                )
+            except Exception as e:
+                logger.warning(f"Error fetching weather data: {str(e)}")
+                weather_data = None
+                uv_data = None
+                air_quality = None
+                solar_data = None
 
             # Handle any exceptions from the API calls
             if isinstance(weather_data, Exception):
