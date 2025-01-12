@@ -24,7 +24,7 @@ from src.config import Config
 from src.conversation_manager import ConversationManager
 from src.dialog import main_loop_async
 from src.email_tools import SendEmailTool
-from src.weather_tool import WeatherTool
+from src.weather_tool import EnhancedWeatherTool
 from src.tools import get_timezone
 from src.tts_engine import YandexTTSEngine, Language, ElevenLabsTTSEngine
 from src.web_search_tool import WebSearchTool
@@ -116,7 +116,7 @@ def main():
         send_email_tool = SendEmailTool(config)
         interpreter_tool = InterpreterTool(config)
         volume_control_tool = VolumeControlTool(config)
-        weather_tool = WeatherTool(config)
+        weather_tool = EnhancedWeatherTool(config)
 
         tools = [search_tool.tool_definition(), send_email_tool.tool_definition(), stress_tool.tool_definition(),
                  interpreter_tool.tool_definition(), volume_control_tool.tool_definition(),

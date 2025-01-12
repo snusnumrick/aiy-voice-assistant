@@ -5,7 +5,11 @@ from src.config import Config
 from src.web_search import WebSearcher
 import logging
 import aiohttp
-import json
+from moon import Moon
+from openuv import get_uv_index, UVIndexError
+from aqi import get_air_quality
+from sunrise import get_solar_data
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +270,137 @@ class WeatherTool:
         finally:
             self._stop_processing()
 
+class EnhancedWeatherTool:
+    """
+    Enhanced weather tool that combines weather data with UV index, air quality,
+    lunar phase, and solar information.
+    """
+
+    def __init__(self, config: Config):
+        self.moon = Moon()
+        self.base_weather_tool = WeatherTool(config)
+        self.openuv_api_key = os.getenv("OPENUV_API_KEY")
+        self.waqi_token = os.getenv("WAQI_API_KEY")
+
+    async def get_weather_async(self, parameters: Dict[str, any]) -> str:
+        """
+        Get comprehensive weather information including UV index, air quality,
+        lunar phase, and solar data.
+
+        Args:
+            parameters (Dict[str, any]): Dictionary containing:
+                - location: Location as 'latitude,longitude' or 'city,country'
+                - timeframe: Optional 'current', 'hourly', or 'daily'
+
+        Returns:
+            str: Formatted weather information including all available data
+        """
+        try:
+            # Get coordinates
+            lat, lon = await self.base_weather_tool.get_lat_lng(parameters["location"])
+
+            # Get basic weather data
+            weather_data = await self.base_weather_tool.get_weather_async(parameters)
+            result = [weather_data.strip()]
+
+
+            timeframe = parameters.get("timeframe", "current")
+            if timeframe == "current":
+
+                # Get additional data
+                try:
+                    uv_data = get_uv_index(lat, lon, self.openuv_api_key)
+                except (UVIndexError, ValueError) as e:
+                    uv_data = None
+
+                try:
+                    air_quality = get_air_quality(lat, lon, self.waqi_token)
+                except Exception as e:
+                    air_quality = None
+
+                try:
+                    solar_data = get_solar_data(
+                        latitude=lat,
+                        longitude=lon,
+                        time_format="24"
+                    )
+                except Exception as e:
+                    solar_data = None
+
+                # Get moon phase
+                now = datetime.now()
+                moon_data = self.moon.phase(
+                    now.year, now.month, now.day,
+                    now.hour, now.minute, now.second
+                )
+                moon_phase_name = self.moon.get_phase_name(moon_data[6])
+
+                # Combine all data
+                if uv_data:
+                    uv_info = [
+                        "\nUV Index Information:",
+                        f"Current UV Index: {uv_data['uv']:.1f}",
+                        f"Max UV Index: {uv_data['uv_max']:.1f} at {uv_data['uv_max_time']}",
+                        f"Ozone Level: {uv_data['ozone']} DU"
+                    ]
+                    result.extend(uv_info)
+
+                if air_quality and air_quality.get("status") == "ok":
+                    aqi_info = [
+                        "\nAir Quality Information:",
+                        f"Air Quality Index: {air_quality['data']['aqi']}",
+                        f"Station: {air_quality['data']['city']['name']}",
+                        f"Last Updated: {air_quality['data']['time']['s']}"
+                    ]
+                    result.extend(aqi_info)
+
+                if solar_data:
+                    solar_info = [
+                        "\nSolar Information:",
+                        f"Sunrise: {solar_data['sunrise']}",
+                        f"Sunset: {solar_data['sunset']}",
+                        f"Dawn: {solar_data['dawn']}",
+                        f"Dusk: {solar_data['dusk']}",
+                        f"Day Length: {solar_data['day_length']}"
+                    ]
+                    result.extend(solar_info)
+
+                moon_info = [
+                    "\nLunar Information:",
+                    f"Moon Phase: {moon_phase_name}",
+                    f"Illumination: {moon_data[0]:.1%}",
+                    f"Moon Age: {moon_data[1]:.1f} days",
+                    f"Moon Distance: {moon_data[2]:,.0f} km"
+                ]
+                result.extend(moon_info)
+
+            return "\n".join(result)
+
+        except Exception as e:
+            return f"Error fetching comprehensive weather data: {str(e)}"
+
+    def tool_definition(self) -> Tool:
+        return Tool(
+            name="enhanced_weather_info",
+            description="Get comprehensive weather information including UV index, air quality, lunar phase, and solar data",
+            iterative=True,
+            parameters=[
+                ToolParameter(
+                    name="location",
+                    type="string",
+                    description="Location as 'latitude,longitude' or 'city,country'",
+                ),
+                ToolParameter(
+                    name="timeframe",
+                    type="string",
+                    description="Optional: 'current', 'hourly', or 'daily' (default: current)",
+                )
+            ],
+            required=["location"],
+            processor=self.get_weather_async,
+        )
+
+
 
 # Test code
 if __name__ == "__main__":
@@ -287,7 +422,7 @@ if __name__ == "__main__":
 
     async def test_weather_tool():
         # Initialize the tool
-        weather_tool = WeatherTool(MockConfig())
+        weather_tool = EnhancedWeatherTool(MockConfig())
 
         # Test cases
         test_locations = [

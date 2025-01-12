@@ -38,8 +38,12 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 - **Russian Stress Marking**: Ability to add stress marks to Russian words, enhancing pronunciation guidance and language learning.
 - **Code Interpretation**: Can execute Python code, allowing for complex computations and data analysis, with results conveyed verbally.
 - **Volume Control**: Ability to adjust speaker volume through voice commands, enhancing user comfort and accessibility.
-- **Weather Information**: Provides current weather conditions and forecasts for any location worldwide, supporting current conditions, hourly, and daily forecasts.
-
+- **Comprehensive Weather Information**: Provides detailed weather data including:
+  - Current conditions and forecasts (hourly/daily)
+  - UV index and ozone levels
+  - Air quality information
+  - Solar data (sunrise, sunset, dawn, dusk)
+  - Lunar phase and illumination
 
 ## Hardware Requirements
 
@@ -178,8 +182,10 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
         PERPLEXITY_API_KEY=your_perplexity_api_key
         ELEVENLABS_API_KEY=your_elevenlabs_api_key
         GEMINI_API_KEY=your_gemini_api_key
-        TOMORROW_API_KEY=your_tomorrow_io_api_key
-        GEOCODE_API_KEY=your_maps_co_geocoding_api_key
+        TOMORROW_API_KEY=your_tomorrow_io_api_key        # For weather data
+        GEOCODE_API_KEY=your_maps_co_geocoding_api_key   # For location lookup
+        WAQI_API_KEY=your_waqi_api_key                   # For air quality data
+        OPENUV_API_KEY=your_openuv_api_key              # For UV index data
     ```
     Notes
     1. Make sure to keep your `.env` file secure and never commit it to version control.
@@ -295,16 +301,19 @@ Once the assistant is running, here's how to interact with it:
    - The assistant will confirm the volume change after adjusting it.
 
 8. **Weather Information:**
-   - Get current weather: "Какая сейчас погода в Москве?" (What's the current weather in Moscow?)
+   - Get comprehensive current weather: "Какая сейчас погода в Москве?" (What's the current weather in Moscow?)
    - Get hourly forecast: "Почасовой прогноз погоды для Санкт-Петербурга" (Hourly weather forecast for Saint Petersburg)
    - Get daily forecast: "Прогноз погоды на неделю в Лондоне" (Weekly weather forecast for London)
    - Use coordinates: "Текущая погода на координатах 55.7558,37.6173" (Current weather at coordinates 55.7558,37.6173)
 
-   The assistant can provide:
-   - Current temperature, humidity, and wind speed
-   - Hourly forecasts for the next 24 hours
-   - Daily forecasts with high and low temperatures
-   - Weather information for any location worldwide using either city names or coordinates
+   The enhanced weather system provides:
+   - Basic weather metrics (temperature, humidity, wind, pressure)
+   - UV index and ozone level information
+   - Air quality data and nearest monitoring station
+   - Solar information (sunrise, sunset, dawn, dusk times)
+   - Lunar phase details (phase name, illumination percentage, moon age)
+       
+   Note: Detailed additional information (UV, air quality, solar/lunar data) is available for current weather queries. Hourly and daily forecasts provide basic weather metrics only.
 
 Remember, the assistant is primarily configured to interact in Russian. It will adapt its conversation style and content based on the user's age and interests as indicated in the initial introduction.
 
@@ -346,18 +355,27 @@ Possible customizations:
 - `src/`: Contains core modules:
   - `ai_models.py`: AI model implementations
   - `ai_models_with_tools.py`: AI models with tool support
+  - `aqi.py`: Air Quality Index data fetching using WAQI API
   - `audio.py`: Audio processing and speech recognition
   - `config.py`: Configuration management
   - `conversation_manager.py`: Manages conversation flow and memory
   - `dialog.py`: Main conversation loop
   - `email_tools.py`: Email functionality
-  - `tts_engine.py`: Text-to-speech engines
-  - `web_search.py` & `web_search_tool.py`: Web search functionality
-  - `tools.py`: Utility functions
-  - `llm_tools.py`: Language model specific tools
+  - `moon.py`: Astronomical calculations for lunar phases and information
+  - `openuv.py`: UV index and ozone data fetching using OpenUV API
   - `responce_player.py`: Audio playback and LED control
   - `stt_engine.py`: Speech-to-text engines
+  - `sunrise.py`: Solar calculations and data (sunrise, sunset, dawn, dusk)
   - `stress_tool.py`: Tool for adding stress marks to Russian words
+  - `tools.py`: Utility functions
+  - `tts_engine.py`: Text-to-speech engines
+  - `weather_tool.py`: Enhanced weather tool integrating multiple data sources:
+    - Basic weather conditions and forecasts
+    - Moon phase information
+    - UV index and air quality data
+    - Solar data integration
+  - `web_search.py` & `web_search_tool.py`: Web search functionality
+  - `llm_tools.py`: Language model specific tools
   - `code_interpreter_tool.py`: Tool for executing Python code and returning results
   - `volume_control_tool.py`: Tool for adjusting speaker volume
 
@@ -374,10 +392,12 @@ Possible customizations:
   - Verify environment variables aren't overriding desired settings
   - Use --debug flag to see which configuration source is being used
 - For weather-related issues:
-  - Verify Tomorrow.io API key is valid and has sufficient quota
+  - Verify all weather-related API keys (Tomorrow.io, WAQI, OpenUV) are valid and have sufficient quota
   - Check geocoding API key if location queries fail
   - For coordinate-based queries, ensure format is "latitude,longitude"
   - Weather data might be temporarily unavailable due to API limits or service issues
+  - Some additional data (UV, air quality) may not be available for all locations
+  - Hourly and daily forecasts include only basic weather metrics
 
 ## Performance Considerations
 
