@@ -1,5 +1,6 @@
 import os
 from typing import Dict
+import asyncio
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 from src.web_search import WebSearcher
@@ -423,7 +424,6 @@ class EnhancedWeatherTool:
 
 # Test code
 if __name__ == "__main__":
-    import asyncio
     from dataclasses import dataclass
     from dotenv import load_dotenv
 
