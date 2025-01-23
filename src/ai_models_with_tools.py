@@ -921,6 +921,7 @@ async def main_async():
     Asynchronous main function for testing the ClaudeAIModelWithTools.
     """
     from src.code_interpreter_tool import InterpreterTool
+    from src.wizard_tool import WizardTool
 
     # from src.interpreter_tool_judge0 import InterpreterTool
     config = Config()
@@ -931,11 +932,16 @@ async def main_async():
             так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов."""
 
     interpreter_tool = InterpreterTool(config)
-    model = ClaudeAIModelWithTools(config, tools=[interpreter_tool.tool_definition()])
+    wizard_tool = WizardTool(config)
+    model = ClaudeAIModelWithTools(config, tools=[
+        interpreter_tool.tool_definition(),
+        # wizard_tool.tool_definition(),
+    ])
     # model = ClaudeAIModel(config)
     messages = [
         {"role": "system", "content": system},
-        {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4."},
+        # {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4."},
+        {"role": "user", "content": "how many r in word strawberry? think it through"},
     ]
     m = ""
     async for response_part in model.get_response_async(messages):
@@ -980,5 +986,5 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     load_dotenv()
-    # asyncio.run(main_async())
-    main()
+    asyncio.run(main_async())
+    # main()

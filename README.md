@@ -14,10 +14,11 @@ Key aspects of the assistant include:
 - Emotional intelligence and expression
 - Web searches for current information
 - Physical interaction through a custom cardboard cube interface
-- Multi-model AI approach, supporting Claude AI, OpenAI, and Google's Gemini models
+- Multi-model AI approach, supporting Claude AI, OpenAI, Google's Gemini models, and Deepseek's advanced analysis capabilities
 - Email functionality for sending messages
 - Streaming responses for natural conversation flow
 - Code interpretation and execution capabilities
+- Deep analytical reasoning through the WizardTool feature
 
 The assistant primarily operates in Russian but can be configured for other languages.
 
@@ -26,18 +27,25 @@ The assistant primarily operates in Russian but can be configured for other lang
 - **Adaptive Conversations**: Engages in dialogues appropriate to the user's age and interests, from children to adults.
 - **Educational Content**: Offers learning opportunities through interactive discussions, quizzes, and informational exchanges.
 - **Emotional Intelligence**: Expresses and recognizes emotions, enhancing the interactive experience through LED patterns and voice tones.
+- **Deep Analysis Capabilities**: Utilizes the WizardTool to break down and thoroughly analyze complex questions, providing comprehensive, well-reasoned responses for sophisticated queries.
 - **Web Search Integration**: Performs web searches to answer queries and provide access to current information 
 beyond the AI model's knowledge cutoff date, enhancing the assistant's ability to discuss recent events and up-to-date facts.
 - **Adaptive Personality**: Learns and adapts to the user's communication style and interests over time.
 - **Multilingual Support**: Primarily configured for Russian, with potential for other languages.
 - **Physical Interaction**: Utilizes a cardboard cube interface with a button and LED for intuitive interaction.
-- **Multi-Model AI**: Supports Claude AI, OpenAI, and Google's Gemini models, allowing for flexible and powerful natural language processing.
+- **Multi-Model AI**: Supports Claude AI, OpenAI, Google's Gemini models, and Deepseek's analytical capabilities, allowing for flexible and powerful natural language processing.
 - **Email Functionality**: Ability to send emails to the user.
 - **Memory Formation**: Remembers facts and rules across conversations for improved context retention.
 - **Streaming Responses**: Provides more natural conversation flow with real-time responses.
 - **Russian Stress Marking**: Ability to add stress marks to Russian words, enhancing pronunciation guidance and language learning.
 - **Code Interpretation**: Can execute Python code, allowing for complex computations and data analysis, with results conveyed verbally.
 - **Volume Control**: Ability to adjust speaker volume through voice commands, enhancing user comfort and accessibility.
+- **Deep Analysis with WizardTool**: Ask complex questions that require thorough analysis and reasoning. For example:
+  - "Какие философские последствия квантовой запутанности?" (What are the philosophical implications of quantum entanglement?)
+  - "Как искусственный интеллект может повлиять на будущее образования?" (How might artificial intelligence impact the future of education?)
+  - "Объясни взаимосвязь между климатическими изменениями и глобальной экономикой." (Explain the relationship between climate change and the global economy.)
+  The WizardTool will break down these complex questions, analyze them from multiple perspectives, and provide comprehensive, well-reasoned responses.
+- **Complex Problem Solving**: Ask the assistant to solve complex problems that may require computational assistance.
 
 ## Hardware Requirements
 
@@ -323,6 +331,12 @@ Possible customizations:
 - Customize TTS voices and languages in the configuration.
 - Adjust volume control settings (min/max volume, step size) in the `config.json` file
 
+WizardTool Configuration:
+
+- Adjust analysis depth levels in the configuration
+- Customize thinking templates for different types of questions
+- Configure maximum response length and detail level
+- Set up preferred AI models for different types of analysis
 ## Project Structure
 
 - `main.py`: Entry point of the application
@@ -344,6 +358,7 @@ Possible customizations:
   - `stress_tool.py`: Tool for adding stress marks to Russian words
   - `code_interpreter_tool.py`: Tool for executing Python code and returning results
   - `volume_control_tool.py`: Tool for adjusting speaker volume
+  - `wizard_tool.py`: Advanced analytical reasoning tool for complex questions
 
 ## Troubleshooting
 
