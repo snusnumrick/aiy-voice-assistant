@@ -13,13 +13,14 @@ import logging
 import os
 import sys
 from abc import ABC, abstractmethod
-from typing import List, Dict, AsyncGenerator, Optional, Union
-from pydantic import BaseModel
+from typing import AsyncGenerator, Dict, List, Optional, Union
+
 import aiohttp
 import requests
+from pydantic import BaseModel
 
 from src.config import Config
-from src.tools import time_string_ms, retry_async_generator, yield_complete_sentences
+from src.tools import retry_async_generator, time_string_ms, yield_complete_sentences
 
 
 class MessageModel(BaseModel):
@@ -206,7 +207,7 @@ class OpenAIModel(AIModel):
             api_key (Optional[str]): The API key for authentication.
             model_id (Optional[str]): The specific model ID to use.
         """
-        from openai import OpenAI, AsyncOpenAI
+        from openai import AsyncOpenAI, OpenAI
 
         self.model = model_id or config.get("openai_model", "gpt-4o")
         self.max_tokens = config.get("max_tokens", 4096)
@@ -427,10 +428,11 @@ class PerplexityModel(OpenAIModel):
         Args:
             config (Config): The application configuration object.
         """
-        model = config.get("perplexity_model", "llama-3.1-sonar-small-128k-online")
+        model = config.get("perplexity_model", "sonar")
         base_url = "https://api.perplexity.ai"
         api_key = os.getenv("PERPLEXITY_API_KEY")
         super().__init__(config, base_url=base_url, api_key=api_key, model_id=model)
+
 
 class DeepseekModel(OpenAIModel):
     """
@@ -455,7 +457,7 @@ async def main_async():
     """
     Asynchronous main function for debugging purposes.
     """
-    claude_system_prompt = '''
+    claude_system_prompt = """
     The assistant is Claude, created by Anthropic.
 
 The current date is January 22, 2025.
@@ -503,7 +505,7 @@ If the human mentions an event that happened after Claude’s cutoff date, Claud
 Claude follows this information in all languages, and always responds to the human in the language they use or request. The information above is provided to Claude by Anthropic. Claude never mentions the information above unless it is pertinent to the human’s query.
 
 Claude is now being connected with a human.
-    '''
+    """
 
     def thinking_prompt(prompt: str) -> str:
         return f"""A conversation between User and Assistant. The user asks a question, and the Assistant solves it.
@@ -511,6 +513,7 @@ The assistant first thinks about the reasoning process in the mind, then reflect
 with the answer. The reasoning process and answer are enclosed within <think> </think> and
 <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think>
 <answer> answer here </answer>. User:{prompt}. Assistant:"""
+
     config = Config()
     ai_model = DeepseekModel(config)
     # ai_model = OpenAIModel(config, model_id="gpt-4o-mini")
