@@ -12,7 +12,7 @@ CONFIG_FILE=${CONFIG_FILE:-"config.json"}
 ADMIN_EMAIL=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('admin_email', 'treskunov@gmail.com'))" 2>/dev/null || echo "treskunov@gmail.com")
 
 # Check current log file for errors
-LOG_FILE="logs/assistant.log"
+LOG_FILE=${LOG_FILE:-"logs/assistant.log"}
 if [ -f "$LOG_FILE" ]; then
     # Search for error messages
     ERROR_COUNT=$(grep -i "error\|exception\|failed\|traceback" "$LOG_FILE" | wc -l)
