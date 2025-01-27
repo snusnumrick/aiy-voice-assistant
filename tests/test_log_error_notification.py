@@ -39,8 +39,8 @@ class TestLogErrorNotification(unittest.TestCase):
             f.write("2024-01-27 10:00:01 - INFO - Normal message\n")
             f.write("2024-01-27 10:00:02 - ERROR - Another error\n")
         
-        # Run the check_logs script
-        result = os.system(f'CONFIG_FILE={self.config_file} LOG_FILE={self.log_file} ./check_logs.sh')
+        # Run the check_logs script with poetry python
+        result = os.system(f'poetry run python -c "import os; os.environ[\'CONFIG_FILE\']=\'{self.config_file}\'; os.environ[\'LOG_FILE\']=\'{self.log_file}\'; os.system(\'./check_logs.sh\')"')
         self.assertEqual(result, 0, "check_logs.sh failed to run")
         
         # Verify email was sent with correct content
