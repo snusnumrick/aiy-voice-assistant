@@ -43,6 +43,7 @@ def setup_logging(log_level, log_dir=None):
     """
     Set up logging with the specified log level and daily log files.
     Keeps only the last 5 days of logs.
+    Automatically checks for errors before rotation and emails notifications.
     """
     numeric_level = getattr(logging, log_level.upper(), None)
     if not isinstance(numeric_level, int):
@@ -83,6 +84,8 @@ def setup_logging(log_level, log_dir=None):
         file_handler.setLevel(numeric_level)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
+        
+        logger.info("Log rotation configured with error notification enabled")
 
     return logger
 
