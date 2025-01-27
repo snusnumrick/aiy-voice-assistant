@@ -15,21 +15,21 @@ import time
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
-from aiy.board import Board
-from aiy.leds import Leds, Color
 from dotenv import load_dotenv
 
-from src.ai_models_with_tools import ClaudeAIModelWithTools, OpenAIModelWithTools
+from aiy.board import Board
+from aiy.leds import Color, Leds
+from src.ai_models_with_tools import ClaudeAIModelWithTools
+from src.code_interpreter_tool import InterpreterTool
 from src.config import Config
 from src.conversation_manager import ConversationManager
 from src.dialog import main_loop_async
 from src.email_tools import SendEmailTool
-from src.tools import get_timezone
-from src.tts_engine import YandexTTSEngine, Language, ElevenLabsTTSEngine
-from src.web_search_tool import WebSearchTool
 from src.stress_tool import StressTool
-from src.code_interpreter_tool import InterpreterTool
+from src.tools import get_timezone
+from src.tts_engine import ElevenLabsTTSEngine, Language, YandexTTSEngine
 from src.volume_control_tool import VolumeControlTool
+from src.web_search_tool import WebSearchTool
 from src.wizard_tool import WizardTool
 
 # Set up signal handling for graceful shutdown
@@ -46,7 +46,7 @@ def setup_logging(log_level, log_dir=None):
     """
     numeric_level = getattr(logging, log_level.upper(), None)
     if not isinstance(numeric_level, int):
-        raise ValueError(f'Invalid log level: {log_level}')
+        raise ValueError(f"Invalid log level: {log_level}")
 
     # Create logger
     logger = logging.getLogger()
@@ -57,7 +57,9 @@ def setup_logging(log_level, log_dir=None):
     console_handler.setLevel(numeric_level)
 
     # Create formatter
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     console_handler.setFormatter(formatter)
 
     # Add console handler to logger
@@ -70,13 +72,13 @@ def setup_logging(log_level, log_dir=None):
         log_dir_path.mkdir(parents=True, exist_ok=True)
 
         # Set up file handler for daily rotation
-        log_file = log_dir_path / 'assistant.log'
+        log_file = log_dir_path / "assistant.log"
         file_handler = TimedRotatingFileHandler(
             filename=log_file,
-            when='midnight',
+            when="midnight",
             interval=1,
             backupCount=5,
-            encoding='utf-8'
+            encoding="utf-8",
         )
         file_handler.setLevel(numeric_level)
         file_handler.setFormatter(formatter)
@@ -84,17 +86,25 @@ def setup_logging(log_level, log_dir=None):
 
     return logger
 
+
 def parse_arguments():
     """
     Parse command-line arguments.
     """
     parser = argparse.ArgumentParser(description="AI Voice Assistant")
-    parser.add_argument('--log-level', default='INFO',
-                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-                       help='Set the logging level (default: INFO)')
-    parser.add_argument('--log-dir', default='logs',
-                       help='Directory for storing log files (default: logs)')
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set the logging level (default: INFO)",
+    )
+    parser.add_argument(
+        "--log-dir",
+        default="logs",
+        help="Directory for storing log files (default: logs)",
+    )
     return parser.parse_args()
+
 
 def main():
     """
@@ -110,7 +120,6 @@ def main():
     timezone = get_timezone()
 
     with Board() as board, Leds() as leds:
-
         search_tool = WebSearchTool(config)
         stress_tool = StressTool(config)
         send_email_tool = SendEmailTool(config)
@@ -118,12 +127,14 @@ def main():
         volume_control_tool = VolumeControlTool(config)
         wizard_tool = WizardTool(config)
 
-        tools = [search_tool.tool_definition(),
-                 send_email_tool.tool_definition(),
-                 stress_tool.tool_definition(),
-                 interpreter_tool.tool_definition(),
-                 volume_control_tool.tool_definition(),
-                 wizard_tool.tool_definition()]
+        tools = [
+            search_tool.tool_definition(),
+            send_email_tool.tool_definition(),
+            stress_tool.tool_definition(),
+            interpreter_tool.tool_definition(),
+            volume_control_tool.tool_definition(),
+            wizard_tool.tool_definition(),
+        ]
 
         # Initial LED feedback
         leds.update(Leds.rgb_on(Color.WHITE))
@@ -144,9 +155,11 @@ def main():
         if not elevenlabs_engine and not yandex_engine:
             logger.critical("No TTS engine available. Exiting.")
             return
-        tts_engines = {Language.RUSSIAN: yandex_engine if yandex_engine else elevenlabs_engine,
-                       Language.ENGLISH: elevenlabs_engine if elevenlabs_engine else yandex_engine,
-                       Language.GERMAN: elevenlabs_engine if elevenlabs_engine else yandex_engine}
+        tts_engines = {
+            Language.RUSSIAN: yandex_engine if yandex_engine else elevenlabs_engine,
+            Language.ENGLISH: elevenlabs_engine if elevenlabs_engine else yandex_engine,
+            Language.GERMAN: elevenlabs_engine if elevenlabs_engine else yandex_engine,
+        }
         fallback_tts_engine = yandex_engine if yandex_engine else elevenlabs_engine
         # ai_model = OpenRouterModel(config)
         ai_model = ClaudeAIModelWithTools(config, tools=tools, timezone=timezone)
@@ -156,9 +169,18 @@ def main():
         logger.info("All components initialized. Starting main conversation loop.")
 
         # Start the main conversation loop
-        asyncio.run(main_loop_async(board.button, leds, tts_engines, fallback_tts_engine, conversation_manager, config,
-                                    timezone))
+        asyncio.run(
+            main_loop_async(
+                board.button,
+                leds,
+                tts_engines,
+                fallback_tts_engine,
+                conversation_manager,
+                config,
+                timezone,
+            )
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
