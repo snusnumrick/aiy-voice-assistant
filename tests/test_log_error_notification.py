@@ -40,7 +40,8 @@ class TestLogErrorNotification(unittest.TestCase):
             f.write("2024-01-27 10:00:02 - ERROR - Another error\n")
         
         # Run the check_logs script
-        os.system(f'CONFIG_FILE={self.config_file} LOG_FILE={self.log_file} ./check_logs.sh')
+        result = os.system(f'CONFIG_FILE={self.config_file} LOG_FILE={self.log_file} ./check_logs.sh')
+        self.assertEqual(result, 0, "check_logs.sh failed to run")
         
         # Verify email was sent with correct content
         mock_send_email.assert_called_once()
