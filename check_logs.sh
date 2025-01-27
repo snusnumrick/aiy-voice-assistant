@@ -22,13 +22,15 @@ if [ -f "$LOG_FILE" ]; then
         ERROR_CONTENT=$(grep -i "error\|exception\|failed\|traceback" -A 3 "$LOG_FILE")
         
         # Use the email_tools.py script to send the email
-        python3 -c "
+        ERROR_COUNT_VAR=$ERROR_COUNT
+        ERROR_CONTENT_VAR=$ERROR_CONTENT
+        poetry run python -c "
 from src.email_tools import send_email
 from src.config import Config
 config = Config()
 send_email(
     'AIY Assistant Log Errors Found',
-    f'Found {ERROR_COUNT} errors in the log file:\n\n{ERROR_CONTENT}',
+    f'Found {$ERROR_COUNT_VAR} errors in the log file:\\n\\n{$ERROR_CONTENT_VAR}',
     config,
     '${ADMIN_EMAIL}'
 )
