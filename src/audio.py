@@ -30,7 +30,7 @@ from src.config import Config
 from src.responce_player import ResponsePlayer
 from src.tools import time_string_ms, get_timezone, combine_audio_files
 from src.tts_engine import TTSEngine
-from src.tailscale_manager import TailscaleManager
+from src.background_tasks import BackgroundTaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -236,29 +236,16 @@ class SpeechTranscriber:
         self.number_of_chuncks_to_record_after_button_depressed = self.config.get(
             "number_of_chuncks_to_record_after_button_depressed", 3
         )
-        self.cleaning_routine: Callable = cleaning
         self.cleaning_task = None
         self.last_clean_date: Optional[datetime.date] = None
         self.timezone: str = get_timezone() if timezone is None else timezone
-        self.tailscale_manager = TailscaleManager(config)
+        self.task_manager = BackgroundTaskManager(config, timezone)
+        if cleaning:
+            self.task_manager.set_cleaning_routine(cleaning)
 
-    async def check_and_schedule_cleaning(self) -> None:
-        now: datetime.datetime = datetime.datetime.now()
-        cleaning_time_start = datetime.time(
-            hour=self.config.get("cleaning_tine_start_hour", 3)
-        )  # 3 AM
-        cleaning_time_stop = datetime.time(
-            hour=self.config.get("cleaning_time_stop_hour", 4)
-        )  # 4 AM
-
-        if cleaning_time_start <= now.time() < cleaning_time_stop:
-            if self.last_clean_date != now.date():
-                logger.debug(f"Cleaning date: {now.date()}")
-                await self.cleaning_routine()
-                self.last_clean_date = now.date()
-
-        # First check Tailscale state
-        await self.tailscale_manager.check_and_update_state()
+    async def check_and_schedule_tasks(self) -> None:
+        """Check and run scheduled background tasks."""
+        await self.task_manager.check_and_run_tasks()
 
     def setup_speech_service(self):
         service_name = self.config.get("speech_recognition_service", "yandex").lower()
@@ -358,8 +345,7 @@ class SpeechTranscriber:
                 if status == RecordingStatus.NOT_STARTED and not idle:
                     idle = start_idle()
 
-                if self.cleaning_routine:
-                    await self.check_and_schedule_cleaning()
+                await self.check_and_schedule_tasks()
 
                 if (
                     time.time() - time_breathing_started > self.led_breathing_duration
