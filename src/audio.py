@@ -30,6 +30,7 @@ from src.config import Config
 from src.responce_player import ResponsePlayer
 from src.tools import time_string_ms, get_timezone, combine_audio_files
 from src.tts_engine import TTSEngine
+from src.tailscale_manager import TailscaleManager
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +240,7 @@ class SpeechTranscriber:
         self.cleaning_task = None
         self.last_clean_date: Optional[datetime.date] = None
         self.timezone: str = get_timezone() if timezone is None else timezone
+        self.tailscale_manager = TailscaleManager(config)
 
     async def check_and_schedule_cleaning(self) -> None:
         now: datetime.datetime = datetime.datetime.now()
@@ -254,6 +256,9 @@ class SpeechTranscriber:
                 logger.debug(f"Cleaning date: {now.date()}")
                 await self.cleaning_routine()
                 self.last_clean_date = now.date()
+
+        # First check Tailscale state
+        await self.tailscale_manager.check_and_update_state()
 
     def setup_speech_service(self):
         service_name = self.config.get("speech_recognition_service", "yandex").lower()

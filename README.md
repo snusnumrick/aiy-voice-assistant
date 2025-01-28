@@ -52,6 +52,7 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
   - "Объясни взаимосвязь между климатическими изменениями и глобальной экономикой." (Explain the relationship between climate change and the global economy.)
   The WizardTool will break down these complex questions, analyze them from multiple perspectives, and provide comprehensive, well-reasoned responses.
 - **Complex Problem Solving**: Ask the assistant to solve complex problems that may require computational assistance.
+- **Automated Tailscale Management**: Automatically manages Tailscale VPN state based on time of day to optimize CPU usage, enabling remote maintenance during quiet hours while ensuring optimal performance during active use.
 
 ## Hardware Requirements
 
@@ -238,7 +239,25 @@ python main.py --log-dir logs --log-level INFO
 ```
 Available log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
+15. **Configure Tailscale Management:**
+    * The assistant can automatically manage Tailscale VPN state based on time of day
+    * Configure the following in user.json or config.json:
+    ```json
+    {
+      "tailscale_enable_hour": 22,  // When to enable Tailscale (default: 10 PM)
+      "tailscale_disable_hour": 7    // When to disable Tailscale (default: 7 AM)
+    }
+    ```
+    * Set up sudo privileges for Tailscale commands:
+    ```bash
+    sudo visudo
+    # Add the following line:
+    your_username ALL=(ALL) NOPASSWD: /usr/bin/tailscale up, /usr/bin/tailscale down
+    ```
+    This allows the assistant to manage Tailscale without password prompts.
+
 After completing these steps, your AI Voice Assistant should be set up and ready to use on your Raspberry Pi.
+
 ## Usage
 
 To start the assistant manually (if not using the systemd service):
@@ -337,6 +356,13 @@ Additional Features:
   - "Сколько различных способов есть подняться на лестницу из 30 ступенек, если за один шаг можно подниматься на 1 или 2 ступеньки?" (How many different ways are there to climb a staircase of 30 steps if you can take either 1 or 2 steps at a time?)
   - "Какова сумма цифр в числе 2^1000 (2 в степени 1000)?" (What is the sum of the digits in the number 2^1000 (2 to the power of 1000)?)
 
+- **Tailscale Management:**
+  - The assistant automatically manages Tailscale VPN state:
+    - Enables Tailscale during night hours (default: 10 PM - 7 AM) for remote maintenance
+    - Disables Tailscale during day hours to optimize CPU usage and assistant responsiveness
+  - Configuration can be customized in config.json or user.json
+  - State changes are logged in the assistant's log files
+  - No manual intervention required once configured
 
 ## Customization
 
@@ -362,6 +388,19 @@ WizardTool Configuration:
 - Customize thinking templates for different types of questions
 - Configure maximum response length and detail level
 - Set up preferred AI models for different types of analysis
+
+Tailscale Management Settings:
+
+- Adjust enable/disable hours in config.json:
+  ```json
+  {
+    "tailscale_enable_hour": 22,  // When to enable Tailscale
+    "tailscale_disable_hour": 7    // When to disable Tailscale
+  }
+  ```
+- Settings can be overridden in user.json or via environment variables
+- Hours are in 24-hour format
+- Times are based on system local time
 
 ## Project Structure
 
@@ -414,6 +453,14 @@ WizardTool Configuration:
   - Weather data might be temporarily unavailable due to API limits or service issues
   - Some additional data (UV, air quality) may not be available for all locations
   - Hourly and daily forecasts include only basic weather metrics
+
+- For Tailscale management issues:
+  - Verify sudo permissions are correctly configured for Tailscale commands
+  - Check logs for any Tailscale state change errors
+  - Ensure Tailscale is properly installed and configured
+  - Verify system time is correct as scheduling depends on it
+  - If needed, manually check Tailscale state with `tailscale status`
+  - For immediate remote access outside scheduled hours, manually enable with `sudo tailscale up`
 
 ## Performance Considerations
 
