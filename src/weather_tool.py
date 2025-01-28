@@ -7,7 +7,7 @@ from src.web_search import WebSearcher
 import logging
 import aiohttp
 from src.moon import Moon
-from src.openuv import get_uv_index_async, UVIndexError
+from src.openuv import get_uv_index_async
 from src.aqi import get_air_quality_async
 from src.sunrise import get_solar_data_async
 from datetime import datetime
@@ -15,7 +15,7 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
-def _format_weather_response(weather_data: Dict, timeframe: str) -> str:
+def _format_weather_response(weather_data: Dict, timeframe: str, timezone: str) -> str:
     """Format the weather data response based on timeframe"""
     code_lookup = {
         1000: 'Clear, Sunny',
@@ -43,11 +43,40 @@ def _format_weather_response(weather_data: Dict, timeframe: str) -> str:
         8000: 'Thunderstorm',
     }
 
+    def _convert_to_local_time(iso_utc_time: str, local_timezone: str) -> str:
+        """
+        Converts a UTC ISO 8601 timestamp to local time.
+
+        Args:
+            iso_utc_time (str): The UTC time string in ISO 8601 format (e.g., '2025-01-28T04:00:00Z').
+            local_timezone (str): The local timezone name (e.g., 'America/New_York', 'Asia/Kolkata').
+
+        Returns:
+            str: The local date-time in ISO 8601 format.
+
+        Example:
+            local_time = _convert_to_local_time('2025-01-28T04:00:00Z', 'America/New_York')
+            # Returns: '2025-01-27T23:00:00-05:00'
+        """
+        from datetime import datetime
+        from pytz import timezone, utc
+
+        # Parse the UTC string into a datetime object
+        utc_datetime = datetime.strptime(iso_utc_time, "%Y-%m-%dT%H:%M:%SZ")
+        utc_datetime = utc.localize(utc_datetime)  # Set the timezone to UTC
+
+        # Convert from UTC to the specified local timezone
+        local_timezone = timezone(local_timezone)
+        local_datetime = utc_datetime.astimezone(local_timezone)
+
+        # Return as an ISO 8601 formatted string
+        return local_datetime.isoformat()
+
     def _format(data) -> list[str]:
-        return [
+        code = data['weatherCode']
+        result = [
             f"Temperature: {data['temperature']}°C",
-            f"Temperature Apparent: {data['temperatureApparent']}°C",
-            f"Visibility: {data['visibility']} km",
+            f"Feels like: {data['temperatureApparent']}°C",
             f"Humidity: {data['humidity']}%",
             f"Wind Speed: {data['windSpeed']} m/s",
             f"Wind Gust: {data['windGust']} m/s",
@@ -55,8 +84,32 @@ def _format_weather_response(weather_data: Dict, timeframe: str) -> str:
             f"Dew Point: {data['dewPoint']}C",
             f"Precipitation: {data['precipitationProbability']}%",
             f"Pressure: {data['pressureSurfaceLevel']} hPa",
-            f"Description: {code_lookup.get(data['weatherCode'], 'Unknown')}"
+            f"Description: {code_lookup.get(code, 'Unknown')}"
         ]
+        if 2000 > code >= 1000:
+            uv = data['uvIndex']
+            if uv > 0:
+                uv_text = ""
+                if 3 > uv > 0:
+                    uv_text = f"{uv} Low"
+                elif 6 > uv > 3:
+                    uv_text = f"{uv} Moderate"
+                elif 8 > uv > 6:
+                    uv_text = f"{uv} High"
+                elif 11 > uv > 8:
+                    uv_text = f"{uv} Very High"
+                elif uv >= 11:
+                    uv_text = f"{uv} Extreme"
+                result.append(f"UV Index: {uv_text}")
+        if code >= 2000:
+            result.append(f"Visibility: {data['visibility']}%")
+        if 5000 > code >= 4000 or code == 8000:
+            result.append(f"Rain Intensity: {data['rainIntensity']} mm/h")
+        if 6000 > code >= 5000:
+            result.append(f"Freezing Rain Intensity: {data['freezingRainIntensity']} mm/h")
+        if 7000 > code >= 6000:
+            result.append(f"Sleet Intensity: {data['sleetIntensity']} mm/h")
+        return result
 
     def _format_hourly(data) -> list[str]:
         return [
@@ -80,19 +133,22 @@ def _format_weather_response(weather_data: Dict, timeframe: str) -> str:
     if timeframe == "current":
         current = weather_data["data"]["values"]
         result = "Current weather:\n" + "\n".join(_format(current))
-    elif timeframe == "hourly":
+    else:
+        # hourly
         hours = weather_data["timelines"]["hourly"][:24]
-        result = "Hourly forecast (time: temperature, wind speed, precipitation, pressure, description)\n"
-        for hour in hours:
+        result = "Hourly forecast (time: temperature, wind speed, precipitation, pressure, description):\n"
+        for hour in hours[1:]:
+            local_time = _convert_to_local_time(hour['time'], timezone)
             result += (
-                f"{hour['time']}: {', '.join(_format_hourly(hour['values']))}\n"
+                f"{local_time}: {', '.join(_format_hourly(hour['values']))}\n"
             )
-    else:  # daily
-        days = weather_data["timelines"]["daily"][:7]
-        result = "Daily forecast:\n"
+
+        # daily
+        days = weather_data["timelines"]["daily"][1:7]
+        result += "\nDaily forecast:\n"
         for day in days:
             result += (
-                f"{day['time'][:10]}: "
+                f"{day['time'][1:10]}: "
                 f"{', '.join(_format_daily(day['values']))}\n"
             )
     logger.info(f"Weather response: {result}")
@@ -131,17 +187,17 @@ class WeatherTool:
                     type="string",
                     description="Location as 'latitude,longitude' or 'city,country'",
                 ),
-                ToolParameter(
-                    name="timeframe",
-                    type="string",
-                    description="Optional: 'current', 'hourly', or 'daily' (default: current)",
-                )
+                # ToolParameter(
+                #     name="timeframe",
+                #     type="string",
+                #     description="Optional: 'current', 'hourly', or 'daily' (default: current)",
+                # )
             ],
             required=["location"],
             processor=self.get_weather_async,
         )
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, timezone: str = "America/New_York"):
         self.weather_api_key = os.environ.get("TOMORROW_API_KEY")
         self.geo_api_key = os.environ.get("GEOCODE_API_KEY")
         self.base_url = "https://api.tomorrow.io/v4/weather"
@@ -152,6 +208,7 @@ class WeatherTool:
             "processing_blink_period_ms", 300
         )
         self.web_searcher = WebSearcher(config)
+        self.timezone = timezone
 
     def _start_processing(self):
         pass
@@ -159,40 +216,55 @@ class WeatherTool:
     def _stop_processing(self):
         pass
 
-    def get_weather(self, parameters: Dict[str, any]) -> str:
-        """Synchronous weather data fetch"""
-        import requests
+    async def _get_weather_data(self, location: str, timeframe: str) -> str:
+        """
+        Asynchronously fetch weather data for the specified location and timeframe.
 
-        if "location" not in parameters:
-            logger.error(f"Missing required parameter location: {parameters}")
-            return ""
+        Args:
+            location (str): The location for which weather data is required (e.g., city, latitude/longitude).
+            timeframe (str): The timeframe of the weather data, such as "current", "forecast".
 
-        try:
-            location = parameters["location"]
-            timeframe = parameters.get("timeframe", "current")
+        Returns:
+            str: Formatted weather data as a string if the request is successful, or an empty string in case of an error.
 
-            self._start_processing()
+        Raises:
+            Exception: In case of unexpected issues during the task execution (logged as an error).
 
-            url = f"{self.base_url}/{timeframe}"
-            params = {
-                "apikey": self.weather_api_key,
-                "location": location,
-                "units": "metric"
-            }
+        Usage:
+            formatted_data = await self._get_weather_data("New York", "current")
 
-            response = requests.get(url, params=params)
-            if response.status_code == 200:
-                weather_data = response.json()
-                return _format_weather_response(weather_data, timeframe)
-            else:
-                logger.error(f"API request failed: {response.status_code}")
-                return ""
+        Example:
+            Given `location="New York"` and `timeframe="current"`, this function fetches current
+            weather data for New York.
 
-        except Exception as e:
-            logger.error(f"Error fetching weather data: {str(e)}")
-            return ""
-        finally:
-            self._stop_processing()
+        Additional Details:
+            - Uses aiohttp for asynchronous HTTP requests.
+            - Returns pre-formatted weather data upon success.
+        """
+        url = f"{self.base_url}"
+        if timeframe == "current":
+            url += "/realtime"
+        else:
+            url += "/forecast"
+        params = {
+            "apikey": self.weather_api_key,
+            "location": location,
+            "units": "metric",
+        }
+        # if timeframe == "daily":
+        #     params["timesteps"] = "1d"
+        # elif timeframe == "hourly":
+        #     params["timesteps"] = "1h"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params) as response:
+                if response.status == 200:
+                    weather_data = await response.json()
+                    return _format_weather_response(weather_data, timeframe, self.timezone)
+                else:
+                    logger.error(f"API request failed: {response.status}")
+                    raise Exception(f"API request failed: {response.status}")
+
 
     async def get_lat_lng(self, location_description: str) -> tuple:
         """Get the latitude and longitude of a location.
@@ -228,48 +300,30 @@ class WeatherTool:
         if "location" not in parameters:
             raise ValueError(f"Missing required parameter location: {parameters}")
 
-        timeframe = parameters.get("timeframe", "current")
+        weather_api_failed = False
         try:
             lat, lon = await self.get_lat_lng(parameters["location"])
-            # lat, lon = await self._get_coordinates(parameters["location"])
             location = f"{lat},{lon}"
-            # location = parameters["location"]
-
             self._start_processing()
 
-            async with aiohttp.ClientSession() as session:
-                url = f"{self.base_url}"
-                if timeframe == "current":
-                    url += "/realtime"
-                else:
-                    url += "/forecast"
-                params = {
-                    "apikey": self.weather_api_key,
-                    "location": location,
-                    "units": "metric"
-                }
-                if timeframe == "daily":
-                    params["timesteps"] = "1d"
-                elif timeframe == "hourly":
-                    params["timesteps"] = "1h"
-
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        weather_data = await response.json()
-                        return _format_weather_response(weather_data, timeframe)
-                    else:
-                        raise ValueError(f"API request failed: {response.status} ({response.reason})")
+            current, forecast = await asyncio.gather(
+                self._get_weather_data(location, "current"),
+                self._get_weather_data(location, "forecast"),
+                return_exceptions=True
+            )
+            if isinstance(current, Exception) or isinstance(forecast, Exception):
+                weather_api_failed = True
+            else:
+                return f"{current}\n\n{forecast}"
 
         except Exception as e:
             logger.error(f"Error fetching weather data: {str(e)}")
-            if timeframe == "current":
-                query = f"Current weather for {parameters['location']}"
-            else:
-                query = f"{timeframe} weather forecast for {parameters['location']}"
-            logger.warning(f"Fallback to web search: {query}")
-            return await self.web_searcher.search_async(query)
         finally:
             self._stop_processing()
+
+        query = f"Current weather and forecast for {parameters['location']}"
+        logger.warning(f"Fallback to web search: {query}")
+        return await self.web_searcher.search_async(query)
 
 class EnhancedWeatherTool:
     """
@@ -277,9 +331,9 @@ class EnhancedWeatherTool:
     lunar phase, and solar information.
     """
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, timezone: str = "America/New_York"):
         self.moon = Moon()
-        self.base_weather_tool = WeatherTool(config)
+        self.base_weather_tool = WeatherTool(config, timezone)
         self.openuv_api_key = os.getenv("OPENUV_API_KEY")
         self.waqi_token = os.getenv("WAQI_TOKEN")
 
@@ -301,12 +355,6 @@ class EnhancedWeatherTool:
             # Get coordinates
             lat, lon = await self.base_weather_tool.get_lat_lng(parameters["location"])
             logger.info(f"Latitude: {lat}, Longitude: {lon}")
-
-            timeframe = parameters.get("timeframe", "current")
-            if timeframe != "current":
-                return await self.base_weather_tool.get_weather_async(parameters)
-
-            # Current weather
 
             # Get moon phase (local calculation, no API call needed)
             now = datetime.now()
@@ -410,11 +458,11 @@ class EnhancedWeatherTool:
                     type="string",
                     description="Location as 'latitude,longitude' or 'city,country'",
                 ),
-                ToolParameter(
-                    name="timeframe",
-                    type="string",
-                    description="Optional: 'current', 'hourly', or 'daily' (default: current)",
-                )
+                # ToolParameter(
+                #     name="timeframe",
+                #     type="string",
+                #     description="Optional: 'current', 'hourly', or 'daily' (default: current)",
+                # )
             ],
             required=["location"],
             processor=self.get_weather_async,
@@ -441,22 +489,24 @@ if __name__ == "__main__":
             return config_values.get(key, default)
 
     async def test_weather_tool():
+        from src.tools import get_timezone
+
+        timezone = get_timezone()
+
         # Initialize the tool
-        weather_tool = EnhancedWeatherTool(MockConfig())
+        weather_tool = EnhancedWeatherTool(MockConfig(), timezone=timezone)
 
         # Test cases
         test_locations = [
-            {"location": "40.7128,-74.0060", "timeframe": "current"},  # NYC coordinates
-            {"location": "London,UK", "timeframe": "hourly"},          # City name
-            {"location": "Tokyo,Japan", "timeframe": "daily"}          # City name with daily forecast
+            {"location": "Santa Clara, California"}          # City name with daily forecast
         ]
 
-        print("Testing WeatherTool...")
-        print("-" * 50)
+        # print("Testing WeatherTool...")
+        # print("-" * 50)
 
         for params in test_locations:
             try:
-                print(f"\nFetching weather for {params['location']} ({params['timeframe']}):")
+                print(f"\n{params['location']}\n")
                 result = await weather_tool.get_weather_async(params)
                 print(result)
             except Exception as e:
