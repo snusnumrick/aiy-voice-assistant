@@ -100,7 +100,7 @@ class StressTool:
                 logger.error(f"Error: {response.status_code}, {response.text}")
                 return []
         logger.error(f"missing parameter word: {parameters}")
-        return []
+        return ""
 
     async def do_stress_async(self, parameters: Dict[str, any]) -> str:
         if "word" in parameters:
@@ -117,6 +117,6 @@ class StressTool:
                     else:
                         text = await response.text()
                         logger.error(f"Error: {response.status}, {text}")
-                        return []
+                        return ""
         logger.error(f"missing parameter word: {parameters}")
-        return []
+        return ""

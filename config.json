@@ -1,5 +1,6 @@
 {
   "llm_streaming": true,
   "audio_recording_chunk_duration_sec": 0.3,
-  "claude_model": "claude-3-5-sonnet-latest"
+  "claude_model": "claude-3-5-sonnet-latest",
+  "admin_email": "treskunov@gmail.com"
 }

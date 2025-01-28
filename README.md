@@ -14,10 +14,11 @@ Key aspects of the assistant include:
 - Emotional intelligence and expression
 - Web searches for current information
 - Physical interaction through a custom cardboard cube interface
-- Multi-model AI approach, supporting Claude AI, OpenAI, and Google's Gemini models
+- Multi-model AI approach, supporting Claude AI, OpenAI, Google's Gemini models, and Deepseek's advanced analysis capabilities
 - Email functionality for sending messages
 - Streaming responses for natural conversation flow
 - Code interpretation and execution capabilities
+- Deep analytical reasoning through the WizardTool feature
 
 The assistant primarily operates in Russian but can be configured for other languages.
 
@@ -26,12 +27,13 @@ The assistant primarily operates in Russian but can be configured for other lang
 - **Adaptive Conversations**: Engages in dialogues appropriate to the user's age and interests, from children to adults.
 - **Educational Content**: Offers learning opportunities through interactive discussions, quizzes, and informational exchanges.
 - **Emotional Intelligence**: Expresses and recognizes emotions, enhancing the interactive experience through LED patterns and voice tones.
+- **Deep Analysis Capabilities**: Utilizes the WizardTool to break down and thoroughly analyze complex questions, providing comprehensive, well-reasoned responses for sophisticated queries.
 - **Web Search Integration**: Performs web searches to answer queries and provide access to current information 
 beyond the AI model's knowledge cutoff date, enhancing the assistant's ability to discuss recent events and up-to-date facts.
 - **Adaptive Personality**: Learns and adapts to the user's communication style and interests over time.
 - **Multilingual Support**: Primarily configured for Russian, with potential for other languages.
 - **Physical Interaction**: Utilizes a cardboard cube interface with a button and LED for intuitive interaction.
-- **Multi-Model AI**: Supports Claude AI, OpenAI, and Google's Gemini models, allowing for flexible and powerful natural language processing.
+- **Multi-Model AI**: Supports Claude AI, OpenAI, Google's Gemini models, and Deepseek's analytical capabilities, allowing for flexible and powerful natural language processing.
 - **Email Functionality**: Ability to send emails to the user.
 - **Memory Formation**: Remembers facts and rules across conversations for improved context retention.
 - **Streaming Responses**: Provides more natural conversation flow with real-time responses.
@@ -44,6 +46,12 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
   - Air quality information
   - Solar data (sunrise, sunset, dawn, dusk)
   - Lunar phase and illumination
+  - **Deep Analysis with WizardTool**: Ask complex questions that require thorough analysis and reasoning. For example:
+  - "Какие философские последствия квантовой запутанности?" (What are the philosophical implications of quantum entanglement?)
+  - "Как искусственный интеллект может повлиять на будущее образования?" (How might artificial intelligence impact the future of education?)
+  - "Объясни взаимосвязь между климатическими изменениями и глобальной экономикой." (Explain the relationship between climate change and the global economy.)
+  The WizardTool will break down these complex questions, analyze them from multiple perspectives, and provide comprehensive, well-reasoned responses.
+- **Complex Problem Solving**: Ask the assistant to solve complex problems that may require computational assistance.
 
 ## Hardware Requirements
 
@@ -59,7 +67,7 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 - Poetry for dependency management
 - Rust compiler
 - ZSH shell with Oh My Zsh
-- API keys for: OpenAI, Google, **Yandex**, **Anthropic**, **ElevenLabs**, **Tavily**, OpenRouter, **Perplexity**, **Tomorrow.io**, **Maps.co Geocoding** 
+- API keys for: OpenAI, Google, **Yandex**, **Anthropic**, **ElevenLabs**, **Tavily**, OpenRouter, **Perplexity**,  **Tomorrow.io**, **Maps.co Geocoding**
 (in **bold** are keys for default configuration)
 - Additional system packages and development tools (detailed in setup instructions)
 
@@ -185,7 +193,7 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
         TOMORROW_API_KEY=your_tomorrow_io_api_key        # For weather data
         GEOCODE_API_KEY=your_maps_co_geocoding_api_key   # For location lookup
         WAQI_API_KEY=your_waqi_api_key                   # For air quality data
-        OPENUV_API_KEY=your_openuv_api_key              # For UV index data
+        OPENUV_API_KEY=your_openuv_api_key 
     ```
     Notes
     1. Make sure to keep your `.env` file secure and never commit it to version control.
@@ -348,6 +356,13 @@ Possible customizations:
 - Customize TTS voices and languages in the configuration.
 - Adjust volume control settings (min/max volume, step size) in the `config.json` file
 
+WizardTool Configuration:
+
+- Adjust analysis depth levels in the configuration
+- Customize thinking templates for different types of questions
+- Configure maximum response length and detail level
+- Set up preferred AI models for different types of analysis
+
 ## Project Structure
 
 - `main.py`: Entry point of the application
@@ -378,6 +393,7 @@ Possible customizations:
   - `llm_tools.py`: Language model specific tools
   - `code_interpreter_tool.py`: Tool for executing Python code and returning results
   - `volume_control_tool.py`: Tool for adjusting speaker volume
+  - `wizard_tool.py`: Advanced analytical reasoning tool for complex questions
 
 ## Troubleshooting
 

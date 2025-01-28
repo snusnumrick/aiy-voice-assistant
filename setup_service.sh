@@ -44,6 +44,9 @@ EOF
 # Move the service file to the correct location
 sudo mv "${SERVICE_NAME}.service" /etc/systemd/system/
 
+# Make check_logs.sh executable
+chmod +x check_logs.sh
+
 # Create logrotate configuration
 cat << EOF > "${SERVICE_NAME}-logrotate"
 ${LOGS_DIR}/*.log {
@@ -55,6 +58,9 @@ ${LOGS_DIR}/*.log {
     notifempty
     create 0644 ${USER} ${GROUP}
     su ${USER} ${GROUP}
+    prerotate
+        cd ${WORKING_DIR} && ./check_logs.sh
+    endscript
 }
 EOF
 
