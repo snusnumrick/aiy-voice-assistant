@@ -1,4 +1,3 @@
-# scripts/tailscale-up.sh
 #!/bin/bash
 set -e
 
