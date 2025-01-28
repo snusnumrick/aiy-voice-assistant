@@ -239,22 +239,26 @@ python main.py --log-dir logs --log-level INFO
 ```
 Available log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
-15. **Configure Tailscale Management:**
-    * The assistant can automatically manage Tailscale VPN state based on time of day
-    * Configure the following in user.json or config.json:
-    ```json
-    {
-      "tailscale_enable_hour": 22,  // When to enable Tailscale (default: 10 PM)
-      "tailscale_disable_hour": 7    // When to disable Tailscale (default: 7 AM)
-    }
-    ```
-    * Set up sudo privileges for Tailscale commands:
-    ```bash
-    sudo visudo
-    # Add the following line:
-    your_username ALL=(ALL) NOPASSWD: /usr/bin/tailscale up, /usr/bin/tailscale down
-    ```
-    This allows the assistant to manage Tailscale without password prompts.
+15. **Set up the systemd service and Tailscale management:**
+* Ensure you're in the project directory
+* Run the setup script with sudo:
+```bash
+sudo ./setup_service.sh
+```
+* This script will:
+  * Make run.sh executable
+  * Create a systemd service file
+  * Create necessary logs directory
+  * Enable the service to start on boot
+  * Start the service
+  * Configure log rotation
+  * Install Tailscale management scripts
+  * Set up scheduled Tailscale management (enabled at night, disabled during day)
+
+After running the script, you can check:
+* Service status: ```sudo systemctl status aiy.service```
+* Tailscale schedules: ```sudo crontab -l```
+* Tailscale operation logs: ```grep tailscale-scheduler /var/log/syslog``
 
 After completing these steps, your AI Voice Assistant should be set up and ready to use on your Raspberry Pi.
 
@@ -389,18 +393,23 @@ WizardTool Configuration:
 - Configure maximum response length and detail level
 - Set up preferred AI models for different types of analysis
 
-Tailscale Management Settings:
+**Tailscale Management:**
 
-- Adjust enable/disable hours in config.json:
-  ```json
-  {
-    "tailscale_enable_hour": 22,  // When to enable Tailscale
-    "tailscale_disable_hour": 7    // When to disable Tailscale
-  }
+The assistant uses cron to manage Tailscale for optimal performance:
+* Default schedule:
+  * Enables Tailscale at 10 PM for remote maintenance
+  * Disables Tailscale at 7 AM to optimize CPU usage
+* To modify the schedule:
+  ```bash
+  sudo crontab -e
   ```
-- Settings can be overridden in user.json or via environment variables
-- Hours are in 24-hour format
-- Times are based on system local time
+  Update the times in these lines:
+  ```crontab
+  0 22 * * * /usr/local/bin/tailscale-up.sh   # 10 PM
+  0 7 * * * /usr/local/bin/tailscale-down.sh  # 7 AM
+  ```
+* Scripts location: `/usr/local/bin/tailscale-up.sh` and `/usr/local/bin/tailscale-down.sh`
+* All operations are logged to syslog for monitoring
 
 ## Project Structure
 
@@ -455,13 +464,18 @@ Tailscale Management Settings:
   - Hourly and daily forecasts include only basic weather metrics
 
 - For Tailscale management issues:
-  - Verify sudo permissions are correctly configured for Tailscale commands
-  - Check logs for any Tailscale state change errors
-  - Ensure Tailscale is properly installed and configured
-  - Verify system time is correct as scheduling depends on it
-  - If needed, manually check Tailscale state with `tailscale status`
-  - For immediate remote access outside scheduled hours, manually enable with `sudo tailscale up`
-
+  * Check cron is running: ```sudo systemctl status cron```
+  * Verify cron jobs: ```sudo crontab -l```
+  * Check script permissions: ```ls -l /usr/local/bin/tailscale-*.sh```
+  * View recent operations: ```grep tailscale-scheduler /var/log/syslog```
+  * Test scripts manually:
+    ```bash
+    sudo /usr/local/bin/tailscale-up.sh
+    sudo /usr/local/bin/tailscale-down.sh
+    ```
+  * For immediate remote access: ```sudo tailscale up```
+  * To disable immediately: ```sudo tailscale down```
+  * 
 ## Performance Considerations
 
 - Response time and quality may vary between different AI models
