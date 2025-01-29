@@ -213,6 +213,7 @@ class OpenAIModel(AIModel):
         self.max_tokens = config.get("max_tokens", 4096)
         self.client = OpenAI(base_url=base_url, api_key=api_key)
         self.client_async = AsyncOpenAI(base_url=base_url, api_key=api_key)
+        self.temperature = config.get("temperature", 0.6)
 
     def get_response(self, messages: MessageList) -> str:
         """
@@ -227,7 +228,7 @@ class OpenAIModel(AIModel):
         messages = normalize_messages(messages)
         try:
             response = self.client.chat.completions.create(
-                model=self.model, messages=messages, max_tokens=self.max_tokens
+                model=self.model, messages=messages, max_tokens=self.max_tokens, temperature=self.temperature
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
@@ -450,6 +451,8 @@ class DeepseekModel(OpenAIModel):
         base_url = "https://api.deepseek.com"
         api_key = os.getenv("DEEPSEEK_API_KEY")
         super().__init__(config, base_url=base_url, api_key=api_key, model_id=model)
+        self.max_tokens = config.get("max_reasoning_tokens", 16 * 4096)
+
 
 
 # Debug functions
