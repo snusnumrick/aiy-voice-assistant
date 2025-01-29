@@ -29,6 +29,7 @@ from src.tools import (
     yield_complete_sentences,
     retry_async_generator,
     get_token_count,
+    indent_content,
 )
 
 logger = logging.getLogger(__name__)
@@ -934,20 +935,19 @@ async def main_async():
     interpreter_tool = InterpreterTool(config)
     wizard_tool = WizardTool(config)
     model = ClaudeAIModelWithTools(config, tools=[
-        interpreter_tool.tool_definition(),
-        # wizard_tool.tool_definition(),
+        # interpreter_tool.tool_definition(),
+        wizard_tool.tool_definition(),
     ])
     # model = ClaudeAIModel(config)
     messages = [
         {"role": "system", "content": system},
         # {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4."},
-        {"role": "user", "content": "how many r in word strawberry? think it through"},
+        {"role": "user", "content": "why the sky is blue?"},
     ]
     m = ""
     async for response_part in model.get_response_async(messages):
-        print(response_part + " ", flush=True, end="")
         m += response_part
-    print()
+    print(indent_content(m))
     return
 
     stress_tool = StressTool(config)

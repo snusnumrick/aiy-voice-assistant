@@ -1,10 +1,12 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict, Union
 from src.ai_models import DeepseekModel
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 import logging
 import asyncio
 import json
+
+from src.tools import indent_content
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +45,7 @@ class WizardTool:
             name="wise_wizard",
             description="Analyzes complex questions requiring deep thinking and provides "
                         "comprehensive, well-reasoned answers with detailed explanations. "
-                        "Response may take time, use sparingly. ",
+                        "Response may take time, use sparingly and only when you can not answer yourself. ",
             iterative=True,
             parameters=[
                 ToolParameter(
@@ -185,6 +187,7 @@ class WizardTool:
             context=context,
             depth=depth
         )
+        logger.info(f"async wizard prompt: {prompt}")
 
         try:
             result = ""
@@ -192,6 +195,7 @@ class WizardTool:
                 {"role": "user", "content": prompt}
             ]):
                 result += response_chunk
+            logger.info(f"async wizard result: {result}")
             return result
 
         except Exception as e:
@@ -209,8 +213,8 @@ async def test_wizard():
         "analysis_depth": "comprehensive"
     }
 
-    async for response in wizard.do_wizardry_async(test_params):
-        print(response, end="")
+    response = await wizard.do_wizardry_async(test_params)
+    print(indent_content(response))
 
 if __name__ == "__main__":
     import asyncio
