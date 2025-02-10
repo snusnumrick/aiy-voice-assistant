@@ -6,8 +6,7 @@ import random
 import sys
 import time
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, Coroutine
+from typing import Optional
 
 import httpx
 import requests
@@ -74,7 +73,7 @@ class Google(SearchProvider):
         tree = await self._fetch_data(term, "en")
         logger.debug(f"Google search fetch_data time: {time.time() - start_time}")
 
-        selectors = [".sXLaOe", ".hgKElc", ".wx62f", ".HwtpBd", ".yxjZuf span"]
+        selectors = [".sXLaOe", ".hgKElc", ".wx62f", ".HwtpBd", ".yxjZuf span", ".hgKElc"]
         results = [self._get_text(tree, selector) for selector in selectors]
         await asyncio.sleep(0)
 
