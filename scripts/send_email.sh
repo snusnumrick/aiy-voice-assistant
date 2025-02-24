@@ -48,7 +48,7 @@ send_email() {
         echo "Error: Missing required parameters"
         echo "Usage: $0 \"subject\" \"body\" \"recipient@email.com\""
         exit 1
-    }
+    fi
 
     # Create temporary file for email content
     EMAIL_CONTENT=$(mktemp)
