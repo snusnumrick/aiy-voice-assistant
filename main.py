@@ -31,7 +31,6 @@ from src.tools import get_timezone
 from src.tts_engine import ElevenLabsTTSEngine, Language, YandexTTSEngine
 from src.volume_control_tool import VolumeControlTool
 from src.web_search_tool import WebSearchTool
-from src.wizard_tool import WizardTool
 
 # Set up signal handling for graceful shutdown
 signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
@@ -130,7 +129,6 @@ def main():
         interpreter_tool = InterpreterTool(config)
         volume_control_tool = VolumeControlTool(config)
         weather_tool = EnhancedWeatherTool(config)
-        wizard_tool = WizardTool(config)
 
         tools = [
             search_tool.tool_definition(),
@@ -139,7 +137,6 @@ def main():
             interpreter_tool.tool_definition(),
             volume_control_tool.tool_definition(),
             weather_tool.tool_definition(),
-            wizard_tool.tool_definition(),
         ]
 
         # Initial LED feedback
