@@ -1,11 +1,8 @@
 import logging
 import os
-import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Dict
-import asyncio
-import aiosmtplib
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -32,6 +29,8 @@ def send_email(subject: str, body: str, config: Config, sento: str = None):
     :return: None
 
     """
+    import smtplib
+
     assistant_email_address = config.get(
         "assistant_email_address", "cubick@treskunov.net"
     )
@@ -76,6 +75,8 @@ async def send_email_async(subject: str, body: str, config: Config, sento: str =
                   user's default email address (`user_email_address`) in the configuration.
     :return: None
     """
+    import aiosmtplib
+
     assistant_email_address = config.get(
         "assistant_email_address", "cubick@treskunov.net"
     )
@@ -147,6 +148,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    import asyncio
     from dotenv import load_dotenv
 
     logging.basicConfig(level=logging.INFO)
