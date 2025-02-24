@@ -29,25 +29,16 @@ if [ -f "$LOG_FILE" ]; then
         echo "DEBUG: Errors detected in the log file, preparing content for email."
         # Extract error messages
         ERROR_CONTENT=$(grep -i "error\|exception\|failed\|traceback" -A 3 "$LOG_FILE")
-        # Export variables for Python
-        export ERROR_COUNT
-        export ERROR_CONTENT
 
-        # Use the email_tools.py script to send the email
-        poetry run python -c "
-import dotenv
-dotenv.load_dotenv()
-import os
-from src.email_tools import send_email
-from src.config import Config
-config = Config()
-send_email(
-    'AIY Assistant Log Errors Found',
-    f'Found {os.environ.get(\"ERROR_COUNT\")} errors in the log file:\\n\\n{os.environ.get(\"ERROR_CONTENT\")}',
-    config,
-    '${ADMIN_EMAIL}'
-)
-"
+        # Prepare email subject and body
+        EMAIL_SUBJECT="AIY Assistant Log Errors Found"
+        EMAIL_BODY="Found ${ERROR_COUNT} errors in the log file:
+
+${ERROR_CONTENT}"
+
+        # Call send_email.sh script
+        "${SCRIPT_DIR}/send_email.sh" "${EMAIL_SUBJECT}" "${EMAIL_BODY}" "${ADMIN_EMAIL}"
+
         echo "DEBUG: email report sent with ${ERROR_CONTENT}."
     else
         echo "DEBUG: No errors found in the log file."

@@ -18,6 +18,7 @@ fi
 # Make scripts executable
 chmod +x "${SCRIPTS_DIR}/run.sh"
 chmod +x "${SCRIPTS_DIR}/check_logs.sh"
+chmod +x "${SCRIPTS_DIR}/send_email.sh"
 chmod +x "${SCRIPTS_DIR}/tailscale-up.sh"
 chmod +x "${SCRIPTS_DIR}/tailscale-down.sh"
 
