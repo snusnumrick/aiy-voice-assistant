@@ -30,7 +30,7 @@ from src.stress_tool import StressTool
 from src.tools import get_timezone
 from src.tts_engine import ElevenLabsTTSEngine, Language, YandexTTSEngine
 from src.volume_control_tool import VolumeControlTool
-from src.web_search_tool import WebSearchTool
+# from src.web_search_tool import WebSearchTool
 from src.wizard_tool import WizardTool
 
 # Set up signal handling for graceful shutdown
@@ -124,7 +124,7 @@ def main():
     timezone = get_timezone()
 
     with Board() as board, Leds() as leds:
-        search_tool = WebSearchTool(config)
+        # search_tool = WebSearchTool(config)
         stress_tool = StressTool(config)
         send_email_tool = SendEmailTool(config)
         interpreter_tool = InterpreterTool(config)
@@ -133,7 +133,7 @@ def main():
         wizard_tool = WizardTool(config)
 
         tools = [
-            search_tool.tool_definition(),
+            # search_tool.tool_definition(),
             send_email_tool.tool_definition(),
             stress_tool.tool_definition(),
             interpreter_tool.tool_definition(),
