@@ -4,14 +4,15 @@ echo "--- Audio Controls ---"
 amixer scontrols
 echo "--- End Audio Controls ---"
 
-# get path to script (project root)
+# get path to project root (one level up from scripts)
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
 
 # Navigate to the project directory
-cd "${SCRIPT_DIR}" || exit
+cd "${PROJECT_ROOT}" || exit
 
 # Create logs directory if it doesn't exist
-mkdir -p "${SCRIPT_DIR}/logs"
+mkdir -p "${PROJECT_ROOT}/logs"
 
 # wait for the network
 max_attempts=12
@@ -33,4 +34,4 @@ git pull
 amixer sset 'Master' 90% || amixer sset 'Speaker' 55% || echo "Failed to set volume"
 
 # Run the Python script with new logging flags
-poetry run python main.py --log-dir "${SCRIPT_DIR}/logs" --log-level INFO
+poetry run python main.py --log-dir "${PROJECT_ROOT}/logs" --log-level INFO

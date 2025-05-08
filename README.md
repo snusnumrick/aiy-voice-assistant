@@ -52,6 +52,7 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
   - "Объясни взаимосвязь между климатическими изменениями и глобальной экономикой." (Explain the relationship between climate change and the global economy.)
   The WizardTool will break down these complex questions, analyze them from multiple perspectives, and provide comprehensive, well-reasoned responses.
 - **Complex Problem Solving**: Ask the assistant to solve complex problems that may require computational assistance.
+- **Automated Tailscale Management**: Automatically manages Tailscale VPN state based on time of day to optimize CPU usage, enabling remote maintenance during quiet hours while ensuring optimal performance during active use.
 
 ## Hardware Requirements
 
@@ -238,7 +239,29 @@ python main.py --log-dir logs --log-level INFO
 ```
 Available log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
+15. **Set up the systemd service and Tailscale management:**
+* Ensure you're in the project directory
+* Run the setup script with sudo:
+```bash
+sudo ./setup_service.sh
+```
+* This script will:
+  * Make run.sh executable
+  * Create a systemd service file
+  * Create necessary logs directory
+  * Enable the service to start on boot
+  * Start the service
+  * Configure log rotation
+  * Install Tailscale management scripts
+  * Set up scheduled Tailscale management (enabled at night, disabled during day)
+
+After running the script, you can check:
+* Service status: ```sudo systemctl status aiy.service```
+* Tailscale schedules: ```sudo crontab -l```
+* Tailscale operation logs: ```grep tailscale-scheduler /var/log/syslog``
+
 After completing these steps, your AI Voice Assistant should be set up and ready to use on your Raspberry Pi.
+
 ## Usage
 
 To start the assistant manually (if not using the systemd service):
@@ -337,6 +360,13 @@ Additional Features:
   - "Сколько различных способов есть подняться на лестницу из 30 ступенек, если за один шаг можно подниматься на 1 или 2 ступеньки?" (How many different ways are there to climb a staircase of 30 steps if you can take either 1 or 2 steps at a time?)
   - "Какова сумма цифр в числе 2^1000 (2 в степени 1000)?" (What is the sum of the digits in the number 2^1000 (2 to the power of 1000)?)
 
+- **Tailscale Management:**
+  - The assistant automatically manages Tailscale VPN state:
+    - Enables Tailscale during night hours (default: 10 PM - 7 AM) for remote maintenance
+    - Disables Tailscale during day hours to optimize CPU usage and assistant responsiveness
+  - Configuration can be customized in config.json or user.json
+  - State changes are logged in the assistant's log files
+  - No manual intervention required once configured
 
 ## Customization
 
@@ -362,6 +392,24 @@ WizardTool Configuration:
 - Customize thinking templates for different types of questions
 - Configure maximum response length and detail level
 - Set up preferred AI models for different types of analysis
+
+**Tailscale Management:**
+
+The assistant uses cron to manage Tailscale for optimal performance:
+* Default schedule:
+  * Enables Tailscale at 10 PM for remote maintenance
+  * Disables Tailscale at 7 AM to optimize CPU usage
+* To modify the schedule:
+  ```bash
+  sudo crontab -e
+  ```
+  Update the times in these lines:
+  ```crontab
+  0 22 * * * /usr/local/bin/tailscale-up.sh   # 10 PM
+  0 7 * * * /usr/local/bin/tailscale-down.sh  # 7 AM
+  ```
+* Scripts location: `/usr/local/bin/tailscale-up.sh` and `/usr/local/bin/tailscale-down.sh`
+* All operations are logged to syslog for monitoring
 
 ## Project Structure
 
@@ -415,6 +463,19 @@ WizardTool Configuration:
   - Some additional data (UV, air quality) may not be available for all locations
   - Hourly and daily forecasts include only basic weather metrics
 
+- For Tailscale management issues:
+  * Check cron is running: ```sudo systemctl status cron```
+  * Verify cron jobs: ```sudo crontab -l```
+  * Check script permissions: ```ls -l /usr/local/bin/tailscale-*.sh```
+  * View recent operations: ```grep tailscale-scheduler /var/log/syslog```
+  * Test scripts manually:
+    ```bash
+    sudo /usr/local/bin/tailscale-up.sh
+    sudo /usr/local/bin/tailscale-down.sh
+    ```
+  * For immediate remote access: ```sudo tailscale up```
+  * To disable immediately: ```sudo tailscale down```
+  * 
 ## Performance Considerations
 
 - Response time and quality may vary between different AI models
