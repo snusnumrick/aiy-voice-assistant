@@ -121,7 +121,7 @@ def main():
     config = Config()
     print(config.dict())
     timezone = get_timezone()
-    use_claude_search = config.get("claude_use_search", True)
+    use_claude_search = config.get("claude_use_search", False)
 
     with Board() as board, Leds() as leds:
         if not use_claude_search:

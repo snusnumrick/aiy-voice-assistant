@@ -85,7 +85,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self.tools = {t.name: t for t in tools} if tools else {}
         self.tools_description = self._create_tools_description(tools) if tools else []
         self.tools_processors = {t.name: t.processor for t in tools} if tools else {}
-        if config.get("claude_use_search", True):
+        if config.get("claude_use_search", False):
             self.tools_description.append({
                 "type": "web_search_20250305",
                 "name": "web_search",
