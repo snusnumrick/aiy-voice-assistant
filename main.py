@@ -121,9 +121,11 @@ def main():
     config = Config()
     print(config.dict())
     timezone = get_timezone()
+    use_claude_search = config.get("claude_use_search", True)
 
     with Board() as board, Leds() as leds:
-        # search_tool = WebSearchTool(config)
+        if not use_claude_search:
+            search_tool = WebSearchTool(config)
         stress_tool = StressTool(config)
         send_email_tool = SendEmailTool(config)
         interpreter_tool = InterpreterTool(config)
@@ -132,7 +134,6 @@ def main():
         # wizard_tool = WizardTool(config)
 
         tools = [
-            # search_tool.tool_definition(),
             send_email_tool.tool_definition(),
             stress_tool.tool_definition(),
             interpreter_tool.tool_definition(),
@@ -140,6 +141,8 @@ def main():
             weather_tool.tool_definition(),
             # wizard_tool.tool_definition(),
         ]
+        if not use_claude_search:
+            tools.append(search_tool.tool_definition())
 
         # Initial LED feedback
         leds.update(Leds.rgb_on(Color.WHITE))
