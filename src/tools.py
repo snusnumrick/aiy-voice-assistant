@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import re
+import subprocess
 import time
 from datetime import datetime
 from functools import wraps
@@ -99,7 +100,50 @@ def get_timezone() -> str:
 
     return timezone["timeZoneId"]
 
+def set_system_timezone(timezone):
+    """
+    Set the system-wide time zone that will immediately affect cron jobs on older Raspbian.
+    Requires root privileges.
 
+    Args:
+        timezone: The timezone to set (e.g., 'Europe/London')
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # For the current process
+        os.environ["TZ"] = timezone
+        time.tzset()
+
+        # Check for root privileges
+        if os.geteuid() != 0:
+            logger.warning("System-wide timezone change requires root privileges.")
+            logger.info("Only the current process timezone has been updated.")
+            return False
+
+        # System-wide setting for older Raspbian
+        # 1. Update the timezone file
+        subprocess.run(
+            ["cp", f"/usr/share/zoneinfo/{timezone}", "/etc/localtime"], check=True
+        )
+
+        # 2. Update the timezone configuration
+        with open("/etc/timezone", "w") as f:
+            f.write(f"{timezone}\n")
+
+        # 3. Restart cron service specifically for older Raspbian
+        subprocess.run(["service", "cron", "restart"], check=True)
+
+        logger.info(
+            f"System timezone successfully set to {timezone} and cron service restarted"
+        )
+        return True
+
+    except Exception as e:
+        logger.error(f"Error setting system timezone: {e}")
+        return False
+    
 def time_string_ms(timezone_string: str) -> str:
     # 07:00.989
     return (
