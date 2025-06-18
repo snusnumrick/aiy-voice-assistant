@@ -72,14 +72,40 @@ echo "$(date): Starting Tailscale setup check" > $TAILSCALE_LOG
 
 # Source the .env file if it exists (for email configuration)
 if [ -f "${PROJECT_ROOT}/.env" ]; then
+    echo "$(date): Sourcing .env file" >> $TAILSCALE_LOG
     source "${PROJECT_ROOT}/.env"
+    # Log email configuration variables (without showing actual passwords)
+    echo "$(date): Email config - SMTP_SERVER: ${SMTP_SERVER:-not set}" >> $TAILSCALE_LOG
+    echo "$(date): Email config - SMTP_PORT: ${SMTP_PORT:-not set}" >> $TAILSCALE_LOG
+    echo "$(date): Email config - SMTP_USER: ${SMTP_USER:-not set}" >> $TAILSCALE_LOG
+    echo "$(date): Email config - SMTP_PASSWORD: [${SMTP_PASSWORD:+is set}${SMTP_PASSWORD:-not set}]" >> $TAILSCALE_LOG
+else
+    echo "$(date): WARNING: .env file not found, email configuration may be missing" >> $TAILSCALE_LOG
 fi
 
 # Get the config file path from environment or use default
 CONFIG_FILE=${CONFIG_FILE:-"${PROJECT_ROOT}/config.json"}
+echo "$(date): Using config file: $CONFIG_FILE" >> $TAILSCALE_LOG
 
-# Extract admin email from config.json
-ADMIN_EMAIL=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('admin_email', 'treskunov@gmail.com'))" 2>/dev/null || echo "treskunov@gmail.com")
+# Extract admin email from config.json with more detailed logging
+echo "$(date): Attempting to extract admin_email from config.json" >> $TAILSCALE_LOG
+if [ -f "$CONFIG_FILE" ]; then
+    echo "$(date): Config file exists" >> $TAILSCALE_LOG
+    ADMIN_EMAIL=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('admin_email', 'treskunov@gmail.com'))" 2>> $TAILSCALE_LOG || echo "treskunov@gmail.com")
+    echo "$(date): Admin email set to: $ADMIN_EMAIL" >> $TAILSCALE_LOG
+else
+    echo "$(date): WARNING: Config file not found, using default admin email" >> $TAILSCALE_LOG
+    ADMIN_EMAIL="treskunov@gmail.com"
+fi
+
+# Check Tailscale status before attempting installation
+echo "$(date): Checking current Tailscale status" >> $TAILSCALE_LOG
+if command -v tailscale >/dev/null 2>&1; then
+    tailscale status >> $TAILSCALE_LOG 2>&1
+    echo "$(date): Tailscale version: $(tailscale version 2>/dev/null || echo 'unknown')" >> $TAILSCALE_LOG
+else
+    echo "$(date): Tailscale not currently installed" >> $TAILSCALE_LOG
+fi
 
 # Always reinstall Tailscale to ensure it's not corrupted
 echo "$(date): Installing/Reinstalling Tailscale..." >> $TAILSCALE_LOG
@@ -89,73 +115,58 @@ INSTALL_RESULT=$?
 if [ $INSTALL_RESULT -eq 0 ]; then
     echo "$(date): Tailscale installed successfully" >> $TAILSCALE_LOG
 else
-    echo "$(date): ERROR: Failed to install Tailscale" >> $TAILSCALE_LOG
+    echo "$(date): ERROR: Failed to install Tailscale with exit code $INSTALL_RESULT" >> $TAILSCALE_LOG
 fi
 
-# Make scripts executable
-chmod +x "${SCRIPT_DIR}/tailscale-up.sh" 2>> $TAILSCALE_LOG
-chmod +x "${SCRIPT_DIR}/tailscale-down.sh" 2>> $TAILSCALE_LOG
-echo "$(date): Set executable permissions on Tailscale scripts" >> $TAILSCALE_LOG
-
-# Check if Tailscale cron jobs exist, add them if they don't
-if ! crontab -l 2>/dev/null | grep -q "tailscale-up.sh"; then
-    echo "$(date): Setting up Tailscale cron jobs..." >> $TAILSCALE_LOG
-    (crontab -l 2>/dev/null | grep -v tailscale-) > /tmp/temp_cron
-    echo "0 22 * * * ${SCRIPT_DIR}/tailscale-up.sh" >> /tmp/temp_cron
-    echo "0 7 * * * ${SCRIPT_DIR}/tailscale-down.sh" >> /tmp/temp_cron
-    crontab /tmp/temp_cron 2>> $TAILSCALE_LOG
-    CRON_RESULT=$?
-    rm /tmp/temp_cron
-
-    if [ $CRON_RESULT -eq 0 ]; then
-        echo "$(date): Tailscale cron jobs set up successfully" >> $TAILSCALE_LOG
-    else
-        echo "$(date): ERROR: Failed to set up Tailscale cron jobs" >> $TAILSCALE_LOG
-    fi
-else
-    echo "$(date): Tailscale cron jobs already exist" >> $TAILSCALE_LOG
-fi
-
-# Try to start Tailscale if it's not running
-echo "$(date): Checking Tailscale status..." >> $TAILSCALE_LOG
-if ! tailscale status &>/dev/null; then
-    echo "$(date): Attempting to start Tailscale..." >> $TAILSCALE_LOG
-    "${SCRIPT_DIR}/tailscale-up.sh" >> $TAILSCALE_LOG 2>&1
-    TAILSCALE_RESULT=$?
-
-    if [ $TAILSCALE_RESULT -eq 0 ]; then
-        echo "$(date): Tailscale started successfully" >> $TAILSCALE_LOG
-    else
-        echo "$(date): ERROR: Failed to start Tailscale" >> $TAILSCALE_LOG
-    fi
-else
-    echo "$(date): Tailscale is already running" >> $TAILSCALE_LOG
-fi
-
-# Check for errors in the log
-if grep -q "ERROR" $TAILSCALE_LOG; then
+# Add more detailed email sending process
+if [ -n "${ERRORS_DETECTED}" ]; then
     echo "$(date): Errors detected in Tailscale setup, sending email report" >> $TAILSCALE_LOG
 
-    # Extract error messages
-    ERROR_CONTENT=$(grep -A 2 "ERROR" $TAILSCALE_LOG)
+    # Log the email sending command and parameters (without showing password)
+    echo "$(date): Attempting to send email to $ADMIN_EMAIL via ${SMTP_SERVER:-default mail server}" >> $TAILSCALE_LOG
 
-    # Prepare email subject and body
-    EMAIL_SUBJECT="AIY Assistant Tailscale Setup Errors"
-    EMAIL_BODY="Errors encountered during Tailscale setup on system restart:
+    # Create a temporary email content file
+    EMAIL_CONTENT="/tmp/tailscale_email_content.txt"
+    {
+        echo "Subject: Tailscale Setup Error Report"
+        echo "From: Tailscale Setup <${SMTP_USER:-noreply@example.com}>"
+        echo "To: $ADMIN_EMAIL"
+        echo "Content-Type: text/plain"
+        echo ""
+        echo "Tailscale setup encountered errors on $(hostname) at $(date)"
+        echo ""
+        echo "--- Log File Contents ---"
+        cat $TAILSCALE_LOG
+        echo "--- End Log File Contents ---"
+    } > $EMAIL_CONTENT
 
-${ERROR_CONTENT}
+    # Try to send email and log the result
+    if command -v mail >/dev/null 2>&1; then
+        echo "$(date): Sending email using 'mail' command" >> $TAILSCALE_LOG
+        cat $EMAIL_CONTENT | mail -s "Tailscale Setup Error Report" $ADMIN_EMAIL >> $TAILSCALE_LOG 2>&1
+        MAIL_RESULT=$?
+        echo "$(date): Mail command exit code: $MAIL_RESULT" >> $TAILSCALE_LOG
+    elif command -v sendmail >/dev/null 2>&1; then
+        echo "$(date): Sending email using 'sendmail' command" >> $TAILSCALE_LOG
+        cat $EMAIL_CONTENT | sendmail -t >> $TAILSCALE_LOG 2>&1
+        MAIL_RESULT=$?
+        echo "$(date): Sendmail command exit code: $MAIL_RESULT" >> $TAILSCALE_LOG
+    else
+        echo "$(date): ERROR: No mail sending utility found (mail or sendmail)" >> $TAILSCALE_LOG
+        MAIL_RESULT=1
+    fi
 
-Full log:
-$(cat $TAILSCALE_LOG)"
+    if [ $MAIL_RESULT -eq 0 ]; then
+        echo "$(date): Email report sent successfully" >> $TAILSCALE_LOG
+    else
+        echo "$(date): ERROR: Failed to send email report" >> $TAILSCALE_LOG
+    fi
 
-    # Call send_email.sh script
-    "${SCRIPT_DIR}/send_email.sh" "${EMAIL_SUBJECT}" "${EMAIL_BODY}" "${ADMIN_EMAIL}"
-    echo "$(date): Email report sent" >> $TAILSCALE_LOG
-else
-    echo "$(date): Tailscale setup completed without errors" >> $TAILSCALE_LOG
+    # Remove temporary email content file
+    rm -f $EMAIL_CONTENT
+
+    echo "$(date): Email report sent in $TAILSCALE_LOG" >> $TAILSCALE_LOG
 fi
-
-echo "Tailscale setup check completed. See $TAILSCALE_LOG for details."
 
 # ==== end of Fix Tailscale-related issues
 
