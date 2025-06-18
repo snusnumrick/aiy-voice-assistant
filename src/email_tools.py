@@ -63,7 +63,7 @@ def send_email(subject: str, body: str, config: Config, sento: str = None):
         logger.error(f"An error occurred: {str(e)}")
 
 
-async def send_email_async(subject: str, body: str, config: Config, sento: str = None):
+async def send_email_async(subject: str, body: str, config: Config, sendto: str = None):
     """
     Sends an email to the user asynchronously with the given subject and body using the provided email configuration.
     Sends an email to the user asynchronously with the given subject and body using the provided email configuration.
@@ -71,8 +71,8 @@ async def send_email_async(subject: str, body: str, config: Config, sento: str =
     :param subject: A string representing the subject of the email.
     :param body: A string representing the body of the email.
     :param config: A Config object containing the email configuration.
-    :param sento: Optional string representing the recipient's email address. If not specified, falls back to the
-                  user's default email address (`user_email_address`) in the configuration.
+    :param sendto: Optional string representing the recipient's email address. If not specified, falls back to the
+                   user's default email address (`user_email_address`) in the configuration.
     :return: None
     """
     import aiosmtplib
@@ -80,7 +80,7 @@ async def send_email_async(subject: str, body: str, config: Config, sento: str =
     assistant_email_address = config.get(
         "assistant_email_address", "cubick@treskunov.net"
     )
-    user_email_address = sento or config.get("user_email_address", "treskunov@gmail.com")
+    user_email_address = sendto or config.get("user_email_address", "treskunov@gmail.com")
     smtp_server = config.get("smtp_server", "mail.treskunov.net")
     smtp_port = config.get("smtp_port", 26)  # Note: Changed to int
     username = config.get("assistant_email_username", "cubick@treskunov.net")
@@ -130,6 +130,11 @@ class SendEmailTool:
                     type="string",
                     description="Email body. Detailed message to convey.",
                 ),
+                ToolParameter(
+                    name="to",
+                    type="string",
+                    description="Optional recipient's email address. If not provided, the default address will be used.",
+                ),
             ],
             processor=self.do_send_email,
             required=["subject", "body"],
@@ -139,7 +144,8 @@ class SendEmailTool:
         logger.info(f"Sending email {parameters}")
         subject = parameters.get("subject", "")
         body = parameters.get("body", "")
-        await send_email_async(subject, body, self.config)
+        to = parameters.get("to", None)
+        await send_email_async(subject, body, self.config, sento=to)
 
 
 async def main():
