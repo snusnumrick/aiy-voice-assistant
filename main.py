@@ -47,7 +47,7 @@ def setup_logging(log_level, log_dir=None):
     """
     numeric_level = getattr(logging, log_level.upper(), None)
     if not isinstance(numeric_level, int):
-        raise ValueError(f"Invalid log level: {log_level}")
+        raise ValueError("Invalid log level: %s" % log_level)
 
     # Create logger
     logger = logging.getLogger()
