@@ -30,6 +30,41 @@ done
 # Pull the latest changes from the repository
 git pull
 
+# ==== Fix APT repository issues
+echo "Fixing APT repository issues..."
+APT_FIX_LOG="/tmp/apt_fix.log"
+echo "$(date): Starting APT repository fix" > $APT_FIX_LOG
+
+# Remove the problematic aiyprojects repository if it exists
+if [ -f "/etc/apt/sources.list.d/aiyprojects.list" ]; then
+    echo "$(date): Removing aiyprojects repository file" >> $APT_FIX_LOG
+    sudo rm -f /etc/apt/sources.list.d/aiyprojects.list >> $APT_FIX_LOG 2>&1
+fi
+
+# Also check for any references in main sources.list and other files
+sudo find /etc/apt -name "*.list*" -exec grep -l "aiyprojects" {} \; 2>/dev/null | while read -r file; do
+    if [ -f "$file" ]; then
+        echo "$(date): Commenting out aiyprojects entries in $file" >> $APT_FIX_LOG
+        sudo sed -i 's/^deb.*aiyprojects.*/#&/' "$file" >> $APT_FIX_LOG 2>&1
+        sudo sed -i 's/^deb-src.*aiyprojects.*/#&/' "$file" >> $APT_FIX_LOG 2>&1
+    fi
+done
+
+# Update package lists after fixing repositories
+echo "$(date): Updating package lists..." >> $APT_FIX_LOG
+sudo apt update >> $APT_FIX_LOG 2>&1
+APT_UPDATE_RESULT=$?
+
+if [ $APT_UPDATE_RESULT -eq 0 ]; then
+    echo "$(date): APT update completed successfully" >> $APT_FIX_LOG
+else
+    echo "$(date): WARNING: APT update completed with warnings/errors" >> $APT_FIX_LOG
+fi
+
+echo "APT repository fix completed. See $APT_FIX_LOG for details."
+
+# ==== end of Fix APT repository issues
+
 # ==== Fix Tailscale-related issues
 echo "Starting Tailscale setup and verification..."
 TAILSCALE_LOG="/tmp/tailscale_setup.log"
