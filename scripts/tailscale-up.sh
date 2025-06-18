@@ -8,7 +8,7 @@ if tailscale status >/dev/null 2>&1; then
     exit 0
 fi
 
-if tailscale up; then
+if sudo tailscale up; then
     logger -t tailscale-scheduler "Tailscale enabled successfully"
 else
     logger -t tailscale-scheduler "Failed to enable Tailscale"

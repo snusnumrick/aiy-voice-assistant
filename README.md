@@ -205,6 +205,7 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
     * Ensure you're in the project directory
     * Run the setup script:
     ```
+    chmod +x ./setup_service.sh
     sudo ./setup_service.sh
     ```
     * This script will:
