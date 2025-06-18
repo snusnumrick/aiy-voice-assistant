@@ -16,15 +16,15 @@ from src.config import Config
 logger = logging.getLogger(__name__)
 
 
-def send_email(subject: str, body: str, config: Config, sento: str = None):
+def send_email(subject: str, body: str, config: Config, sendto: str = None):
     """
     Sends an email to the user with the given subject and body using the provided email configuration.
-    If the `sento` parameter is not provided, the email will be sent to the default user_email_address from the config.
+    If the `sendto` parameter is not provided, the email will be sent to the default user_email_address from the config.
 
     :param subject: A string representing the subject of the email.
     :param body: A string representing the body of the email.
     :param config: A Config object containing the email configuration.
-    :param sento: Optional string representing the recipient's email address. If not specified, falls back to the
+    :param sendto: Optional string representing the recipient's email address. If not specified, falls back to the
                   user's default email address (`user_email_address`) in the configuration.
     :return: None
 
@@ -34,7 +34,7 @@ def send_email(subject: str, body: str, config: Config, sento: str = None):
     assistant_email_address = config.get(
         "assistant_email_address", "cubick@treskunov.net"
     )
-    user_email_address = sento or config.get("user_email_address", "treskunov@gmail.com")
+    user_email_address = sendto or config.get("user_email_address", "treskunov@gmail.com")
     smtp_server = config.get("smtp_server", "mail.treskunov.net")
     smtp_port = config.get("smtp_port", "26")
     username = config.get("assistant_email_username", "cubick@treskunov.net")
@@ -67,7 +67,7 @@ async def send_email_async(subject: str, body: str, config: Config, sendto: str 
     """
     Sends an email to the user asynchronously with the given subject and body using the provided email configuration.
     Sends an email to the user asynchronously with the given subject and body using the provided email configuration.
-    If the `sento` parameter is not provided, the email will be sent to the default user_email_address from the config.
+    If the `sendto` parameter is not provided, the email will be sent to the default user_email_address from the config.
     :param subject: A string representing the subject of the email.
     :param body: A string representing the body of the email.
     :param config: A Config object containing the email configuration.
@@ -145,7 +145,7 @@ class SendEmailTool:
         subject = parameters.get("subject", "")
         body = parameters.get("body", "")
         to = parameters.get("to", None)
-        await send_email_async(subject, body, self.config, sento=to)
+        await send_email_async(subject, body, self.config, sendto=to)
 
 
 async def main():
