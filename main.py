@@ -27,7 +27,7 @@ from src.dialog import main_loop_async
 from src.email_tools import SendEmailTool
 from src.weather_tool import EnhancedWeatherTool
 from src.stress_tool import StressTool
-from src.tools import get_timezone, set_system_timezone
+from src.tools import get_timezone
 from src.tts_engine import ElevenLabsTTSEngine, Language, YandexTTSEngine
 from src.volume_control_tool import VolumeControlTool
 from src.web_search_tool import WebSearchTool
@@ -121,7 +121,7 @@ def main():
     config = Config()
     print(config.dict())
     timezone = get_timezone()
-    set_system_timezone(timezone) # set the system-wide time zone (need for cron jobs); requires root privileges
+    # System timezone is now set by run.sh
     use_claude_search = config.get("claude_use_search", False)
 
     with Board() as board, Leds() as leds:

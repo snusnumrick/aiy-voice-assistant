@@ -170,8 +170,49 @@ fi
 
 # ==== end of Fix Tailscale-related issues
 
+# ==== Set System Timezone ====
+echo "Setting system timezone..."
+TIMEZONE_LOG="/tmp/timezone_setup.log"
+echo "$(date): Starting timezone setup" > $TIMEZONE_LOG
+
+# Get timezone using the Python utility function
+# Ensure .env is sourced so GOOGLE_API_KEY is available for get_timezone
+if [ -f "${PROJECT_ROOT}/.env" ]; then
+    source "${PROJECT_ROOT}/.env"
+fi
+TIMEZONE=$(poetry run python -c "from src.tools import get_timezone; print(get_timezone())" 2>> $TIMEZONE_LOG)
+
+if [ -z "$TIMEZONE" ]; then
+    echo "$(date): ERROR: Failed to get timezone." >> $TIMEZONE_LOG
+    # Optionally, send an email notification here if critical
+else
+    echo "$(date): Determined timezone: $TIMEZONE" >> $TIMEZONE_LOG
+    export TZ="$TIMEZONE"
+    echo "$(date): TZ environment variable set to $TIMEZONE" >> $TIMEZONE_LOG
+
+    echo "$(date): Updating system timezone files..." >> $TIMEZONE_LOG
+    if [ -f "/usr/share/zoneinfo/$TIMEZONE" ]; then
+        sudo cp "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime >> $TIMEZONE_LOG 2>&1
+        echo "$TIMEZONE" | sudo tee /etc/timezone > /dev/null 2>> $TIMEZONE_LOG
+        echo "$(date): System timezone files updated." >> $TIMEZONE_LOG
+
+        echo "$(date): Restarting cron service..." >> $TIMEZONE_LOG
+        sudo service cron restart >> $TIMEZONE_LOG 2>&1
+        CRON_RESTART_RESULT=$?
+        if [ $CRON_RESTART_RESULT -eq 0 ]; then
+            echo "$(date): Cron service restarted successfully." >> $TIMEZONE_LOG
+        else
+            echo "$(date): ERROR: Failed to restart cron service. Exit code: $CRON_RESTART_RESULT" >> $TIMEZONE_LOG
+        fi
+    else
+        echo "$(date): ERROR: Timezone info file not found: /usr/share/zoneinfo/$TIMEZONE" >> $TIMEZONE_LOG
+    fi
+fi
+echo "Timezone setup completed. See $TIMEZONE_LOG for details."
+# ==== end of Set System Timezone ====
+
 # set audio volume
 amixer sset 'Master' 90% || amixer sset 'Speaker' 55% || echo "Failed to set volume"
 
 # Run the Python script with new logging flags
-poetry run sudo python main.py --log-dir "${PROJECT_ROOT}/logs" --log-level INFO
+poetry run python main.py --log-dir "${PROJECT_ROOT}/logs" --log-level INFO
