@@ -128,4 +128,4 @@ echo "Tailscale setup check completed. See $TAILSCALE_LOG for details."
 amixer sset 'Master' 90% || amixer sset 'Speaker' 55% || echo "Failed to set volume"
 
 # Run the Python script with new logging flags
-sudo poetry run python main.py --log-dir "${PROJECT_ROOT}/logs" --log-level INFO
+poetry run sudo python main.py --log-dir "${PROJECT_ROOT}/logs" --log-level INFO
