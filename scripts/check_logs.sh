@@ -22,13 +22,14 @@ ADMIN_EMAIL=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get
 LOG_FILE=${LOG_FILE:-"logs/assistant.log"}
 
 if [ -f "$LOG_FILE" ]; then
-    # Search for error messages
-    ERROR_COUNT=$(grep -i "error\|exception\|failed\|traceback" "$LOG_FILE" | wc -l)
+    # Search for error messages (excluding false positives)
+    ERROR_COUNT=$(grep -i "error\|exception\|failed\|traceback" "$LOG_FILE" | grep -v "notification enabled" | wc -l)
 
     if [ $ERROR_COUNT -gt 0 ]; then
         echo "DEBUG: Errors detected in the log file, preparing content for email."
-        # Extract error messages
-        ERROR_CONTENT=$(grep -i "error\|exception\|failed\|traceback" -A 3 "$LOG_FILE")
+        # Extract error messages (excluding false positives)
+        ERROR_CONTENT=$(grep -i "error\|exception\|failed\|traceback" "$LOG_FILE" | grep -v "notification enabled" -A 3)
+
 
         # Prepare email subject and body
         EMAIL_SUBJECT="AIY Assistant Log Errors Found"
