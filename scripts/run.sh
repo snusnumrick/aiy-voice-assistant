@@ -31,7 +31,7 @@ done
 git pull
 
 # ==== Fix Tailscale-related issues
-echo "Ensuring Tailscale scripts are executable..."
+echo "Starting Tailscale setup and verification..."
 TAILSCALE_LOG="/tmp/tailscale_setup.log"
 echo "$(date): Starting Tailscale setup check" > $TAILSCALE_LOG
 
@@ -45,6 +45,17 @@ CONFIG_FILE=${CONFIG_FILE:-"${PROJECT_ROOT}/config.json"}
 
 # Extract admin email from config.json
 ADMIN_EMAIL=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('admin_email', 'treskunov@gmail.com'))" 2>/dev/null || echo "treskunov@gmail.com")
+
+# Always reinstall Tailscale to ensure it's not corrupted
+echo "$(date): Installing/Reinstalling Tailscale..." >> $TAILSCALE_LOG
+curl -fsSL https://tailscale.com/install.sh | sh >> $TAILSCALE_LOG 2>&1
+INSTALL_RESULT=$?
+
+if [ $INSTALL_RESULT -eq 0 ]; then
+    echo "$(date): Tailscale installed successfully" >> $TAILSCALE_LOG
+else
+    echo "$(date): ERROR: Failed to install Tailscale" >> $TAILSCALE_LOG
+fi
 
 # Make scripts executable
 chmod +x "${SCRIPT_DIR}/tailscale-up.sh" 2>> $TAILSCALE_LOG
