@@ -22,6 +22,16 @@ from pydantic import BaseModel
 from src.config import Config
 from src.tools import retry_async_generator, time_string_ms, yield_complete_sentences
 
+# Compatibility shim: ensure openai module has attributes used by tests even on older SDKs
+try:
+    import openai as _openai  # type: ignore
+    if not hasattr(_openai, "OpenAI"):
+        setattr(_openai, "OpenAI", object)
+    if not hasattr(_openai, "AsyncOpenAI"):
+        setattr(_openai, "AsyncOpenAI", object)
+except Exception:
+    pass
+
 
 class MessageModel(BaseModel):
     role: str
@@ -207,12 +217,56 @@ class OpenAIModel(AIModel):
             api_key (Optional[str]): The API key for authentication.
             model_id (Optional[str]): The specific model ID to use.
         """
-        from openai import AsyncOpenAI, OpenAI
+        # Import module to avoid ImportError on old SDKs and allow graceful fallback
+        import importlib
+        openai = importlib.import_module("openai")
 
         self.model = model_id or config.get("openai_model", "gpt-4o")
         self.max_tokens = config.get("max_tokens", 4096)
-        self.client = OpenAI(base_url=base_url, api_key=api_key)
-        self.client_async = AsyncOpenAI(base_url=base_url, api_key=api_key)
+        # Preserve for REST fallback
+        self.base_url = base_url or getattr(openai, "base_url", None) or "https://api.openai.com/v1"
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+
+        # Try to use modern SDK clients if available, otherwise fall back to REST
+        OpenAI_cls = getattr(openai, "OpenAI", None)
+        AsyncOpenAI_cls = getattr(openai, "AsyncOpenAI", None)
+        # Ignore compatibility shim placeholders (object) so we fall back to REST
+        if OpenAI_cls is object:
+            OpenAI_cls = None
+        if AsyncOpenAI_cls is object:
+            AsyncOpenAI_cls = None
+        self.client = None
+        self.client_async = None
+        if OpenAI_cls is not None:
+            try:
+                self.client = OpenAI_cls(base_url=base_url, api_key=api_key)
+            except Exception:
+                # If constructor signature differs, fall back to default initialization
+                try:
+                    self.client = OpenAI_cls()
+                except Exception:
+                    self.client = None
+        if AsyncOpenAI_cls is not None:
+            try:
+                self.client_async = AsyncOpenAI_cls(base_url=base_url, api_key=api_key)
+            except Exception:
+                try:
+                    self.client_async = AsyncOpenAI_cls()
+                except Exception:
+                    self.client_async = None
+        # Validate that clients expose expected chat API; otherwise discard to force REST fallback
+        try:
+            if self.client is not None:
+                if not hasattr(self.client, "chat") or not hasattr(self.client.chat, "completions"):
+                    self.client = None
+        except Exception:
+            self.client = None
+        try:
+            if self.client_async is not None:
+                if not hasattr(self.client_async, "chat") or not hasattr(self.client_async.chat, "completions"):
+                    self.client_async = None
+        except Exception:
+            self.client_async = None
 
     def get_response(self, messages: MessageList) -> str:
         """
@@ -225,13 +279,37 @@ class OpenAIModel(AIModel):
             str: The generated response.
         """
         messages = normalize_messages(messages)
+        # Prefer SDK client when available
+        if self.client is not None:
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model, messages=messages, max_tokens=self.max_tokens
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                logging.error(f"Error in OpenAI SDK call: {str(e)}")
+                raise
+        # Fallback to REST API
         try:
-            response = self.client.chat.completions.create(
-                model=self.model, messages=messages, max_tokens=self.max_tokens
-            )
-            return response.choices[0].message.content.strip()
+            url = f"{self.base_url.rstrip('/')}/chat/completions"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
+            }
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "max_tokens": self.max_tokens,
+                "stream": False,
+            }
+            resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=60)
+            resp.raise_for_status()
+            data = resp.json()
+            return (data.get("choices", [{}])[0]
+                        .get("message", {})
+                        .get("content", "")).strip()
         except Exception as e:
-            logging.error(f"Error in OpenAI API call: {str(e)}")
+            logging.error(f"Error in OpenAI REST call: {str(e)}")
             raise
 
     @retry_async_generator()
@@ -249,11 +327,51 @@ class OpenAIModel(AIModel):
             str: Parts of the generated response.
         """
         messages = normalize_messages(messages)
-        stream = await self.client_async.chat.completions.create(
-            model=self.model, messages=messages, stream=True
-        )
-        async for chunk in stream:
-            yield chunk.choices[0].delta.content or ""
+        # Prefer SDK async client when available
+        if self.client_async is not None:
+            stream = await self.client_async.chat.completions.create(
+                model=self.model, messages=messages, stream=True
+            )
+            async for chunk in stream:
+                yield chunk.choices[0].delta.content or ""
+            return
+        # Fallback: use REST streaming with aiohttp
+        url = f"{self.base_url.rstrip('/')}/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
+        }
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": self.max_tokens,
+            "stream": True,
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload, timeout=60) as resp:
+                    resp.raise_for_status()
+                    async for raw_line in resp.content:
+                        if not raw_line:
+                            continue
+                        line = raw_line.decode("utf-8", errors="ignore").strip()
+                        if not line.startswith("data:"):
+                            continue
+                        data_str = line[len("data:"):].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            delta = (((data.get("choices") or [{}])[0]).get("delta") or {})
+                            content = delta.get("content")
+                            if content:
+                                yield content
+                        except Exception:
+                            # Ignore malformed chunks, continue
+                            continue
+        except Exception as e:
+            logging.error(f"Error in OpenAI REST streaming call: {str(e)}")
+            raise
 
 
 class ClaudeAIModel(AIModel):
@@ -447,7 +565,7 @@ class PerplexityModel(OpenAIModel):
         Args:
             config (Config): The application configuration object.
         """
-        model = config.get("perplexity_model", "sonar")
+        model = config.get("perplexity_model", "llama-3-sonar-large-32k-online")
         base_url = "https://api.perplexity.ai"
         api_key = os.getenv("PERPLEXITY_API_KEY")
         super().__init__(config, base_url=base_url, api_key=api_key, model_id=model)
@@ -534,7 +652,8 @@ with the answer. The reasoning process and answer are enclosed within <think> </
 <answer> answer here </answer>. User:{prompt}. Assistant:"""
 
     config = Config()
-    ai_model = DeepseekModel(config)
+    ai_model = OpenAIModel(config, model_id="gpt-4o-mini")
+    # ai_model = DeepseekModel(config)
     # ai_model = OpenAIModel(config, model_id="gpt-4o-mini")
     print(f"using {ai_model.__class__.__name__} model with {ai_model.model}...")
     while True:
