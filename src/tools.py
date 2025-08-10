@@ -82,23 +82,113 @@ def get_token_count(messages: List[Dict[str, Union[str, Dict]]]) -> int:
 
 
 def get_timezone() -> str:
-    """Get the timezone of the current location.
+    """Resolve the current timezone string with graceful fallbacks.
 
-    It uses paid service - use sparingly.
-    Example of output: 'America/Los_Angeles'
+    Resolution order:
+    1) Explicit setting via Config/env (APP_TIMEZONE or timezone in user/config JSON)
+    2) Cached value stored locally in project root (timezone.cache)
+    3) Google Maps Time Zone API using IP-based geolocation
+    4) Final fallback to 'UTC'
 
-    :return: The string id of the timezone.
+    Returns a valid IANA timezone string and never raises on network/SDK errors.
+    Also logs meaningful guidance on how to configure a fixed timezone if API access is denied.
     """
-    import googlemaps
-    import time
+    # 1) Try explicit configuration first
+    try:
+        from src.config import Config
+    except Exception:  # lazy import safety inside tests
+        Config = None  # type: ignore
 
-    g = geocoder.ip("me")
+    def _validate_tz(tz: str) -> bool:
+        if not tz or not isinstance(tz, str):
+            return False
+        try:
+            pytz.timezone(tz)
+            return True
+        except Exception:
+            return False
 
-    key = os.environ.get("GOOGLE_API_KEY")
-    gmaps = googlemaps.Client(key=key)
-    timezone = gmaps.timezone(g.latlng, time.time())
+    # Read from config/env (APP_TIMEZONE -> 'timezone')
+    tz_from_config = None
+    try:
+        cfg = Config() if Config else None
+        if cfg:
+            tz_from_config = cfg.get("timezone")
+    except Exception as e:
+        logger.debug(f"Config load failed while resolving timezone: {e}")
 
-    return timezone["timeZoneId"]
+    if _validate_tz(tz_from_config):
+        logger.info(f"Using timezone from configuration: {tz_from_config}")
+        # Update cache (best-effort)
+        try:
+            with open("timezone.cache", "w", encoding="utf-8") as f:
+                f.write(tz_from_config)
+        except Exception:
+            pass
+        return tz_from_config  # type: ignore
+
+    # 2) Try cached file
+    try:
+        cache_path = "timezone.cache"
+        if os.path.exists(cache_path):
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cached = f.read().strip()
+                if _validate_tz(cached):
+                    logger.info(f"Using cached timezone: {cached}")
+                    return cached
+    except Exception as e:
+        logger.debug(f"Failed to read timezone cache: {e}")
+
+    # 3) Try Google Maps Time Zone API
+    try:
+        import googlemaps  # heavy import only when needed
+        import time as _time
+
+        g = geocoder.ip("me")
+        latlng = getattr(g, "latlng", None)
+        if not latlng:
+            raise RuntimeError("Unable to determine location via IP geolocation")
+
+        key = os.environ.get("GOOGLE_API_KEY")
+        if not key:
+            raise RuntimeError(
+                "Missing GOOGLE_API_KEY. Set APP_TIMEZONE in env/user.json to bypass API."
+            )
+
+        gmaps = googlemaps.Client(key=key)
+        tz_resp = gmaps.timezone(latlng, _time.time())
+        tzid = tz_resp.get("timeZoneId") if isinstance(tz_resp, dict) else None
+        if _validate_tz(tzid):
+            # Cache and return
+            try:
+                with open("timezone.cache", "w", encoding="utf-8") as f:
+                    f.write(tzid)
+            except Exception:
+                pass
+            logger.info(f"Resolved timezone via Google Maps: {tzid}")
+            return tzid
+        else:
+            raise RuntimeError(f"Unexpected timezone response: {tz_resp}")
+
+    except Exception as e:
+        # Provide meaningful, actionable message and fall back
+        logger.warning(
+            "Could not resolve timezone via Google Maps API. Reason: %s. "
+            "Falling back to a default. You can set a fixed timezone by defining APP_TIMEZONE env var "
+            "or adding 'timezone' to user.json (e.g., 'Europe/Moscow').",
+            e,
+        )
+
+    # 4) Final fallback
+    fallback = "UTC"
+    logger.info(f"Using fallback timezone: {fallback}")
+    # Best-effort cache so future runs are stable
+    try:
+        with open("timezone.cache", "w", encoding="utf-8") as f:
+            f.write(fallback)
+    except Exception:
+        pass
+    return fallback
 
 def time_string_ms(timezone_string: str) -> str:
     # 07:00.989
