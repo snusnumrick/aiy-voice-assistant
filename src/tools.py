@@ -85,15 +85,15 @@ def get_timezone() -> str:
     """Resolve the current timezone string with graceful fallbacks.
 
     Resolution order:
-    1) Explicit setting via Config/env (APP_TIMEZONE or timezone in user/config JSON)
+    1) Google Maps Time Zone API using IP-based geolocation (updates cache on success)
     2) Cached value stored locally in project root (timezone.cache)
-    3) Google Maps Time Zone API using IP-based geolocation
+    3) Explicit setting via Config/env (APP_TIMEZONE or timezone in user/config JSON)
     4) Final fallback to 'UTC'
 
     Returns a valid IANA timezone string and never raises on network/SDK errors.
     Also logs meaningful guidance on how to configure a fixed timezone if API access is denied.
     """
-    # 1) Try explicit configuration first
+    # Lazy import of Config to avoid test import issues
     try:
         from src.config import Config
     except Exception:  # lazy import safety inside tests
@@ -108,38 +108,7 @@ def get_timezone() -> str:
         except Exception:
             return False
 
-    # Read from config/env (APP_TIMEZONE -> 'timezone')
-    tz_from_config = None
-    try:
-        cfg = Config() if Config else None
-        if cfg:
-            tz_from_config = cfg.get("timezone")
-    except Exception as e:
-        logger.debug(f"Config load failed while resolving timezone: {e}")
-
-    if _validate_tz(tz_from_config):
-        logger.info(f"Using timezone from configuration: {tz_from_config}")
-        # Update cache (best-effort)
-        try:
-            with open("timezone.cache", "w", encoding="utf-8") as f:
-                f.write(tz_from_config)
-        except Exception:
-            pass
-        return tz_from_config  # type: ignore
-
-    # 2) Try cached file
-    try:
-        cache_path = "timezone.cache"
-        if os.path.exists(cache_path):
-            with open(cache_path, "r", encoding="utf-8") as f:
-                cached = f.read().strip()
-                if _validate_tz(cached):
-                    logger.info(f"Using cached timezone: {cached}")
-                    return cached
-    except Exception as e:
-        logger.debug(f"Failed to read timezone cache: {e}")
-
-    # 3) Try Google Maps Time Zone API
+    # 1) Try Google Maps Time Zone API first
     try:
         import googlemaps  # heavy import only when needed
         import time as _time
@@ -171,13 +140,44 @@ def get_timezone() -> str:
             raise RuntimeError(f"Unexpected timezone response: {tz_resp}")
 
     except Exception as e:
-        # Provide meaningful, actionable message and fall back
+        # Provide meaningful, actionable message and proceed to cache/config
         logger.warning(
             "Could not resolve timezone via Google Maps API. Reason: %s. "
-            "Falling back to a default. You can set a fixed timezone by defining APP_TIMEZONE env var "
+            "Will try cached timezone next. If unavailable, set a fixed timezone by defining APP_TIMEZONE env var "
             "or adding 'timezone' to user.json (e.g., 'Europe/Moscow').",
             e,
         )
+
+    # 2) Try cached file next
+    try:
+        cache_path = "timezone.cache"
+        if os.path.exists(cache_path):
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cached = f.read().strip()
+                if _validate_tz(cached):
+                    logger.info(f"Using cached timezone: {cached}")
+                    return cached
+    except Exception as e:
+        logger.debug(f"Failed to read timezone cache: {e}")
+
+    # 3) Try explicit configuration
+    tz_from_config = None
+    try:
+        cfg = Config() if Config else None
+        if cfg:
+            tz_from_config = cfg.get("timezone")
+    except Exception as e:
+        logger.debug(f"Config load failed while resolving timezone: {e}")
+
+    if _validate_tz(tz_from_config):
+        logger.info(f"Using timezone from configuration: {tz_from_config}")
+        # Update cache (best-effort)
+        try:
+            with open("timezone.cache", "w", encoding="utf-8") as f:
+                f.write(tz_from_config)
+        except Exception:
+            pass
+        return tz_from_config  # type: ignore
 
     # 4) Final fallback
     fallback = "UTC"
