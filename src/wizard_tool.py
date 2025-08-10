@@ -1,5 +1,5 @@
-from typing import Dict, List, Optional, Union
-from src.ai_models import DeepseekModel
+from typing import Dict, Union
+from src.ai_models import OpenAIModel
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 import logging
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class WizardTool:
     """
     A sophisticated tool for handling complex analytical questions that require deep thinking
-    and analysis. It uses the Deepseek model to process questions thoroughly and provide
+    and analysis. It uses the GPT-5 model (OpenAI Responses API) to process questions thoroughly and provide
     well-reasoned answers.
 
     The tool is designed to:
@@ -26,7 +26,7 @@ class WizardTool:
         Returns the definition of the tool including parameters and processing options.
 
     - __init__(self, config: Config)
-        Initializes the WizardTool with configuration and sets up the Deepseek model.
+        Initializes the WizardTool with configuration and sets up the GPT-5 model via OpenAI Responses API.
 
     - analyze_question(self, question: str) -> Dict
         Breaks down a complex question into its core components for analysis.
@@ -34,8 +34,8 @@ class WizardTool:
     - do_wizardry(self, parameters: Dict[str, any]) -> Union[str, Dict]
         Performs synchronous analysis of the question and returns a detailed response.
 
-    - do_wizardry_async(self, parameters: Dict[str, any]) -> Union[str, Dict]
-        Performs asynchronous analysis of the question for streaming responses.
+    - do_wizardry_async(self, parameters: Dict[str, any]) -> str
+        Performs asynchronous analysis and returns the complete answer text (non-streaming; it awaits model streaming internally and returns a single string).
     """
 
     def tool_definition(self) -> Tool:
@@ -43,7 +43,7 @@ class WizardTool:
             name="wise_wizard",
             description="Analyzes complex questions requiring deep thinking and provides "
                         "comprehensive, well-reasoned answers with detailed explanations. "
-                        "Response may take time, use sparingly. ",
+                        "Response may take a very long time; use sparingly. ",
             iterative=True,
             parameters=[
                 ToolParameter(
@@ -70,7 +70,14 @@ class WizardTool:
 
     def __init__(self, config: Config):
         """Initialize the WizardTool with necessary configurations."""
-        self.model = DeepseekModel(config)
+        # Use GPT-5 with reasoning via OpenAI Responses API; default to thorough effort
+        default_effort = config.get("wizard_reasoning_effort", "thorough")
+        self.model = OpenAIModel(
+            config,
+            model_id="gpt-5",
+            prefer_responses_api=True,
+            reasoning_effort=default_effort,
+        )
         self.max_tokens = config.get("max_tokens", 4096)
         self.thinking_template = """
         Analyze this question step by step:
@@ -142,7 +149,7 @@ class WizardTool:
             # Get the model's analysis
             response = self.model.get_response([
                 {"role": "user", "content": prompt}
-            ])
+            ], reasoning_effort=depth)
 
             # Structure the response
             return {
@@ -160,7 +167,7 @@ class WizardTool:
 
     async def do_wizardry_async(self, parameters: Dict[str, any]) -> str:
         """
-        Asynchronously process a complex question and stream the analysis and answer.
+        Asynchronously process a complex question and return the full analysis and answer.
 
         Args:
             parameters: Dictionary containing:
@@ -168,8 +175,8 @@ class WizardTool:
                 - context: Optional additional context
                 - analysis_depth: Desired depth of analysis
 
-        Yields:
-            Portions of the analysis and answer as they are generated
+        Returns:
+            str: The complete analysis/answer text produced asynchronously.
         """
         if "question" not in parameters:
             logger.error("Missing required parameter 'question'")
@@ -190,7 +197,7 @@ class WizardTool:
             result = ""
             async for response_chunk in self.model.get_response_async([
                 {"role": "user", "content": prompt}
-            ]):
+            ], reasoning_effort=depth):
                 result += response_chunk
             return result
 
@@ -204,13 +211,14 @@ async def test_wizard():
     wizard = WizardTool(config)
 
     test_params = {
-        "question": "What are the philosophical implications of quantum entanglement?",
-        "context": "Consider both scientific and metaphysical perspectives",
-        "analysis_depth": "comprehensive"
+        # "question": "What are the philosophical implications of quantum entanglement?",
+        "question": "У меня есть металлическая чашка, но почему-то у нее заверено верхнее отверстие, а внизу дырка. Как из нее пить?",
+        # "context": "Consider both scientific and metaphysical perspectives",
+        "analysis_depth": "thorough"
     }
 
-    async for response in wizard.do_wizardry_async(test_params):
-        print(response, end="")
+    result = await wizard.do_wizardry_async(test_params)
+    print(result, end="")
 
 if __name__ == "__main__":
     import asyncio

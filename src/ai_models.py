@@ -108,12 +108,13 @@ class AIModel(ABC):
     """
 
     @abstractmethod
-    def get_response(self, messages: MessageList) -> str:
+    def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
         """
         Generate a response based on the conversation history.
 
         Args:
             messages (MessageList): A list of message models representing the conversation history.
+            reasoning_effort (Optional[Union[str, ReasoningEffort]]): Optional per-call override for reasoning depth/effort. Implementations may ignore it.
 
         Returns:
             str: The generated response.
@@ -121,13 +122,15 @@ class AIModel(ABC):
         pass
 
     async def get_response_async(
-        self, messages: MessageList
+        self, messages: MessageList,
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response based on the conversation history.
 
         Args:
             messages (MessageList): A list of message models representing the conversation history.
+            reasoning_effort (Optional[Union[str, ReasoningEffort]]): Optional per-call override for reasoning depth/effort. Implementations may ignore it.
 
         Yields:
             str: Parts of the generated response.
@@ -153,7 +156,7 @@ class GeminiAIModel(AIModel):
         max_tokens = config.get("max_tokens", 4096)
         self.generation_config = genai.GenerationConfig(max_output_tokens=max_tokens)
 
-    def get_response(self, messages: MessageList) -> str:
+    def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
         """
         Generate a response using Google Gemini model.
 
@@ -196,7 +199,8 @@ class GeminiAIModel(AIModel):
     @retry_async_generator()
     @yield_complete_sentences
     async def get_response_async(
-        self, messages: MessageList
+        self, messages: MessageList,
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response using Google gemini model.
@@ -345,17 +349,22 @@ class OpenAIModel(AIModel):
         except Exception:
             self.client_async = None
 
-    def get_response(self, messages: MessageList) -> str:
+    def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
         """
         Generate a response using OpenAI's GPT model.
 
         Args:
             messages (MessageList): A list of message models representing the conversation history.
+            reasoning_effort (Optional[Union[str, ReasoningEffort]]): Per-call override for reasoning effort.
 
         Returns:
             str: The generated response.
         """
         messages = normalize_messages(messages)
+
+        # Per-call override for reasoning effort
+        eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else self.reasoning_effort
+        # logging.info(f"Using reasoning effort: {eff}")
 
         def _messages_to_input(msgs: MessageList):
             # For Responses API, allow passing rich input; otherwise fall back to last user message
@@ -395,8 +404,8 @@ class OpenAIModel(AIModel):
             if self.client is not None and hasattr(self.client, "responses") and hasattr(self.client.responses, "create"):
                 try:
                     kwargs = {"model": self.model, "input": _messages_to_input(messages)}
-                    if self.reasoning_effort:
-                        kwargs["reasoning"] = {"effort": self.reasoning_effort}
+                    if eff:
+                        kwargs["reasoning"] = {"effort": eff}
                     response = self.client.responses.create(**kwargs)
                     text = _extract_responses_output(response)
                     if text:
@@ -415,8 +424,8 @@ class OpenAIModel(AIModel):
                     "model": self.model,
                     "input": _messages_to_input(messages),
                 }
-                if self.reasoning_effort:
-                    payload["reasoning"] = {"effort": self.reasoning_effort}
+                if eff:
+                    payload["reasoning"] = {"effort": eff}
                 resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=60)
                 resp.raise_for_status()
                 data = resp.json()
@@ -465,7 +474,8 @@ class OpenAIModel(AIModel):
     @retry_async_generator()
     @yield_complete_sentences
     async def get_response_async(
-        self, messages: MessageList
+        self, messages: MessageList,
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response using OpenAI's GPT model.
@@ -476,7 +486,12 @@ class OpenAIModel(AIModel):
         Yields:
             str: Parts of the generated response.
         """
+        # logging.info(f"get_response_async: {messages}")
         messages = normalize_messages(messages)
+
+        # Per-call override for reasoning effort
+        eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else self.reasoning_effort
+        # logging.info(f"Using reasoning effort: {eff}")
 
         # Responses API path (non‑streaming in async; yield once)
         use_responses = getattr(self, "use_responses_api", False)
@@ -484,8 +499,8 @@ class OpenAIModel(AIModel):
             # Try SDK first
             if self.client_async is not None and hasattr(self.client_async, "responses") and hasattr(self.client_async.responses, "create"):
                 kwargs = {"model": self.model, "input": messages}
-                if self.reasoning_effort:
-                    kwargs["reasoning"] = {"effort": self.reasoning_effort}
+                if eff:
+                    kwargs["reasoning"] = {"effort": eff}
                 resp_obj = await self.client_async.responses.create(**kwargs)
                 # Reuse the same extractor logic (inline to avoid duplication)
                 output_text = ""
@@ -521,8 +536,8 @@ class OpenAIModel(AIModel):
                 "model": self.model,
                 "input": messages,
             }
-            if self.reasoning_effort:
-                payload["reasoning"] = {"effort": self.reasoning_effort}
+            if eff:
+                payload["reasoning"] = {"effort": eff}
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, headers=headers, json=payload, timeout=60) as resp:
@@ -704,7 +719,7 @@ class ClaudeAIModel(AIModel):
                 res = await response.text()
                 return json.loads(res)
 
-    def get_response(self, messages: MessageList) -> str:
+    def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
         """
         Generate a response using Anthropic's Claude model.
 
@@ -725,7 +740,8 @@ class ClaudeAIModel(AIModel):
     @retry_async_generator()
     @yield_complete_sentences
     async def get_response_async(
-        self, messages: MessageList
+        self, messages: MessageList,
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response using Anthropic's Claude model.
