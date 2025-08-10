@@ -199,6 +199,26 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             async with session.post(
                 self.url, headers=self.headers, json=data
             ) as response:
+                # Check for immediate HTTP errors (e.g., authentication)
+                if response.status in (401, 403):
+                    body = await response.text()
+                    try:
+                        err = json.loads(body)
+                        msg = err.get("error", {}).get("message") or body
+                    except Exception:
+                        msg = body
+                    from src.tools import NonRetryableError
+
+                    raise NonRetryableError(f"Claude error: {msg}")
+                # For other non-OK statuses, try to extract message but allow retry
+                if response.status >= 400 and response.status not in (401, 403):
+                    body = await response.text()
+                    try:
+                        err = json.loads(body)
+                        yield {"type": "error", "error": {"message": err.get("error", {}).get("message", body)}}
+                    except Exception:
+                        yield {"type": "error", "error": {"message": body}}
+                    return
                 async for line in response.content:
                     if line:
                         line = line.decode("utf-8").strip()
@@ -438,7 +458,12 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 event_type = event.get("type")
 
                 if event_type == "error":
-                    raise Exception(f"Claude error: {event['error']['message']}")
+                    msg = event.get('error', {}).get('message', '')
+                    from src.tools import NonRetryableError
+                    # Treat auth-related messages as non-retryable
+                    if any(k in msg.lower() for k in ["invalid x-api-key", "authentication", "unauthorized", "forbidden"]):
+                        raise NonRetryableError(f"Claude error: {msg}")
+                    raise Exception(f"Claude error: {msg}")
 
                 if event_type == "content_block_delta":
                     async for sentence in process_content_block_delta(

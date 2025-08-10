@@ -312,6 +312,15 @@ class ClaudeAIModel(AIModel):
             data["system"] = system_message_combined
 
         response = requests.post(self.url, headers=self.headers, json=data)
+        if response.status_code in (401, 403):
+            try:
+                body = response.json()
+                msg = body.get("error", {}).get("message") or response.text
+            except Exception:
+                msg = response.text
+            from src.tools import NonRetryableError
+
+            raise NonRetryableError(f"Claude error: {msg}")
         return json.loads(response.content.decode("utf-8"))
 
     async def _get_response_async(self, messages: List[Dict[str, str]]) -> dict:
@@ -341,6 +350,16 @@ class ClaudeAIModel(AIModel):
             async with session.post(
                 self.url, headers=self.headers, json=data
             ) as response:
+                if response.status in (401, 403):
+                    body = await response.text()
+                    try:
+                        err = json.loads(body)
+                        msg = err.get("error", {}).get("message") or body
+                    except Exception:
+                        msg = body
+                    from src.tools import NonRetryableError
+
+                    raise NonRetryableError(f"Claude error: {msg}")
                 res = await response.text()
                 return json.loads(res)
 

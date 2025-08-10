@@ -4,7 +4,6 @@ import logging
 import os
 import random
 import re
-import subprocess
 import time
 from datetime import datetime
 from functools import wraps
@@ -27,6 +26,16 @@ import pytz
 from pydub import AudioSegment
 
 logger = logging.getLogger(__name__)
+
+
+class NonRetryableError(Exception):
+    """An exception type indicating the operation should not be retried.
+
+    Use this for permanent failures such as authentication/authorization errors,
+    invalid request parameters, or other conditions where retrying cannot help.
+    """
+
+    pass
 
 
 def estimate_tokens(text: str) -> int:
@@ -141,7 +150,7 @@ def get_timezone() -> str:
 
     except Exception as e:
         # Provide meaningful, actionable message and proceed to cache/config
-        logger.warning(
+        logger.error(
             "Could not resolve timezone via Google Maps API. Reason: %s. "
             "Will try cached timezone next. If unavailable, set a fixed timezone by defining APP_TIMEZONE env var "
             "or adding 'timezone' to user.json (e.g., 'Europe/Moscow').",
@@ -555,6 +564,9 @@ def retry(
             for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
+                except NonRetryableError as e:
+                    logger.error(f"Non-retryable error: {e}")
+                    raise
                 except Exception as e:
                     if attempt == (max_retries - 1):
                         logger.error(f"Failed after {max_retries} attempts: {str(e)}")
@@ -597,6 +609,9 @@ def retry_async(
             for attempt in range(max_retries):
                 try:
                     return await func(*args, **kwargs)
+                except NonRetryableError as e:
+                    logger.error(f"Non-retryable error: {e}")
+                    raise
                 except Exception as e:
                     if attempt == (max_retries - 1):
                         logger.error(f"Failed after {max_retries} attempts: {str(e)}")
@@ -643,6 +658,9 @@ def retry_async_generator(
                     async for item in func(*args, **kwargs):
                         yield item
                     return
+                except NonRetryableError as e:
+                    logger.error(f"Non-retryable error: {e}")
+                    raise
                 except Exception as e:
                     if attempt == max_retries - 1:
                         logger.error(f"Failed after {max_retries} attempts: {str(e)}")

@@ -363,6 +363,7 @@ class DialogManager:
             except Exception as e:
                 logger.error(f"Error in AI response generation: {str(e)}")
                 logger.error(traceback.format_exc())
+                error_visual(self.leds)
             finally:
                 _set_ai_responses_complete()  # Mark AI responses as complete
                 logger.debug("AI response processing loop exited")
