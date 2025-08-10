@@ -564,8 +564,8 @@ def retry(
             for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
-                except NonRetryableError as e:
-                    logger.error(f"Non-retryable error: {e}")
+                except NonRetryableError:
+                    # logger.error(f"Non-retryable error: {e}")
                     raise
                 except Exception as e:
                     if attempt == (max_retries - 1):
@@ -609,8 +609,8 @@ def retry_async(
             for attempt in range(max_retries):
                 try:
                     return await func(*args, **kwargs)
-                except NonRetryableError as e:
-                    logger.error(f"Non-retryable error: {e}")
+                except NonRetryableError:
+                    # logger.error(f"Non-retryable error: {e}")
                     raise
                 except Exception as e:
                     if attempt == (max_retries - 1):
@@ -658,8 +658,8 @@ def retry_async_generator(
                     async for item in func(*args, **kwargs):
                         yield item
                     return
-                except NonRetryableError as e:
-                    logger.error(f"Non-retryable error: {e}")
+                except NonRetryableError:
+                    # logger.error(f"Non-retryable error: {e}")
                     raise
                 except Exception as e:
                     if attempt == max_retries - 1:

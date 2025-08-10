@@ -264,8 +264,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 async for response in self._get_response_async_plain(messages):
                     logger.debug(f"{self._time_str()}AI response: {response}")
                     yield response
-        except Exception as e:
-            logger.error(f"Error in get_response_async: {str(e)}")
+        except Exception:
+            # logger.error(f"Error in get_response_async: {str(e)}")
             raise
 
     async def _get_response_async_plain(
@@ -501,8 +501,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
         except StopAsyncIteration:
             logger.debug("AsyncGenerator completed normally.")
-        except Exception as e:
-            logger.error(f"Error in _get_response_async_streaming: {str(e)}")
+        except Exception:
+            # logger.error(f"Error in _get_response_async_streaming: {str(e)}")
             raise
 
     async def _process_tool_use_streaming(
