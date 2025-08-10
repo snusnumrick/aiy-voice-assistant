@@ -199,6 +199,7 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
     Notes
     1. Make sure to keep your `.env` file secure and never commit it to version control.
     2. Depending on configuration, some of these API keys may be unnecessary.
+    3. GOOGLE_API_KEY should support the timezone API.
 
 
 13. **Set up the systemd service:**
