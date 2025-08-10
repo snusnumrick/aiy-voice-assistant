@@ -207,6 +207,8 @@ class OpenAIModel(AIModel):
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model_id: Optional[str] = None,
+        prefer_responses_api: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
     ):
         """
         Initialize the OpenAI model.
@@ -216,6 +218,8 @@ class OpenAIModel(AIModel):
             base_url (Optional[str]): The base URL for the API.
             api_key (Optional[str]): The API key for authentication.
             model_id (Optional[str]): The specific model ID to use.
+            prefer_responses_api (Optional[bool]): If True, use the Responses API; if False, use chat.completions; if None, auto-detect.
+            reasoning_effort (Optional[str]): Reasoning effort for Responses API (e.g., "minimal", "low", "medium", "high").
         """
         # Import module to avoid ImportError on old SDKs and allow graceful fallback
         import importlib
@@ -226,6 +230,32 @@ class OpenAIModel(AIModel):
         # Preserve for REST fallback
         self.base_url = base_url or getattr(openai, "base_url", None) or "https://api.openai.com/v1"
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        # Optional reasoning effort for Responses API (GPT‑5)
+        self.reasoning_effort = (
+            reasoning_effort
+            or config.get("openai_reasoning_effort")
+            or os.getenv("OPENAI_REASONING_EFFORT")
+        )
+        # Preference: choose Responses API vs chat.completions
+        def _to_bool(val):
+            if isinstance(val, bool):
+                return val
+            if isinstance(val, (int,)):
+                return bool(val)
+            if isinstance(val, str):
+                return val.strip().lower() in ("1", "true", "yes", "y", "on")
+            return None
+        pref = prefer_responses_api
+        if pref is None:
+            cfg_pref = config.get("openai_prefer_responses_api")
+            pref = _to_bool(cfg_pref)
+        if pref is None:
+            env_pref = os.getenv("OPENAI_PREFER_RESPONSES_API")
+            pref = _to_bool(env_pref) if env_pref is not None else None
+        if pref is None:
+            # Auto: use Responses API for GPT‑5 by default
+            pref = isinstance(self.model, str) and self.model.lower().startswith("gpt-5")
+        self.use_responses_api = bool(pref)
 
         # Try to use modern SDK clients if available, otherwise fall back to REST
         OpenAI_cls = getattr(openai, "OpenAI", None)
@@ -279,7 +309,80 @@ class OpenAIModel(AIModel):
             str: The generated response.
         """
         messages = normalize_messages(messages)
-        # Prefer SDK client when available
+
+        def _messages_to_input(msgs: MessageList):
+            # For Responses API, allow passing rich input; otherwise fall back to last user message
+            try:
+                return [{"role": m.get("role"), "content": m.get("content")} for m in msgs]
+            except Exception:
+                return msgs
+
+        def _extract_responses_output(resp_obj) -> str:
+            # Try to extract content from Responses API shape
+            out_text = []
+            try:
+                output = getattr(resp_obj, "output", None) or resp_obj.get("output")
+            except Exception:
+                output = None
+            if output:
+                for item in output:
+                    content = getattr(item, "content", None) or item.get("content")
+                    if content:
+                        for c in content:
+                            text = getattr(c, "text", None) or c.get("text")
+                            if text:
+                                out_text.append(text)
+            # Fallback to text field
+            if not out_text:
+                try:
+                    text = getattr(resp_obj, "text", None) or resp_obj.get("text")
+                    if text:
+                        out_text.append(text)
+                except Exception:
+                    pass
+            return "".join(out_text).strip()
+
+        use_responses = getattr(self, "use_responses_api", False)
+        if use_responses:
+            # Prefer SDK Responses API if available
+            if self.client is not None and hasattr(self.client, "responses") and hasattr(self.client.responses, "create"):
+                try:
+                    kwargs = {"model": self.model, "input": _messages_to_input(messages)}
+                    if self.reasoning_effort:
+                        kwargs["reasoning"] = {"effort": self.reasoning_effort}
+                    response = self.client.responses.create(**kwargs)
+                    text = _extract_responses_output(response)
+                    if text:
+                        return text
+                except Exception as e:
+                    logging.error(f"Error in OpenAI Responses SDK call: {str(e)}")
+                    raise
+            # REST fallback to /responses
+            try:
+                url = f"{self.base_url.rstrip('/')}/responses"
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
+                }
+                payload: Dict[str, Union[str, int, Dict, List]] = {
+                    "model": self.model,
+                    "input": _messages_to_input(messages),
+                }
+                if self.reasoning_effort:
+                    payload["reasoning"] = {"effort": self.reasoning_effort}
+                resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=60)
+                resp.raise_for_status()
+                data = resp.json()
+                text = _extract_responses_output(data)
+                if text:
+                    return text
+                # Final fallback for unusual shapes
+                return json.dumps(data)
+            except Exception as e:
+                logging.error(f"Error in OpenAI REST Responses call: {str(e)}")
+                raise
+
+        # Non-GPT‑5 path: prefer SDK chat.completions when available
         if self.client is not None:
             try:
                 response = self.client.chat.completions.create(
@@ -289,7 +392,7 @@ class OpenAIModel(AIModel):
             except Exception as e:
                 logging.error(f"Error in OpenAI SDK call: {str(e)}")
                 raise
-        # Fallback to REST API
+        # Fallback to REST chat/completions
         try:
             url = f"{self.base_url.rstrip('/')}/chat/completions"
             headers = {
@@ -327,7 +430,80 @@ class OpenAIModel(AIModel):
             str: Parts of the generated response.
         """
         messages = normalize_messages(messages)
-        # Prefer SDK async client when available
+
+        # Responses API path (non‑streaming in async; yield once)
+        use_responses = getattr(self, "use_responses_api", False)
+        if use_responses:
+            # Try SDK first
+            if self.client_async is not None and hasattr(self.client_async, "responses") and hasattr(self.client_async.responses, "create"):
+                kwargs = {"model": self.model, "input": messages}
+                if self.reasoning_effort:
+                    kwargs["reasoning"] = {"effort": self.reasoning_effort}
+                resp_obj = await self.client_async.responses.create(**kwargs)
+                # Reuse the same extractor logic (inline to avoid duplication)
+                output_text = ""
+                try:
+                    output = getattr(resp_obj, "output", None) or resp_obj.get("output")
+                except Exception:
+                    output = None
+                if output:
+                    for item in output:
+                        content = getattr(item, "content", None) or item.get("content")
+                        if content:
+                            for c in content:
+                                text = getattr(c, "text", None) or c.get("text")
+                                if text:
+                                    output_text += text
+                if not output_text:
+                    try:
+                        t = getattr(resp_obj, "text", None) or resp_obj.get("text")
+                        if t:
+                            output_text = str(t)
+                    except Exception:
+                        pass
+                if output_text:
+                    yield output_text
+                    return
+            # REST fallback (non‑streaming)
+            url = f"{self.base_url.rstrip('/')}/responses"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
+            }
+            payload: Dict[str, Union[str, int, Dict, List]] = {
+                "model": self.model,
+                "input": messages,
+            }
+            if self.reasoning_effort:
+                payload["reasoning"] = {"effort": self.reasoning_effort}
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, headers=headers, json=payload, timeout=60) as resp:
+                        resp.raise_for_status()
+                        data = await resp.json()
+                        # Extract output text
+                        output_text = ""
+                        output = data.get("output")
+                        if output:
+                            for item in output:
+                                content = item.get("content")
+                                if content:
+                                    for c in content:
+                                        t = c.get("text")
+                                        if t:
+                                            output_text += t
+                        if not output_text:
+                            t = data.get("text")
+                            if t:
+                                output_text = str(t)
+                        if output_text:
+                            yield output_text
+                            return
+            except Exception as e:
+                logging.error(f"Error in OpenAI REST Responses async call: {str(e)}")
+                raise
+
+        # Non‑GPT‑5 path: Prefer SDK async chat.completions when available
         if self.client_async is not None:
             stream = await self.client_async.chat.completions.create(
                 model=self.model, messages=messages, stream=True
@@ -652,7 +828,8 @@ with the answer. The reasoning process and answer are enclosed within <think> </
 <answer> answer here </answer>. User:{prompt}. Assistant:"""
 
     config = Config()
-    ai_model = OpenAIModel(config, model_id="gpt-4o-mini")
+    # Use OpenAI's high-reasoning model (GPT-5)
+    ai_model = OpenAIModel(config, model_id="gpt-5")
     # ai_model = DeepseekModel(config)
     # ai_model = OpenAIModel(config, model_id="gpt-4o-mini")
     print(f"using {ai_model.__class__.__name__} model with {ai_model.model}...")
