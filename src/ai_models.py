@@ -18,6 +18,7 @@ from typing import AsyncGenerator, Dict, List, Optional, Union
 import aiohttp
 import requests
 from pydantic import BaseModel
+from enum import Enum
 
 from src.config import Config
 from src.tools import retry_async_generator, time_string_ms, yield_complete_sentences
@@ -39,6 +40,50 @@ class MessageModel(BaseModel):
 
 
 MessageList = List[Union[Dict[str, str], MessageModel]]
+
+
+class ReasoningEffort(Enum):
+    """Abstracted reasoning-effort levels for internal use.
+
+    Values map to OpenAI Responses API efforts as follows:
+    - quick -> minimal
+    - thorough -> medium
+    - comprehensive -> high
+    """
+    QUICK = "quick"
+    THOROUGH = "thorough"
+    COMPREHENSIVE = "comprehensive"
+
+
+def _to_openai_reasoning_effort(value: Optional[Union[str, ReasoningEffort]]) -> Optional[str]:
+    """Normalize internal reasoning effort to OpenAI Responses API effort string.
+
+    Accepts:
+    - ReasoningEffort enum (preferred)
+    - Internal strings: "quick", "thorough", "comprehensive"
+    - OpenAI strings: "minimal", "low", "medium", "high" (pass-through)
+
+    Returns one of: "minimal", "low", "medium", "high" or None.
+    """
+    if value is None:
+        return None
+    # Enum -> string
+    if isinstance(value, ReasoningEffort):
+        v = value.value
+    else:
+        v = str(value)
+    key = v.strip().lower()
+    # Direct pass-through for OpenAI-supported values
+    if key in {"minimal", "low", "medium", "high"}:
+        return key
+    # Map internal names to OpenAI
+    mapping = {
+        "quick": "minimal",
+        # The spec requests only three internal levels; map thorough to medium.
+        "thorough": "medium",
+        "comprehensive": "high",
+    }
+    return mapping.get(key)
 
 
 def normalize_messages(messages: MessageList) -> List[Dict[str, str]]:
@@ -208,7 +253,7 @@ class OpenAIModel(AIModel):
         api_key: Optional[str] = None,
         model_id: Optional[str] = None,
         prefer_responses_api: Optional[bool] = None,
-        reasoning_effort: Optional[str] = None,
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ):
         """
         Initialize the OpenAI model.
@@ -219,7 +264,7 @@ class OpenAIModel(AIModel):
             api_key (Optional[str]): The API key for authentication.
             model_id (Optional[str]): The specific model ID to use.
             prefer_responses_api (Optional[bool]): If True, use the Responses API; if False, use chat.completions; if None, auto-detect.
-            reasoning_effort (Optional[str]): Reasoning effort for Responses API (e.g., "minimal", "low", "medium", "high").
+            reasoning_effort (Optional[Union[str, ReasoningEffort]]): Preferred reasoning effort. Accepts ReasoningEffort (quick, thorough, comprehensive) or a string; mapped to OpenAI's "minimal"|"low"|"medium"|"high" for the Responses API.
         """
         # Import module to avoid ImportError on old SDKs and allow graceful fallback
         import importlib
@@ -231,11 +276,13 @@ class OpenAIModel(AIModel):
         self.base_url = base_url or getattr(openai, "base_url", None) or "https://api.openai.com/v1"
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         # Optional reasoning effort for Responses API (GPT‑5)
-        self.reasoning_effort = (
+        # Accept enum or string (internal or OpenAI), normalize to OpenAI values
+        _eff = (
             reasoning_effort
-            or config.get("openai_reasoning_effort")
-            or os.getenv("OPENAI_REASONING_EFFORT")
+            if reasoning_effort is not None
+            else (config.get("openai_reasoning_effort") or os.getenv("OPENAI_REASONING_EFFORT"))
         )
+        self.reasoning_effort = _to_openai_reasoning_effort(_eff)
         # Preference: choose Responses API vs chat.completions
         def _to_bool(val):
             if isinstance(val, bool):
@@ -829,7 +876,7 @@ with the answer. The reasoning process and answer are enclosed within <think> </
 
     config = Config()
     # Use OpenAI's high-reasoning model (GPT-5)
-    ai_model = OpenAIModel(config, model_id="gpt-5")
+    ai_model = OpenAIModel(config, model_id="gpt-5", reasoning_effort=ReasoningEffort.COMPREHENSIVE)
     # ai_model = DeepseekModel(config)
     # ai_model = OpenAIModel(config, model_id="gpt-4o-mini")
     print(f"using {ai_model.__class__.__name__} model with {ai_model.model}...")
