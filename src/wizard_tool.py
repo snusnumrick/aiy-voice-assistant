@@ -1,5 +1,5 @@
 from typing import Dict, Union
-from src.ai_models import OpenAIModel
+from src.ai_models import OpenAIModel, to_reasoning_effort
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 import logging
@@ -71,16 +71,14 @@ class WizardTool:
     def __init__(self, config: Config):
         """Initialize the WizardTool with necessary configurations."""
         # Use GPT-5 with reasoning via OpenAI Responses API; default to thorough effort
-        default_effort = config.get("wizard_reasoning_effort", "thorough")
+        self.default_effort = None
         self.model = OpenAIModel(
             config,
-            model_id="gpt-5",
-            prefer_responses_api=True,
-            reasoning_effort=default_effort,
+            model_id="gpt-5"
         )
         self.max_tokens = config.get("max_tokens", 4096)
         self.thinking_template = """
-        Analyze this question step by step:
+        Analyze this question:
         1. Break down the core components
         2. Identify key concepts and relationships
         3. Consider multiple perspectives
@@ -102,7 +100,8 @@ class WizardTool:
         }
 
         # Use the model to analyze the question structure
-        analysis_prompt = f"Analyze this question and break it down: {question}"
+        json_pattern = '{"core_concepts": [], "relationships": [], "assumptions": [], "required_knowledge": []}'
+        analysis_prompt = f"Analyze this question and break it down, return JSON {json_pattern}: {question}"
         response = self.model.get_response([
             {"role": "user", "content": analysis_prompt}
         ])
@@ -112,9 +111,11 @@ class WizardTool:
             parsed = json.loads(response)
             components.update(parsed)
         except json.JSONDecodeError:
+            logger.warning(f"Failed to decode JSON response: {response}")
             # Handle free-form text response
             components["analysis"] = response
 
+        logger.info(f"analyze_question: {question} => {components}")
         return components
 
     def do_wizardry(self, parameters: Dict[str, any]) -> Union[str, Dict]:
@@ -125,7 +126,7 @@ class WizardTool:
             parameters: Dictionary containing:
                 - question: The main question to analyze
                 - context: Optional additional context
-                - analysis_depth: Desired depth of analysis
+                - analysis_depth: Desired depth of analysis (quick, thorough, or comprehensive)
 
         Returns:
             A structured response containing the analysis and answer
@@ -136,27 +137,34 @@ class WizardTool:
 
         question = parameters["question"]
         context = parameters.get("context", "")
-        depth = parameters.get("analysis_depth", "thorough")
+        # Accept multiple keys and typos; normalize into reasoning_effort
+        effort = (
+            parameters.get("reasoning_effort")
+            or parameters.get("analysis_depth")
+            or parameters.get("depth")
+            or parameters.get("deoth")
+            or self.default_effort
+        )
 
         # Format the thinking prompt
         prompt = self.thinking_template.format(
             question=question,
             context=context,
-            depth=depth
+            depth=effort
         )
 
         try:
             # Get the model's analysis
             response = self.model.get_response([
                 {"role": "user", "content": prompt}
-            ], reasoning_effort=depth)
+            ], reasoning_effort=to_reasoning_effort(effort))
 
             # Structure the response
             return {
                 "analysis": self.analyze_question(question),
                 "response": response,
                 "meta": {
-                    "depth": depth,
+                    "depth": effort,
                     "timestamp": asyncio.get_event_loop().time()
                 }
             }
@@ -182,22 +190,31 @@ class WizardTool:
             logger.error("Missing required parameter 'question'")
             return ""
 
+        logger.info(f"do_wizardry_async: {parameters}")
+
         question = parameters["question"]
         context = parameters.get("context", "")
-        depth = parameters.get("analysis_depth", "thorough")
+        # Accept multiple keys and typos; normalize into reasoning_effort
+        effort = (
+            parameters.get("reasoning_effort")
+            or parameters.get("analysis_depth")
+            or parameters.get("depth")
+            or parameters.get("deoth")
+            or self.default_effort
+        )
 
         # Format the thinking prompt
         prompt = self.thinking_template.format(
             question=question,
             context=context,
-            depth=depth
+            depth=effort
         )
 
         try:
             result = ""
             async for response_chunk in self.model.get_response_async([
                 {"role": "user", "content": prompt}
-            ], reasoning_effort=depth):
+            ], reasoning_effort=to_reasoning_effort(effort)):
                 result += response_chunk
             return result
 
@@ -210,9 +227,11 @@ async def test_wizard():
     config = Config()
     wizard = WizardTool(config)
 
+    question = "У меня есть металлическая чашка, но почему-то у нее заверено верхнее отверстие, а внизу дырка. Как из нее пить?"
+
     test_params = {
         # "question": "What are the philosophical implications of quantum entanglement?",
-        "question": "У меня есть металлическая чашка, но почему-то у нее заверено верхнее отверстие, а внизу дырка. Как из нее пить?",
+        "question": question,
         # "context": "Consider both scientific and metaphysical perspectives",
         "analysis_depth": "thorough"
     }

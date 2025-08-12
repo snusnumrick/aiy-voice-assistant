@@ -55,6 +55,29 @@ class ReasoningEffort(Enum):
     COMPREHENSIVE = "comprehensive"
 
 
+def to_reasoning_effort(value: Optional[Union[str, "ReasoningEffort"]]) -> Optional["ReasoningEffort"]:
+    """Convert a string ("quick", "thorough", or "comprehensive") into a ReasoningEffort enum.
+
+    - Returns the value unchanged if it is already a ReasoningEffort.
+    - Performs case-insensitive matching for the three supported values.
+    - Returns None for unsupported strings or None input.
+    """
+    if value is None:
+        return None
+    if isinstance(value, ReasoningEffort):
+        return value
+    try:
+        key = str(value).strip().lower()
+    except Exception:
+        return None
+    mapping = {
+        "quick": ReasoningEffort.QUICK,
+        "thorough": ReasoningEffort.THOROUGH,
+        "comprehensive": ReasoningEffort.COMPREHENSIVE,
+    }
+    return mapping.get(key)
+
+
 def _to_openai_reasoning_effort(value: Optional[Union[str, ReasoningEffort]]) -> Optional[str]:
     """Normalize internal reasoning effort to OpenAI Responses API effort string.
 
@@ -256,7 +279,6 @@ class OpenAIModel(AIModel):
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model_id: Optional[str] = None,
-        prefer_responses_api: Optional[bool] = None,
         reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ):
         """
@@ -267,7 +289,6 @@ class OpenAIModel(AIModel):
             base_url (Optional[str]): The base URL for the API.
             api_key (Optional[str]): The API key for authentication.
             model_id (Optional[str]): The specific model ID to use.
-            prefer_responses_api (Optional[bool]): If True, use the Responses API; if False, use chat.completions; if None, auto-detect.
             reasoning_effort (Optional[Union[str, ReasoningEffort]]): Preferred reasoning effort. Accepts ReasoningEffort (quick, thorough, comprehensive) or a string; mapped to OpenAI's "minimal"|"low"|"medium"|"high" for the Responses API.
         """
         # Import module to avoid ImportError on old SDKs and allow graceful fallback
@@ -287,42 +308,17 @@ class OpenAIModel(AIModel):
             else (config.get("openai_reasoning_effort") or os.getenv("OPENAI_REASONING_EFFORT"))
         )
         self.reasoning_effort = _to_openai_reasoning_effort(_eff)
-        # Preference: choose Responses API vs chat.completions
-        def _to_bool(val):
-            if isinstance(val, bool):
-                return val
-            if isinstance(val, (int,)):
-                return bool(val)
-            if isinstance(val, str):
-                return val.strip().lower() in ("1", "true", "yes", "y", "on")
-            return None
-        pref = prefer_responses_api
-        if pref is None:
-            cfg_pref = config.get("openai_prefer_responses_api")
-            pref = _to_bool(cfg_pref)
-        if pref is None:
-            env_pref = os.getenv("OPENAI_PREFER_RESPONSES_API")
-            pref = _to_bool(env_pref) if env_pref is not None else None
-        if pref is None:
-            # Auto: use Responses API for GPT‑5 by default
-            pref = isinstance(self.model, str) and self.model.lower().startswith("gpt-5")
-        self.use_responses_api = bool(pref)
 
-        # Try to use modern SDK clients if available, otherwise fall back to REST
+        # Initialize modern SDK clients (OpenAI / AsyncOpenAI). If instantiation fails, leave as None to allow REST fallback.
         OpenAI_cls = getattr(openai, "OpenAI", None)
         AsyncOpenAI_cls = getattr(openai, "AsyncOpenAI", None)
-        # Ignore compatibility shim placeholders (object) so we fall back to REST
-        if OpenAI_cls is object:
-            OpenAI_cls = None
-        if AsyncOpenAI_cls is object:
-            AsyncOpenAI_cls = None
+
         self.client = None
         self.client_async = None
         if OpenAI_cls is not None:
             try:
                 self.client = OpenAI_cls(base_url=base_url, api_key=api_key)
             except Exception:
-                # If constructor signature differs, fall back to default initialization
                 try:
                     self.client = OpenAI_cls()
                 except Exception:
@@ -335,19 +331,6 @@ class OpenAIModel(AIModel):
                     self.client_async = AsyncOpenAI_cls()
                 except Exception:
                     self.client_async = None
-        # Validate that clients expose expected chat API; otherwise discard to force REST fallback
-        try:
-            if self.client is not None:
-                if not hasattr(self.client, "chat") or not hasattr(self.client.chat, "completions"):
-                    self.client = None
-        except Exception:
-            self.client = None
-        try:
-            if self.client_async is not None:
-                if not hasattr(self.client_async, "chat") or not hasattr(self.client_async.chat, "completions"):
-                    self.client_async = None
-        except Exception:
-            self.client_async = None
 
     def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
         """
@@ -398,77 +381,43 @@ class OpenAIModel(AIModel):
                     pass
             return "".join(out_text).strip()
 
-        use_responses = getattr(self, "use_responses_api", False)
-        if use_responses:
-            # Prefer SDK Responses API if available
-            if self.client is not None and hasattr(self.client, "responses") and hasattr(self.client.responses, "create"):
-                try:
-                    kwargs = {"model": self.model, "input": _messages_to_input(messages)}
-                    if eff:
-                        kwargs["reasoning"] = {"effort": eff}
-                    response = self.client.responses.create(**kwargs)
-                    text = _extract_responses_output(response)
-                    if text:
-                        return text
-                except Exception as e:
-                    logging.error(f"Error in OpenAI Responses SDK call: {str(e)}")
-                    raise
-            # REST fallback to /responses
+        # Always use the Responses API
+        # Prefer SDK Responses API if available
+        if self.client is not None and hasattr(self.client, "responses") and hasattr(self.client.responses, "create"):
             try:
-                url = f"{self.base_url.rstrip('/')}/responses"
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
-                }
-                payload: Dict[str, Union[str, int, Dict, List]] = {
-                    "model": self.model,
-                    "input": _messages_to_input(messages),
-                }
+                kwargs = {"model": self.model, "input": _messages_to_input(messages)}
                 if eff:
-                    payload["reasoning"] = {"effort": eff}
-                resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=60)
-                resp.raise_for_status()
-                data = resp.json()
-                text = _extract_responses_output(data)
+                    kwargs["reasoning"] = {"effort": eff}
+                response = self.client.responses.create(**kwargs)
+                text = _extract_responses_output(response)
                 if text:
                     return text
-                # Final fallback for unusual shapes
-                return json.dumps(data)
             except Exception as e:
-                logging.error(f"Error in OpenAI REST Responses call: {str(e)}")
+                logging.error(f"Error in OpenAI Responses SDK call: {str(e)}")
                 raise
-
-        # Non-GPT‑5 path: prefer SDK chat.completions when available
-        if self.client is not None:
-            try:
-                response = self.client.chat.completions.create(
-                    model=self.model, messages=messages, max_tokens=self.max_tokens
-                )
-                return response.choices[0].message.content.strip()
-            except Exception as e:
-                logging.error(f"Error in OpenAI SDK call: {str(e)}")
-                raise
-        # Fallback to REST chat/completions
+        # REST fallback to /responses
         try:
-            url = f"{self.base_url.rstrip('/')}/chat/completions"
+            url = f"{self.base_url.rstrip('/')}/responses"
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
             }
-            payload = {
+            payload: Dict[str, Union[str, int, Dict, List]] = {
                 "model": self.model,
-                "messages": messages,
-                "max_tokens": self.max_tokens,
-                "stream": False,
+                "input": _messages_to_input(messages),
             }
+            if eff:
+                payload["reasoning"] = {"effort": eff}
             resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=60)
             resp.raise_for_status()
             data = resp.json()
-            return (data.get("choices", [{}])[0]
-                        .get("message", {})
-                        .get("content", "")).strip()
+            text = _extract_responses_output(data)
+            if text:
+                return text
+            # Final fallback for unusual shapes
+            return json.dumps(data)
         except Exception as e:
-            logging.error(f"Error in OpenAI REST call: {str(e)}")
+            logging.error(f"Error in OpenAI REST Responses call: {str(e)}")
             raise
 
     @retry_async_generator()
@@ -491,124 +440,80 @@ class OpenAIModel(AIModel):
 
         # Per-call override for reasoning effort
         eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else self.reasoning_effort
-        # logging.info(f"Using reasoning effort: {eff}")
+        logging.info(f"Using reasoning effort: {eff}")
 
-        # Responses API path (non‑streaming in async; yield once)
-        use_responses = getattr(self, "use_responses_api", False)
-        if use_responses:
-            # Try SDK first
-            if self.client_async is not None and hasattr(self.client_async, "responses") and hasattr(self.client_async.responses, "create"):
-                kwargs = {"model": self.model, "input": messages}
-                if eff:
-                    kwargs["reasoning"] = {"effort": eff}
-                resp_obj = await self.client_async.responses.create(**kwargs)
-                # Reuse the same extractor logic (inline to avoid duplication)
-                output_text = ""
-                try:
-                    output = getattr(resp_obj, "output", None) or resp_obj.get("output")
-                except Exception:
-                    output = None
-                if output:
-                    for item in output:
-                        content = getattr(item, "content", None) or item.get("content")
-                        if content:
-                            for c in content:
-                                text = getattr(c, "text", None) or c.get("text")
-                                if text:
-                                    output_text += text
-                if not output_text:
-                    try:
-                        t = getattr(resp_obj, "text", None) or resp_obj.get("text")
-                        if t:
-                            output_text = str(t)
-                    except Exception:
-                        pass
-                if output_text:
-                    yield output_text
-                    return
-            # REST fallback (non‑streaming)
-            url = f"{self.base_url.rstrip('/')}/responses"
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
-            }
-            payload: Dict[str, Union[str, int, Dict, List]] = {
-                "model": self.model,
-                "input": messages,
-            }
+        # Always use the Responses API (non‑streaming here; yield once)
+        # Try SDK first
+        if self.client_async is not None and hasattr(self.client_async, "responses") and hasattr(self.client_async.responses, "create"):
+            kwargs = {"model": self.model, "input": messages}
             if eff:
-                payload["reasoning"] = {"effort": eff}
+                kwargs["reasoning"] = {"effort": eff}
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, headers=headers, json=payload, timeout=60) as resp:
-                        resp.raise_for_status()
-                        data = await resp.json()
-                        # Extract output text
-                        output_text = ""
-                        output = data.get("output")
-                        if output:
-                            for item in output:
-                                content = item.get("content")
-                                if content:
-                                    for c in content:
-                                        t = c.get("text")
-                                        if t:
-                                            output_text += t
-                        if not output_text:
-                            t = data.get("text")
-                            if t:
-                                output_text = str(t)
-                        if output_text:
-                            yield output_text
-                            return
+                resp_obj = await self.client_async.responses.create(**kwargs)
             except Exception as e:
-                logging.error(f"Error in OpenAI REST Responses async call: {str(e)}")
+                logging.error(f"Error in OpenAI Responses SDK async call: {str(e)}")
                 raise
-
-        # Non‑GPT‑5 path: Prefer SDK async chat.completions when available
-        if self.client_async is not None:
-            stream = await self.client_async.chat.completions.create(
-                model=self.model, messages=messages, stream=True
-            )
-            async for chunk in stream:
-                yield chunk.choices[0].delta.content or ""
-            return
-        # Fallback: use REST streaming with aiohttp
-        url = f"{self.base_url.rstrip('/')}/chat/completions"
+            # Extract
+            output_text = ""
+            try:
+                output = getattr(resp_obj, "output", None) or resp_obj.get("output")
+            except Exception:
+                output = None
+            if output:
+                for item in output:
+                    content = getattr(item, "content", None) or item.get("content")
+                    if content:
+                        for c in content:
+                            text = getattr(c, "text", None) or c.get("text")
+                            if text:
+                                output_text += text
+            if not output_text:
+                try:
+                    t = getattr(resp_obj, "text", None) or resp_obj.get("text")
+                    if t:
+                        output_text = str(t)
+                except Exception:
+                    pass
+            if output_text:
+                yield output_text
+                return
+        # REST fallback (non‑streaming)
+        url = f"{self.base_url.rstrip('/')}/responses"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
         }
-        payload = {
+        payload: Dict[str, Union[str, int, Dict, List]] = {
             "model": self.model,
-            "messages": messages,
-            "max_tokens": self.max_tokens,
-            "stream": True,
+            "input": messages,
         }
+        if eff:
+            payload["reasoning"] = {"effort": eff}
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, headers=headers, json=payload, timeout=60) as resp:
                     resp.raise_for_status()
-                    async for raw_line in resp.content:
-                        if not raw_line:
-                            continue
-                        line = raw_line.decode("utf-8", errors="ignore").strip()
-                        if not line.startswith("data:"):
-                            continue
-                        data_str = line[len("data:"):].strip()
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            data = json.loads(data_str)
-                            delta = (((data.get("choices") or [{}])[0]).get("delta") or {})
-                            content = delta.get("content")
+                    data = await resp.json()
+                    # Extract output text
+                    output_text = ""
+                    output = data.get("output")
+                    if output:
+                        for item in output:
+                            content = item.get("content")
                             if content:
-                                yield content
-                        except Exception:
-                            # Ignore malformed chunks, continue
-                            continue
+                                for c in content:
+                                    t = c.get("text")
+                                    if t:
+                                        output_text += t
+                    if not output_text:
+                        t = data.get("text")
+                        if t:
+                            output_text = str(t)
+                    if output_text:
+                        yield output_text
+                        return
         except Exception as e:
-            logging.error(f"Error in OpenAI REST streaming call: {str(e)}")
+            logging.error(f"Error in OpenAI REST Responses async call: {str(e)}")
             raise
 
 

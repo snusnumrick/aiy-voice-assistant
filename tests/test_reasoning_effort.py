@@ -9,6 +9,8 @@ class TestReasoningEffort(unittest.TestCase):
     def setUp(self):
         self.config = Config()
 
+    @patch('openai.AsyncOpenAI', None)
+    @patch('openai.OpenAI', None)
     @patch('requests.post')
     def test_enum_maps_to_openai_minimal(self, mock_post):
         # Mock REST /responses reply
@@ -18,7 +20,6 @@ class TestReasoningEffort(unittest.TestCase):
         model = OpenAIModel(
             self.config,
             model_id="gpt-5",
-            prefer_responses_api=True,
             reasoning_effort=ReasoningEffort.QUICK,
         )
         _ = model.get_response([{"role": "user", "content": "hi"}])
@@ -35,13 +36,15 @@ class TestReasoningEffort(unittest.TestCase):
         self.assertIn('reasoning', payload)
         self.assertEqual(payload['reasoning'].get('effort'), 'minimal')
 
+    @patch('openai.AsyncOpenAI', None)
+    @patch('openai.OpenAI', None)
     @patch('requests.post')
     def test_string_aliases_and_passthrough(self, mock_post):
         mock_post.return_value.raise_for_status.return_value = None
         mock_post.return_value.json.return_value = {"text": "ok"}
 
         # internal string "comprehensive" -> high
-        model = OpenAIModel(self.config, model_id="gpt-5", prefer_responses_api=True, reasoning_effort="comprehensive")
+        model = OpenAIModel(self.config, model_id="gpt-5", reasoning_effort="comprehensive")
         _ = model.get_response([{"role": "user", "content": "hi"}])
         args, kwargs = mock_post.call_args
         import json as _json
@@ -49,7 +52,7 @@ class TestReasoningEffort(unittest.TestCase):
         self.assertEqual(payload['reasoning'].get('effort'), 'high')
 
         # openai-native string "medium" should pass through unchanged
-        model = OpenAIModel(self.config, model_id="gpt-5", prefer_responses_api=True, reasoning_effort="medium")
+        model = OpenAIModel(self.config, model_id="gpt-5", reasoning_effort="medium")
         _ = model.get_response([{"role": "user", "content": "hi"}])
         args, kwargs = mock_post.call_args
         payload = _json.loads(kwargs['data']) if isinstance(kwargs.get('data'), str) else kwargs.get('json')
@@ -65,7 +68,6 @@ class TestReasoningEffort(unittest.TestCase):
         model = OpenAIModel(
             self.config,
             model_id="gpt-5",
-            prefer_responses_api=True,
             reasoning_effort=ReasoningEffort.COMPREHENSIVE,
         )
         _ = model.get_response([{"role": "user", "content": "hi"}], reasoning_effort=ReasoningEffort.QUICK)
@@ -75,6 +77,8 @@ class TestReasoningEffort(unittest.TestCase):
         payload = _json.loads(kwargs['data']) if isinstance(kwargs.get('data'), str) else kwargs.get('json')
         self.assertEqual(payload['reasoning'].get('effort'), 'minimal')
 
+    @patch('openai.AsyncOpenAI', None)
+    @patch('openai.OpenAI', None)
     @patch('aiohttp.ClientSession.post')
     def test_per_call_override_async(self, mock_aiohttp_post):
         # Mock aiohttp response for /responses
@@ -94,7 +98,6 @@ class TestReasoningEffort(unittest.TestCase):
             model = OpenAIModel(
                 self.config,
                 model_id="gpt-5",
-                prefer_responses_api=True,
                 reasoning_effort=ReasoningEffort.COMPREHENSIVE,
             )
             out = ""

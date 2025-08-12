@@ -49,23 +49,20 @@ class TestAIModels(unittest.TestCase):
     @patch('openai.OpenAI')
     @patch('openai.AsyncOpenAI')
     def test_openai_model(self, MockAsyncOpenAI, MockOpenAI):
-        # Mock synchronous response
+        # Mock synchronous Responses API
         mock_openai = MockOpenAI.return_value
-        mock_openai.chat.completions.create.return_value.choices[0].message.content = "OpenAI response"
+        class SyncResp:
+            text = "OpenAI response"
+        mock_openai.responses.create.return_value = SyncResp()
 
-        # Mock asynchronous response
+        # Mock asynchronous Responses API
         mock_async_openai = MockAsyncOpenAI.return_value
-
-        async def mock_acompletion(*args, **kwargs):
-            class MockStream:
-                async def __aiter__(self):
-                    yield AsyncMock(choices=[AsyncMock(delta=AsyncMock(content="Async "))])
-                    yield AsyncMock(choices=[AsyncMock(delta=AsyncMock(content="OpenAI "))])
-                    yield AsyncMock(choices=[AsyncMock(delta=AsyncMock(content="response"))])
-
-            return MockStream()
-
-        mock_async_openai.chat.completions.create = mock_acompletion
+        class AsyncResp:
+            def __init__(self, text):
+                self.text = text
+        async def mock_acreate(*args, **kwargs):
+            return AsyncResp("Async OpenAI response")
+        mock_async_openai.responses.create = mock_acreate
 
         model = OpenAIModel(self.config)
 
