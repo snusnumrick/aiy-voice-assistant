@@ -120,7 +120,8 @@ def normalize_messages(messages: MessageList) -> List[Dict[str, str]]:
         List[Dict[str, str]]: A list of normalized message dictionaries.
     """
     return [
-        message.model_dump() if isinstance(message, MessageModel) else message
+        (getattr(message, "model_dump", None)() if getattr(message, "model_dump", None) else message.dict())
+        if isinstance(message, MessageModel) else message
         for message in messages
     ]
 
@@ -280,7 +281,8 @@ class OpenAIModel(AIModel):
         api_key: Optional[str] = None,
         model_id: Optional[str] = None,
         reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
-    ):
+        api: Optional[str] = None,
+    ): 
         """
         Initialize the OpenAI model.
 
@@ -290,6 +292,7 @@ class OpenAIModel(AIModel):
             api_key (Optional[str]): The API key for authentication.
             model_id (Optional[str]): The specific model ID to use.
             reasoning_effort (Optional[Union[str, ReasoningEffort]]): Preferred reasoning effort. Accepts ReasoningEffort (quick, thorough, comprehensive) or a string; mapped to OpenAI's "minimal"|"low"|"medium"|"high" for the Responses API.
+            api (Optional[str]): Which OpenAI API to use: "responses" (default) or "chat_completions"/"completions".
         """
         # Import module to avoid ImportError on old SDKs and allow graceful fallback
         import importlib
@@ -300,6 +303,18 @@ class OpenAIModel(AIModel):
         # Preserve for REST fallback
         self.base_url = base_url or getattr(openai, "base_url", None) or "https://api.openai.com/v1"
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        # API mode selection: default to "responses" to preserve current behavior/tests
+        # Optionally allow override from config key "openai_api" if provided
+        api_from_cfg = None
+        try:
+            api_from_cfg = config.get("openai_api")
+        except Exception:
+            api_from_cfg = None
+        api_choice = (api or api_from_cfg or "responses").lower()
+        if api_choice in ("chat_completions", "completions", "chat"):
+            self.api_mode = "chat_completions"
+        else:
+            self.api_mode = "responses"
         # Optional reasoning effort for Responses API (GPT‑5)
         # Accept enum or string (internal or OpenAI), normalize to OpenAI values
         _eff = (
@@ -381,53 +396,104 @@ class OpenAIModel(AIModel):
                     pass
             return "".join(out_text).strip()
 
-        # Always use the Responses API
-        # Prefer SDK Responses API if available
-        if self.client is not None and hasattr(self.client, "responses") and hasattr(self.client.responses, "create"):
+        # Branch by API mode
+        if self.api_mode == "chat_completions":
+            # Prefer SDK Chat Completions API if available
+            if self.client is not None and hasattr(self.client, "chat") and hasattr(self.client.chat, "completions") and hasattr(self.client.chat.completions, "create"):
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        max_tokens=self.max_tokens,
+                    )
+                    # Extract first choice message content
+                    content = None
+                    try:
+                        choices = getattr(response, "choices", None) or response.get("choices")
+                    except Exception:
+                        choices = None
+                    if choices:
+                        first = choices[0]
+                        message = getattr(first, "message", None) or first.get("message")
+                        if message:
+                            content = getattr(message, "content", None) or message.get("content")
+                    if content:
+                        return str(content)
+                except Exception as e:
+                    logging.error(f"Error in OpenAI Chat Completions SDK call: {str(e)}")
+                    raise
+            # REST fallback to /chat/completions
             try:
-                kwargs = {"model": self.model, "input": _messages_to_input(messages)}
+                url = f"{self.base_url.rstrip('/')}/chat/completions"
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
+                }
+                payload: Dict[str, Union[str, int, Dict, List]] = {
+                    "model": self.model,
+                    "messages": messages,
+                    "max_tokens": self.max_tokens,
+                }
+                resp = requests.post(
+                    url,
+                    headers=headers,
+                    data=json.dumps(payload),
+                    timeout=(10, 180),
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                choices = data.get("choices")
+                if choices:
+                    message = choices[0].get("message")
+                    if message and message.get("content"):
+                        return str(message["content"]) 
+                return json.dumps(data)
+            except Exception as e:
+                logging.error(f"Error in OpenAI REST Chat Completions call: {str(e)}")
+                raise
+        else:
+            # Responses API (default)
+            # Prefer SDK Responses API if available
+            if self.client is not None and hasattr(self.client, "responses") and hasattr(self.client.responses, "create"):
+                try:
+                    kwargs = {"model": self.model, "input": _messages_to_input(messages)}
+                    if eff:
+                        kwargs["reasoning"] = {"effort": eff}
+                    response = self.client.responses.create(**kwargs)
+                    text = _extract_responses_output(response)
+                    if text:
+                        return text
+                except Exception as e:
+                    logging.error(f"Error in OpenAI Responses SDK call: {str(e)}")
+                    raise
+            # REST fallback to /responses
+            try:
+                url = f"{self.base_url.rstrip('/')}/responses"
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
+                }
+                payload: Dict[str, Union[str, int, Dict, List]] = {
+                    "model": self.model,
+                    "input": _messages_to_input(messages),
+                }
                 if eff:
-                    kwargs["reasoning"] = {"effort": eff}
-                response = self.client.responses.create(**kwargs)
-                text = _extract_responses_output(response)
+                    payload["reasoning"] = {"effort": eff}
+                resp = requests.post(
+                    url,
+                    headers=headers,
+                    data=json.dumps(payload),
+                    timeout=self._timeout_profile(eff),
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                text = _extract_responses_output(data)
                 if text:
                     return text
+                return json.dumps(data)
             except Exception as e:
-                logging.error(f"Error in OpenAI Responses SDK call: {str(e)}")
+                logging.error(f"Error in OpenAI REST Responses call: {str(e)}")
                 raise
-        # REST fallback to /responses
-        try:
-            url = f"{self.base_url.rstrip('/')}/responses"
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
-            }
-            payload: Dict[str, Union[str, int, Dict, List]] = {
-                "model": self.model,
-                "input": _messages_to_input(messages),
-            }
-            if eff:
-                payload["reasoning"] = {"effort": eff}
-            # Synchronous REST fallback (OpenAI Responses API)
-            # Before:
-            # resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=60)
-            # After: give a short connect timeout and a longer read timeout for long reasoning
-            resp = requests.post(
-                url,
-                headers=headers,
-                data=json.dumps(payload),
-                timeout=self._timeout_profile(eff),  # (connect_timeout, read_timeout) in seconds
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            text = _extract_responses_output(data)
-            if text:
-                return text
-            # Final fallback for unusual shapes
-            return json.dumps(data)
-        except Exception as e:
-            logging.error(f"Error in OpenAI REST Responses call: {str(e)}")
-            raise
 
     def _timeout_profile(self, eff: Optional[str]) -> tuple:
         """
@@ -466,80 +532,135 @@ class OpenAIModel(AIModel):
         eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else self.reasoning_effort
         logging.info(f"Using reasoning effort: {eff}")
 
-        # Always use the Responses API (non‑streaming here; yield once)
-        # Try SDK first
-        if self.client_async is not None and hasattr(self.client_async, "responses") and hasattr(self.client_async.responses, "create"):
-            kwargs = {"model": self.model, "input": messages}
-            if eff:
-                kwargs["reasoning"] = {"effort": eff}
-            try:
-                resp_obj = await self.client_async.responses.create(**kwargs)
-            except Exception as e:
-                logging.error(f"Error in OpenAI Responses SDK async call: {str(e)}")
-                raise
-            # Extract
-            output_text = ""
-            try:
-                output = getattr(resp_obj, "output", None) or resp_obj.get("output")
-            except Exception:
-                output = None
-            if output:
-                for item in output:
-                    content = getattr(item, "content", None) or item.get("content")
-                    if content:
-                        for c in content:
-                            text = getattr(c, "text", None) or c.get("text")
-                            if text:
-                                output_text += text
-            if not output_text:
+        # Branch by API mode (non-streaming emission)
+        if self.api_mode == "chat_completions":
+            # Try SDK Chat Completions first
+            if self.client_async is not None and hasattr(self.client_async, "chat") and hasattr(self.client_async.chat, "completions") and hasattr(self.client_async.chat.completions, "create"):
                 try:
-                    t = getattr(resp_obj, "text", None) or resp_obj.get("text")
-                    if t:
-                        output_text = str(t)
+                    resp_obj = await self.client_async.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        max_tokens=self.max_tokens,
+                    )
+                    content = None
+                    try:
+                        choices = getattr(resp_obj, "choices", None) or resp_obj.get("choices")
+                    except Exception:
+                        choices = None
+                    if choices:
+                        first = choices[0]
+                        message = getattr(first, "message", None) or first.get("message")
+                        if message:
+                            content = getattr(message, "content", None) or message.get("content")
+                    if content:
+                        yield str(content)
+                        return
+                except Exception as e:
+                    logging.error(f"Error in OpenAI Chat Completions SDK async call: {str(e)}")
+                    raise
+            # REST fallback
+            url = f"{self.base_url.rstrip('/')}/chat/completions"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
+            }
+            payload: Dict[str, Union[str, int, Dict, List]] = {
+                "model": self.model,
+                "messages": messages,
+                "max_tokens": self.max_tokens,
+            }
+            try:
+                timeout_cfg = aiohttp.ClientTimeout(total=180)
+                async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
+                    async with session.post(url, headers=headers, json=payload) as resp:
+                        resp.raise_for_status()
+                        data = await resp.json()
+                        choices = data.get("choices")
+                        if choices:
+                            message = choices[0].get("message")
+                            if message and message.get("content"):
+                                yield str(message["content"]) 
+                                return
+                        yield json.dumps(data)
+                        return
+            except Exception as e:
+                logging.error(f"Error in OpenAI REST Chat Completions async call: {str(e)}")
+                raise
+        else:
+            # Responses API (default)
+            # Try SDK first
+            if self.client_async is not None and hasattr(self.client_async, "responses") and hasattr(self.client_async.responses, "create"):
+                kwargs = {"model": self.model, "input": messages}
+                if eff:
+                    kwargs["reasoning"] = {"effort": eff}
+                try:
+                    resp_obj = await self.client_async.responses.create(**kwargs)
+                except Exception as e:
+                    logging.error(f"Error in OpenAI Responses SDK async call: {str(e)}")
+                    raise
+                # Extract
+                output_text = ""
+                try:
+                    output = getattr(resp_obj, "output", None) or resp_obj.get("output")
                 except Exception:
-                    pass
-            if output_text:
-                yield output_text
-                return
-        # REST fallback (non‑streaming)
-        url = f"{self.base_url.rstrip('/')}/responses"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
-        }
-        payload: Dict[str, Union[str, int, Dict, List]] = {
-            "model": self.model,
-            "input": messages,
-        }
-        if eff:
-            payload["reasoning"] = {"effort": eff}
-        try:
-            timeout_cfg = aiohttp.ClientTimeout(total=600)  # allow extended server processing
-            async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
-                async with session.post(url, headers=headers, json=payload) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
-                    # Extract output text
-                    output_text = ""
-                    output = data.get("output")
-                    if output:
-                        for item in output:
-                            content = item.get("content")
-                            if content:
-                                for c in content:
-                                    t = c.get("text")
-                                    if t:
-                                        output_text += t
-                    if not output_text:
-                        t = data.get("text")
+                    output = None
+                if output:
+                    for item in output:
+                        content = getattr(item, "content", None) or item.get("content")
+                        if content:
+                            for c in content:
+                                text = getattr(c, "text", None) or c.get("text")
+                                if text:
+                                    output_text += text
+                if not output_text:
+                    try:
+                        t = getattr(resp_obj, "text", None) or resp_obj.get("text")
                         if t:
                             output_text = str(t)
-                    if output_text:
-                        yield output_text
-                        return
-        except Exception as e:
-            logging.error(f"Error in OpenAI REST Responses async call: {str(e)}")
-            raise
+                    except Exception:
+                        pass
+                if output_text:
+                    yield output_text
+                    return
+            # REST fallback (non‑streaming)
+            url = f"{self.base_url.rstrip('/')}/responses"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
+            }
+            payload: Dict[str, Union[str, int, Dict, List]] = {
+                "model": self.model,
+                "input": messages,
+            }
+            if eff:
+                payload["reasoning"] = {"effort": eff}
+            try:
+                timeout_cfg = aiohttp.ClientTimeout(total=600)  # allow extended server processing
+                async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
+                    async with session.post(url, headers=headers, json=payload) as resp:
+                        resp.raise_for_status()
+                        data = await resp.json()
+                        # Extract output text
+                        output_text = ""
+                        output = data.get("output")
+                        if output:
+                            for item in output:
+                                content = item.get("content")
+                                if content:
+                                    for c in content:
+                                        t = c.get("text")
+                                        if t:
+                                            output_text += t
+                        if not output_text:
+                            t = data.get("text")
+                            if t:
+                                output_text = str(t)
+                        if output_text:
+                            yield output_text
+                            return
+            except Exception as e:
+                logging.error(f"Error in OpenAI REST Responses async call: {str(e)}")
+                raise
 
 
 class ClaudeAIModel(AIModel):
@@ -719,6 +840,7 @@ class OpenRouterModel(OpenAIModel):
             base_url=base_url,
             api_key=os.getenv("OPENROUTER_API_KEY"),
             model_id=model,
+            api="chat_completions",
         )
 
 
@@ -734,10 +856,10 @@ class PerplexityModel(OpenAIModel):
         Args:
             config (Config): The application configuration object.
         """
-        model = config.get("perplexity_model", "llama-3-sonar-large-32k-online")
+        model = config.get("perplexity_model", "sonar")
         base_url = "https://api.perplexity.ai"
         api_key = os.getenv("PERPLEXITY_API_KEY")
-        super().__init__(config, base_url=base_url, api_key=api_key, model_id=model)
+        super().__init__(config, base_url=base_url, api_key=api_key, model_id=model, api="chat_completions")
 
 
 class DeepseekModel(OpenAIModel):
@@ -755,7 +877,7 @@ class DeepseekModel(OpenAIModel):
         model = config.get("deepseek_model", "deepseek-reasoner")
         base_url = "https://api.deepseek.com"
         api_key = os.getenv("DEEPSEEK_API_KEY")
-        super().__init__(config, base_url=base_url, api_key=api_key, model_id=model)
+        super().__init__(config, base_url=base_url, api_key=api_key, model_id=model, api="chat_completions")
 
 
 # Debug functions
