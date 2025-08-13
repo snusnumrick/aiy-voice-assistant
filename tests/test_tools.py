@@ -100,6 +100,10 @@ class TestExtractSentences(unittest.TestCase):
         self.assert_sentences("Швеция - 3:56.92 8. Нидерланды - 3:59.52",
                               ["Швеция - 3:56.92", "8. Нидерланды - 3:59.52"])
 
+    def test_plain_text_no_punctuation_returns_empty(self):
+        text = "встреча Путина и Трампа запланирована на 15 августа на Аляске"
+        self.assert_sentences(text, [])
+
 
 if __name__ == '__main__':
     unittest.main()

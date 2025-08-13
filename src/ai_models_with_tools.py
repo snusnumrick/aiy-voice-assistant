@@ -285,8 +285,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 async for response in self._get_response_async_plain(messages):
                     logger.debug(f"{self._time_str()}AI response: {response}")
                     yield response
-        except Exception:
-            # logger.error(f"Error in get_response_async: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error in get_response_async: {str(e)}")
             raise
 
     async def _get_response_async_plain(
@@ -441,7 +441,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             Yields:
                 str: Any remaining text and the result of processing tool use, if applicable.
             """
-            sentences = extract_sentences(_current_text)
+            sentences = extract_sentences(_current_text, expected_enumeration)
             for s in sentences:
                 yield s
 
@@ -496,14 +496,14 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 elif event_type == "content_block_start":
                     current_tool_use = process_content_block_start(event)
 
-                elif event_type == "content_block_stop":
-                    async for sentence in process_content_block_stop(
-                        current_tool_use, current_text, message_list
-                    ):
-                        if sentence:
-                            yield sentence
-                    current_text = ""
-                    current_tool_use = None
+                # elif event_type == "content_block_stop":
+                #     async for sentence in process_content_block_stop(
+                #         current_tool_use, current_text, message_list
+                #     ):
+                #         if sentence:
+                #             yield sentence
+                #     current_text = ""
+                #     current_tool_use = None
 
                 elif event_type == "message_stop":
                     async for sentence in process_message_stop(
@@ -522,8 +522,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
         except StopAsyncIteration:
             logger.debug("AsyncGenerator completed normally.")
-        except Exception:
-            # logger.error(f"Error in _get_response_async_streaming: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error in _get_response_async_streaming: {str(e)}")
             raise
 
     async def _process_tool_use_streaming(
@@ -974,20 +974,23 @@ async def main_async():
     """
     from src.code_interpreter_tool import InterpreterTool
     from src.wizard_tool import WizardTool
+    from src.web_search_tool import WebSearchTool
 
     # from src.interpreter_tool_judge0 import InterpreterTool
     config = Config()
     timezone = get_timezone()
 
-    system = """Today is August 6 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
+    system = """Today is August 13 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
             Отвечай естественно, как в устной речи. Говори максимально просто и понятно. Не используй списки и нумерации. Например, не говори 1. что-то; 2.
             что-то. говори во-первых, во-вторых или просто перечисляй. При ответе на вопрос где важно время, помни какое сегодня число. Если чего-то не знаешь,
             так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов."""
 
     interpreter_tool = InterpreterTool(config)
     wizard_tool = WizardTool(config)
+    search_tool = WebSearchTool(config)
     model = ClaudeAIModelWithTools(config, tools=[
-        interpreter_tool.tool_definition(),
+        # search_tool.tool_definition(),
+        # interpreter_tool.tool_definition(),
         # wizard_tool.tool_definition(),
     ], timezone=timezone)
     # model = ClaudeAIModel(config)
@@ -995,7 +998,8 @@ async def main_async():
         {"role": "system", "content": system},
         # {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4."},
         # {"role": "user", "content": "how many r in word strawberry? think it through"},
-        {"role": "user", "content": "где встретятся трамп с путиным"},
+        # {"role": "user", "content": "в каком клубе снйчас играет Месси"},
+        {"role": "user", "content": "где именно встретятся трамп с путиным"},
     ]
     m = ""
     async for response_part in model.get_response_async(messages):
