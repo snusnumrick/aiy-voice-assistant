@@ -216,6 +216,7 @@ class WizardTool:
                 {"role": "user", "content": prompt}
             ], reasoning_effort=to_reasoning_effort(effort)):
                 result += response_chunk
+            logger.info(f"do_wizardry_async: {result}")
             return result
 
         except Exception as e:
@@ -227,7 +228,7 @@ async def test_wizard():
     config = Config()
     wizard = WizardTool(config)
 
-    question = "У меня есть металлическая чашка, но почему-то у нее заверено верхнее отверстие, а внизу дырка. Как из нее пить?"
+    question = "Как связаны время и сознание с точки зрения современной науки? Какие существуют теории о природе этой связи и что говорят последние исследования в нейронауке и философии сознания?"
 
     test_params = {
         # "question": "What are the philosophical implications of quantum entanglement?",
