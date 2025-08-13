@@ -29,6 +29,7 @@ from src.tools import (
     yield_complete_sentences,
     retry_async_generator,
     get_token_count,
+    get_timezone,
 )
 
 logger = logging.getLogger(__name__)
@@ -86,10 +87,30 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self.tools_description = self._create_tools_description(tools) if tools else []
         self.tools_processors = {t.name: t.processor for t in tools} if tools else {}
         if config.get("claude_use_search", False):
+            # Build user_location for Claude web_search tool
+            def _build_user_location(timezone: str) -> Dict:
+                try:
+                    import geocoder  # lazy import to avoid test import issues
+                    g = geocoder.ip("me")
+                    country_code = getattr(g, "country_code", None)
+                    country = country_code or getattr(g, "country", None) or ""
+                    return {
+                        "type": "approximate",
+                        "city": getattr(g, "city", None) or "",
+                        "region": getattr(g, "state", None) or "",
+                        "country": country,
+                        "timezone": timezone or "",
+                    }
+                except Exception:
+                    # Fallback to timezone only
+                    return {"type": "approximate", "timezone": timezone or ""}
+
+            user_location = _build_user_location(timezone)
             self.tools_description.append({
                 "type": "web_search_20250305",
                 "name": "web_search",
-                "max_uses": config.get("claude_max_search_use", 5)
+                "max_uses": config.get("claude_max_search_use", 5),
+                "user_location": user_location,
             })
 
     @staticmethod
@@ -956,6 +977,7 @@ async def main_async():
 
     # from src.interpreter_tool_judge0 import InterpreterTool
     config = Config()
+    timezone = get_timezone()
 
     system = """Today is August 6 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
             Отвечай естественно, как в устной речи. Говори максимально просто и понятно. Не используй списки и нумерации. Например, не говори 1. что-то; 2.
@@ -967,12 +989,13 @@ async def main_async():
     model = ClaudeAIModelWithTools(config, tools=[
         interpreter_tool.tool_definition(),
         # wizard_tool.tool_definition(),
-    ])
+    ], timezone=timezone)
     # model = ClaudeAIModel(config)
     messages = [
         {"role": "system", "content": system},
         # {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4."},
-        {"role": "user", "content": "how many r in word strawberry? think it through"},
+        # {"role": "user", "content": "how many r in word strawberry? think it through"},
+        {"role": "user", "content": "где встретятся трамп с путиным"},
     ]
     m = ""
     async for response_part in model.get_response_async(messages):
