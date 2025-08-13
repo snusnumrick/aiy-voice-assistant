@@ -408,7 +408,16 @@ class OpenAIModel(AIModel):
             }
             if eff:
                 payload["reasoning"] = {"effort": eff}
-            resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=60)
+            # Synchronous REST fallback (OpenAI Responses API)
+            # Before:
+            # resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=60)
+            # After: give a short connect timeout and a longer read timeout for long reasoning
+            resp = requests.post(
+                url,
+                headers=headers,
+                data=json.dumps(payload),
+                timeout=self._timeout_profile(eff),  # (connect_timeout, read_timeout) in seconds
+            )
             resp.raise_for_status()
             data = resp.json()
             text = _extract_responses_output(data)
@@ -419,6 +428,21 @@ class OpenAIModel(AIModel):
         except Exception as e:
             logging.error(f"Error in OpenAI REST Responses call: {str(e)}")
             raise
+
+    def _timeout_profile(self, eff: Optional[str]) -> tuple:
+        """
+        Return (connect_timeout, read/total timeout) based on reasoning effort.
+        eff is already normalized to OpenAI values: "minimal" | "low" | "medium" | "high" | None
+        """
+        connect = 10  # seconds
+        mapping = {
+            "minimal": 120,  # quick
+            "low": 180,
+            "medium": 300,   # thorough
+            "high": 600,     # comprehensive
+        }
+        read_total = mapping.get(eff, 180 if eff else 180)
+        return connect, read_total
 
     @retry_async_generator()
     @yield_complete_sentences
@@ -490,8 +514,9 @@ class OpenAIModel(AIModel):
         if eff:
             payload["reasoning"] = {"effort": eff}
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=payload, timeout=60) as resp:
+            timeout_cfg = aiohttp.ClientTimeout(total=600)  # allow extended server processing
+            async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
+                async with session.post(url, headers=headers, json=payload) as resp:
                     resp.raise_for_status()
                     data = await resp.json()
                     # Extract output text
