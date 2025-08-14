@@ -785,6 +785,32 @@ class OpenAIModelWithTools(OpenAIModel):
         self.tools_processors = {t.name: t.processor for t in tools} if tools else {}
         self.tools = {t.name: t for t in tools} if tools else {}
         self.tools_description = self._create_tools_description(tools) if tools else []
+        # Enable OpenAI built-in web search (Responses API) if requested via config
+        if config.get("openai_use_search", False):
+            # Build approximate user location (best-effort, optional)
+            def _build_user_location() -> Dict:
+                try:
+                    import geocoder  # lazy import to avoid import issues in tests
+                    g = geocoder.ip("me")
+                    return {
+                        "type": "approximate",
+                        "country": getattr(g, "country", None) or getattr(g, "country_code", "") or "",
+                        "region": getattr(g, "state", None) or "",
+                        "city": getattr(g, "city", None) or "",
+                    }
+                except Exception:
+                    # Fallback minimal approximate location
+                    return {"type": "approximate"}
+            search_ctx_size = config.get("openai_search_context_size", "high")
+            self.tools_description.append({
+                "type": "web_search_preview",
+                "user_location": _build_user_location(),
+                "search_context_size": str(search_ctx_size).lower(),
+            })
+            # Default text/verbosity/reasoning/store preferences for Responses API
+            self._openai_text_verbosity = str(config.get("openai_text_verbosity", "medium")).lower()
+            self._openai_reasoning_effort = str(config.get("openai_reasoning_effort", "medium")).lower()
+            self._openai_store = bool(config.get("openai_store", True))
 
     @classmethod
     def _create_tools_description(cls, tools: List[Tool]) -> List[Dict]:
@@ -825,6 +851,63 @@ class OpenAIModelWithTools(OpenAIModel):
         """
         messages = normalize_messages(messages)
 
+        # If built-in web search is enabled, use the Responses API with the requested schema
+        use_builtin_search = any(isinstance(t, dict) and t.get("type") == "web_search_preview" for t in self.tools_description)
+        if use_builtin_search:
+            def _extract_responses_output(resp_obj) -> str:
+                out_text = []
+                try:
+                    output = getattr(resp_obj, "output", None) or resp_obj.get("output")
+                except Exception:
+                    output = None
+                if output:
+                    for item in output:
+                        content = getattr(item, "content", None) or item.get("content")
+                        if content:
+                            for c in content:
+                                text = getattr(c, "text", None) or c.get("text")
+                                if text:
+                                    out_text.append(text)
+                if not out_text:
+                    try:
+                        text = getattr(resp_obj, "text", None) or resp_obj.get("text")
+                        if text:
+                            out_text.append(text)
+                    except Exception:
+                        pass
+                return "".join(out_text).strip()
+
+            payload = {
+                "model": self.model,
+                "input": messages,
+                "text": {"format": {"type": "text"}, "verbosity": self._openai_text_verbosity if hasattr(self, "_openai_text_verbosity") else "medium"},
+                "reasoning": {"effort": self._openai_reasoning_effort if hasattr(self, "_openai_reasoning_effort") else "medium"},
+                "tools": self.tools_description,
+                "store": getattr(self, "_openai_store", True),
+            }
+            # Prefer SDK if available
+            try:
+                if getattr(self, "client", None) is not None and hasattr(self.client, "responses") and hasattr(self.client.responses, "create"):
+                    resp = self.client.responses.create(**payload)
+                    text = _extract_responses_output(resp)
+                    if text:
+                        return text
+            except Exception as e:
+                logging.error(f"OpenAI Responses SDK error: {e}")
+                # fall through to REST
+            # REST fallback
+            import requests
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
+            }
+            url = f"https://api.openai.com/v1/responses"
+            r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=(10, 600))
+            r.raise_for_status()
+            data = r.json()
+            return _extract_responses_output(data)
+
+        # Otherwise, use Chat Completions with function tools
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -875,6 +958,79 @@ class OpenAIModelWithTools(OpenAIModel):
         """
         messages = normalize_messages(messages)
 
+        # If built-in web search is enabled, use the Responses API (non-streaming minimal implementation)
+        use_builtin_search = any(isinstance(t, dict) and t.get("type") == "web_search_preview" for t in self.tools_description)
+        if use_builtin_search:
+            payload = {
+                "model": self.model,
+                "input": messages,
+                "text": {"format": {"type": "text"}, "verbosity": getattr(self, "_openai_text_verbosity", "medium")},
+                "reasoning": {"effort": getattr(self, "_openai_reasoning_effort", "medium")},
+                "tools": self.tools_description,
+                "store": getattr(self, "_openai_store", True),
+            }
+            try:
+                if getattr(self, "client_async", None) is not None and hasattr(self.client_async, "responses") and hasattr(self.client_async.responses, "create"):
+                    resp_obj = await self.client_async.responses.create(**payload)
+                    # Extract text
+                    text_out = ""
+                    try:
+                        output = getattr(resp_obj, "output", None) or resp_obj.get("output")
+                    except Exception:
+                        output = None
+                    if output:
+                        for item in output:
+                            content = getattr(item, "content", None) or item.get("content")
+                            if content:
+                                for c in content:
+                                    t = getattr(c, "text", None) or c.get("text")
+                                    if t:
+                                        text_out += t
+                    if not text_out:
+                        try:
+                            t = getattr(resp_obj, "text", None) or resp_obj.get("text")
+                            if t:
+                                text_out = str(t)
+                        except Exception:
+                            pass
+                    if text_out:
+                        yield text_out
+                        return
+            except Exception as e:
+                logging.error(f"OpenAI Responses SDK async error: {e}")
+                raise
+            # REST fallback (non-streaming)
+            url = "https://api.openai.com/v1/responses"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
+            }
+            timeout_cfg = aiohttp.ClientTimeout(total=600)
+            async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
+                async with session.post(url, headers=headers, json=payload) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+                    # Extract text
+                    output_text = ""
+                    output = data.get("output")
+                    if output:
+                        for item in output:
+                            content = item.get("content")
+                            if content:
+                                for c in content:
+                                    t = c.get("text")
+                                    if t:
+                                        output_text += t
+                    if not output_text:
+                        t = data.get("text")
+                        if t:
+                            output_text = str(t)
+                    if output_text:
+                        yield output_text
+                        return
+            return
+
+        # Otherwise, use Chat Completions with function tools (streaming)
         logger.debug(f"open ai: Getting response: {messages}")
         stream = await self.client_async.chat.completions.create(
             model=self.model,
@@ -990,7 +1146,7 @@ async def main_async():
     search_tool = WebSearchTool(config)
     # model = ClaudeAIModelWithTools(config, tools=[
     model = OpenAIModelWithTools(config, tools=[
-        search_tool.tool_definition(),
+        # search_tool.tool_definition(),
         # interpreter_tool.tool_definition(),
         # wizard_tool.tool_definition(),
     ])

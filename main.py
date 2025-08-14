@@ -126,7 +126,11 @@ def main():
     use_claude_search = config.get("claude_use_search", False)
 
     with Board() as board, Leds() as leds:
-        if not use_claude_search:
+        # Decide whether to use our custom WebSearchTool or the provider's built-in
+        ai_model_api = config.get("ai_model_api", "claude")
+        use_openai_search = config.get("openai_use_search", False) if ai_model_api == "openai" else False
+        use_builtin_search = use_claude_search if ai_model_api == "claude" else use_openai_search
+        if not use_builtin_search:
             search_tool = WebSearchTool(config)
         stress_tool = StressTool(config)
         send_email_tool = SendEmailTool(config)
@@ -143,7 +147,7 @@ def main():
             weather_tool.tool_definition(),
             wizard_tool.tool_definition(),
         ]
-        if not use_claude_search:
+        if not use_builtin_search:
             tools.append(search_tool.tool_definition())
 
         # Initial LED feedback
