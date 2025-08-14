@@ -1,7 +1,9 @@
 {
   "llm_streaming": true,
   "audio_recording_chunk_duration_sec": 0.3,
+  "ai_model_api": "openai",
   "claude_model": "claude-sonnet-4-20250514",
   "claude_use_search":"True",
+  "openai_model": "gpt-5-mini",
   "admin_email": "treskunov@gmail.com"
 }

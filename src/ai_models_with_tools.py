@@ -988,11 +988,13 @@ async def main_async():
     interpreter_tool = InterpreterTool(config)
     wizard_tool = WizardTool(config)
     search_tool = WebSearchTool(config)
-    model = ClaudeAIModelWithTools(config, tools=[
-        # search_tool.tool_definition(),
+    # model = ClaudeAIModelWithTools(config, tools=[
+    model = OpenAIModelWithTools(config, tools=[
+        search_tool.tool_definition(),
         # interpreter_tool.tool_definition(),
         # wizard_tool.tool_definition(),
-    ], timezone=timezone)
+    ])
+    # ], timezone=timezone)
     # model = ClaudeAIModel(config)
     messages = [
         {"role": "system", "content": system},

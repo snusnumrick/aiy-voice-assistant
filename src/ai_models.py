@@ -299,6 +299,7 @@ class OpenAIModel(AIModel):
         openai = importlib.import_module("openai")
 
         self.model = model_id or config.get("openai_model", "gpt-4o")
+        logging.info(f"Using model: {self.model}")
         self.max_tokens = config.get("max_tokens", 4096)
         # Preserve for REST fallback
         self.base_url = base_url or getattr(openai, "base_url", None) or "https://api.openai.com/v1"
@@ -530,7 +531,7 @@ class OpenAIModel(AIModel):
 
         # Per-call override for reasoning effort
         eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else self.reasoning_effort
-        logging.info(f"Using reasoning effort: {eff}")
+        # logging.info(f"Using reasoning effort: {eff}")
 
         # Branch by API mode (non-streaming emission)
         if self.api_mode == "chat_completions":
@@ -944,7 +945,8 @@ with the answer. The reasoning process and answer are enclosed within <think> </
 
     config = Config()
     # Use OpenAI's high-reasoning model (GPT-5)
-    ai_model = OpenAIModel(config, model_id="gpt-5", reasoning_effort=ReasoningEffort.COMPREHENSIVE)
+    ai_model = OpenAIModel(config)
+    # ai_model = OpenAIModel(config, model_id="gpt-5", reasoning_effort=ReasoningEffort.COMPREHENSIVE)
     # ai_model = DeepseekModel(config)
     # ai_model = OpenAIModel(config, model_id="gpt-4o-mini")
     print(f"using {ai_model.__class__.__name__} model with {ai_model.model}...")
