@@ -147,6 +147,15 @@ class TestHelperFunctions(unittest.TestCase):
         self.assertEqual(result[1], ("en", "English text"))
         self.assertEqual(result[2], ("de", "German text"))
 
+    def test_extract_language_whitespace_and_missing_dollar(self):
+        # With spaces after ':' and before '$', and missing trailing '$' in the first tag
+        text = "$lang: ru Привет! $lang: en $ Hello! $lang:de$Hallo!"
+        result = extract_language(text)
+        # Expect three segments in ru, en, de
+        self.assertEqual(result[0], ("ru", "Привет!"))
+        self.assertEqual(result[1], ("en", "Hello!"))
+        self.assertEqual(result[2], ("de", "Hallo!"))
+
     def test_adjust_rgb_brightness(self):
         rgb = [255, 128, 64]
         result = adjust_rgb_brightness(rgb, "low")

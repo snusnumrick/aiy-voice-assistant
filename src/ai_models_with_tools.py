@@ -901,7 +901,7 @@ class OpenAIModelWithTools(OpenAIModel):
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
             }
-            url = f"https://api.openai.com/v1/responses"
+            url = "https://api.openai.com/v1/responses"
             r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=(10, 600))
             r.raise_for_status()
             data = r.json()
@@ -1157,7 +1157,8 @@ async def main_async():
         # {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4."},
         # {"role": "user", "content": "how many r in word strawberry? think it through"},
         # {"role": "user", "content": "в каком клубе снйчас играет Месси"},
-        {"role": "user", "content": "где именно встретятся трамп с путиным"},
+        # {"role": "user", "content": "где именно встретятся трамп с путиным"},
+        {"role": "user", "content": "Что такое бегство декурионов в Поздней Римской империи?"},
     ]
     m = ""
     async for response_part in model.get_response_async(messages):

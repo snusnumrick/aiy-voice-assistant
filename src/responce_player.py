@@ -91,19 +91,45 @@ def language_prompt() -> str:
 
 
 def extract_language(text: str, default_lang="ru") -> List[Tuple[str, str]]:
-    # Regular expression to match language codes and subsequent text
-    pattern = r"(?:^(.*?))?(?:\$lang:\s*(\w+)\$(.*?))?(?=\$lang:|$)"
+    """
+    Parse text into (language, segment) tuples using $lang: <code>[$] markers.
 
-    # Find all matches in the text
-    matches = re.findall(pattern, text, re.DOTALL)
+    Robust to extra whitespace after ':' and before an optional closing '$',
+    and to a missing closing '$' entirely. Example accepted forms:
+      - "$lang:en$ Hello"
+      - "$lang: en$ Hello"
+      - "$lang: en $ Hello"
+      - "$lang: en Hello"  (no closing '$')
 
-    # Process matches into the desired format
-    result = []
-    for default, lang, segment in matches:
-        if default.strip():
-            result.append((default_lang, default.strip()))
-        if lang:
-            result.append((lang, segment.strip()))
+    Any text before the first $lang: tag is attributed to default_lang.
+    """
+    result: List[Tuple[str, str]] = []
+
+    # Find all $lang: occurrences with an optional closing '$'
+    tag_pattern = re.compile(r"\$lang:\s*([A-Za-z]+)\s*\$?", re.IGNORECASE)
+
+    matches = list(tag_pattern.finditer(text))
+
+    if not matches:
+        leading = text.strip()
+        if leading:
+            result.append((default_lang, leading))
+        return result
+
+    # Handle any leading text before the first tag
+    first = matches[0]
+    leading = text[: first.start()].strip()
+    if leading:
+        result.append((default_lang, leading))
+
+    # For each tag, capture the segment until the start of the next tag (or end)
+    for i, m in enumerate(matches):
+        lang = m.group(1)
+        seg_start = m.end()
+        seg_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        segment = text[seg_start:seg_end].strip()
+        if segment:
+            result.append((lang, segment))
 
     return result
 
