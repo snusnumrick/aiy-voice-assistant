@@ -11,7 +11,7 @@ import json
 import logging
 import os
 import sys
-from typing import List, Dict, Callable, AsyncGenerator, Optional, Coroutine
+from typing import List, Dict, Callable, AsyncGenerator, Optional, Coroutine, Union
 
 import aiohttp
 from pydantic import BaseModel, Field
@@ -22,6 +22,8 @@ from src.ai_models import (
     MessageList,
     normalize_messages,
     GeminiAIModel,
+    ReasoningEffort,
+    _to_openai_reasoning_effort,
 )
 from src.config import Config
 from src.tools import (
@@ -839,12 +841,13 @@ class OpenAIModelWithTools(OpenAIModel):
             for t in tools
         ]
 
-    def get_response(self, messages: MessageList) -> str:
+    def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
         """
         Generate a response using the OpenAI model with tool capabilities.
 
         Args:
             messages (List[Dict[str, str]]): A list of message dictionaries representing the conversation history.
+            reasoning_effort (Optional[Union[str, ReasoningEffort]]): Per-call override for reasoning effort (Responses API).
 
         Returns:
             str: The generated response.
@@ -877,14 +880,18 @@ class OpenAIModelWithTools(OpenAIModel):
                         pass
                 return "".join(out_text).strip()
 
+            # Normalize effort: include only if provided per-call
+            eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else None
+
             payload = {
                 "model": self.model,
                 "input": messages,
                 "text": {"format": {"type": "text"}, "verbosity": self._openai_text_verbosity if hasattr(self, "_openai_text_verbosity") else "medium"},
-                "reasoning": {"effort": self._openai_reasoning_effort if hasattr(self, "_openai_reasoning_effort") else "medium"},
                 "tools": self.tools_description,
                 "store": getattr(self, "_openai_store", True),
             }
+            if eff:
+                payload["reasoning"] = {"effort": eff}
             # Prefer SDK if available
             try:
                 if getattr(self, "client", None) is not None and hasattr(self.client, "responses") and hasattr(self.client.responses, "create"):
@@ -939,13 +946,14 @@ class OpenAIModelWithTools(OpenAIModel):
                     )
                     iterate = True
             if iterate:
-                response = self.get_response(_messages)
+                response = self.get_response(_messages, reasoning_effort=reasoning_effort)
                 response_text += response
             return response_text
 
     @retry_async_generator()
     async def get_response_async(
-        self, messages: MessageList
+        self, messages: MessageList,
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response using the OpenAI model with tool capabilities.
@@ -961,14 +969,16 @@ class OpenAIModelWithTools(OpenAIModel):
         # If built-in web search is enabled, use the Responses API (non-streaming minimal implementation)
         use_builtin_search = any(isinstance(t, dict) and t.get("type") == "web_search_preview" for t in self.tools_description)
         if use_builtin_search:
+            eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else None
             payload = {
                 "model": self.model,
                 "input": messages,
                 "text": {"format": {"type": "text"}, "verbosity": getattr(self, "_openai_text_verbosity", "medium")},
-                "reasoning": {"effort": getattr(self, "_openai_reasoning_effort", "medium")},
                 "tools": self.tools_description,
                 "store": getattr(self, "_openai_store", True),
             }
+            if eff:
+                payload["reasoning"] = {"effort": eff}
             try:
                 if getattr(self, "client_async", None) is not None and hasattr(self.client_async, "responses") and hasattr(self.client_async.responses, "create"):
                     resp_obj = await self.client_async.responses.create(**payload)
@@ -1139,7 +1149,9 @@ async def main_async():
     system = """Today is August 13 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
             Отвечай естественно, как в устной речи. Говори максимально просто и понятно. Не используй списки и нумерации. Например, не говори 1. что-то; 2.
             что-то. говори во-первых, во-вторых или просто перечисляй. При ответе на вопрос где важно время, помни какое сегодня число. Если чего-то не знаешь,
-            так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов."""
+            так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов.
+            В ответах не используй ссылки на источники.
+            """
 
     interpreter_tool = InterpreterTool(config)
     wizard_tool = WizardTool(config)
@@ -1157,8 +1169,8 @@ async def main_async():
         # {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4."},
         # {"role": "user", "content": "how many r in word strawberry? think it through"},
         # {"role": "user", "content": "в каком клубе снйчас играет Месси"},
-        # {"role": "user", "content": "где именно встретятся трамп с путиным"},
-        {"role": "user", "content": "Что такое бегство декурионов в Поздней Римской империи?"},
+        {"role": "user", "content": "где именно встретятся трамп с путиным, проверь свежие новости"},
+        # {"role": "user", "content": "Что такое бегство декурионов в Поздней Римской империи?"},
     ]
     m = ""
     async for response_part in model.get_response_async(messages):

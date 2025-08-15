@@ -4,6 +4,7 @@
   "ai_model_api": "openai",
   "claude_model": "claude-sonnet-4-20250514",
   "claude_use_search":"True",
-  "openai_model": "gpt-5-mini",
+  "openai_model": "gpt-4o",
+  "openai_use_search":"False",
   "admin_email": "treskunov@gmail.com"
 }

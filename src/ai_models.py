@@ -361,8 +361,8 @@ class OpenAIModel(AIModel):
         """
         messages = normalize_messages(messages)
 
-        # Per-call override for reasoning effort
-        eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else self.reasoning_effort
+        # Per-call override for reasoning effort only; do not fall back to instance/config defaults
+        eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else None
         # logging.info(f"Using reasoning effort: {eff}")
 
         def _messages_to_input(msgs: MessageList):
@@ -522,6 +522,11 @@ class OpenAIModel(AIModel):
 
         Args:
             messages (MessageList): A list of message models representing the conversation history.
+            reasoning_effort (Optional[Union[str, ReasoningEffort]]): Per-call override for reasoning depth/effort.
+                Implementations may ignore it. For OpenAI Responses API, maps to effort levels:
+                - quick -> minimal
+                - thorough -> medium
+                - comprehensive -> high
 
         Yields:
             str: Parts of the generated response.
@@ -529,8 +534,8 @@ class OpenAIModel(AIModel):
         # logging.info(f"get_response_async: {messages}")
         messages = normalize_messages(messages)
 
-        # Per-call override for reasoning effort
-        eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else self.reasoning_effort
+        # Per-call override for reasoning effort only; do not fall back to instance/config defaults
+        eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else None
         # logging.info(f"Using reasoning effort: {eff}")
 
         # Branch by API mode (non-streaming emission)

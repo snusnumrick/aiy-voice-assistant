@@ -22,7 +22,7 @@ class TestReasoningEffort(unittest.TestCase):
             model_id="gpt-5",
             reasoning_effort=ReasoningEffort.QUICK,
         )
-        _ = model.get_response([{"role": "user", "content": "hi"}])
+        _ = model.get_response([{"role": "user", "content": "hi"}], reasoning_effort=ReasoningEffort.QUICK)
 
         # Verify payload mapping: quick -> minimal
         args, kwargs = mock_post.call_args
@@ -45,7 +45,7 @@ class TestReasoningEffort(unittest.TestCase):
 
         # internal string "comprehensive" -> high
         model = OpenAIModel(self.config, model_id="gpt-5", reasoning_effort="comprehensive")
-        _ = model.get_response([{"role": "user", "content": "hi"}])
+        _ = model.get_response([{"role": "user", "content": "hi"}], reasoning_effort="comprehensive")
         args, kwargs = mock_post.call_args
         import json as _json
         payload = _json.loads(kwargs['data']) if isinstance(kwargs.get('data'), str) else kwargs.get('json')
@@ -53,7 +53,7 @@ class TestReasoningEffort(unittest.TestCase):
 
         # openai-native string "medium" should pass through unchanged
         model = OpenAIModel(self.config, model_id="gpt-5", reasoning_effort="medium")
-        _ = model.get_response([{"role": "user", "content": "hi"}])
+        _ = model.get_response([{"role": "user", "content": "hi"}], reasoning_effort="medium")
         args, kwargs = mock_post.call_args
         payload = _json.loads(kwargs['data']) if isinstance(kwargs.get('data'), str) else kwargs.get('json')
         self.assertEqual(payload['reasoning'].get('effort'), 'medium')
