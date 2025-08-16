@@ -3,8 +3,8 @@
   "audio_recording_chunk_duration_sec": 0.3,
   "ai_model_api": "openai",
   "claude_model": "claude-sonnet-4-20250514",
-  "claude_use_search":"True",
-  "openai_model": "gpt-4o",
-  "openai_use_search":"False",
+  "claude_use_search":true,
+  "openai_model": "gpt-4o-2024-05-13",
+  "openai_use_search":false,
   "admin_email": "treskunov@gmail.com"
 }

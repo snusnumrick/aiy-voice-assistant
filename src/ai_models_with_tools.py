@@ -1158,7 +1158,7 @@ async def main_async():
     search_tool = WebSearchTool(config)
     # model = ClaudeAIModelWithTools(config, tools=[
     model = OpenAIModelWithTools(config, tools=[
-        # search_tool.tool_definition(),
+        search_tool.tool_definition(),
         # interpreter_tool.tool_definition(),
         # wizard_tool.tool_definition(),
     ])
@@ -1169,8 +1169,8 @@ async def main_async():
         # {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4."},
         # {"role": "user", "content": "how many r in word strawberry? think it through"},
         # {"role": "user", "content": "в каком клубе снйчас играет Месси"},
-        {"role": "user", "content": "где именно встретятся трамп с путиным, проверь свежие новости"},
-        # {"role": "user", "content": "Что такое бегство декурионов в Поздней Римской империи?"},
+        # {"role": "user", "content": "где именно встретятся трамп с путиным, проверь свежие новости"},
+        {"role": "user", "content": "Что такое бегство декурионов в Поздней Римской империи?"},
     ]
     m = ""
     async for response_part in model.get_response_async(messages):
