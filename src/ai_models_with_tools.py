@@ -498,14 +498,14 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 elif event_type == "content_block_start":
                     current_tool_use = process_content_block_start(event)
 
-                # elif event_type == "content_block_stop":
-                #     async for sentence in process_content_block_stop(
-                #         current_tool_use, current_text, message_list
-                #     ):
-                #         if sentence:
-                #             yield sentence
-                #     current_text = ""
-                #     current_tool_use = None
+                elif event_type == "content_block_stop":
+                    async for sentence in process_content_block_stop(
+                        current_tool_use, current_text, message_list
+                    ):
+                        if sentence:
+                            yield sentence
+                    current_text = ""
+                    current_tool_use = None
 
                 elif event_type == "message_stop":
                     async for sentence in process_message_stop(
@@ -1156,8 +1156,8 @@ async def main_async():
     interpreter_tool = InterpreterTool(config)
     wizard_tool = WizardTool(config)
     search_tool = WebSearchTool(config)
-    # model = ClaudeAIModelWithTools(config, tools=[
-    model = OpenAIModelWithTools(config, tools=[
+    model = ClaudeAIModelWithTools(config, tools=[
+    # model = OpenAIModelWithTools(config, tools=[
         search_tool.tool_definition(),
         # interpreter_tool.tool_definition(),
         # wizard_tool.tool_definition(),

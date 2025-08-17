@@ -67,6 +67,7 @@ class WebSearchTool:
         pass
 
     def do_search(self, parameters: Dict[str, any]) -> str:
+        logger.info(f"searching for {parameters['query']}")
         if "query" in parameters:
             self._start_processing()
             result = self.web_searcher.search(parameters["query"])
@@ -76,6 +77,7 @@ class WebSearchTool:
         return ""
 
     async def do_search_async(self, parameters: Dict[str, any]) -> str:
+        logger.info(f"searching async for {parameters['query']}")
         if "query" in parameters:
             self._start_processing()
             logger.info(f"searching for {parameters['query']}")

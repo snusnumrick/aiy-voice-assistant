@@ -683,6 +683,7 @@ class ClaudeAIModel(AIModel):
             timezone (str): The timezone to use for timestamps.
         """
         self.model = config.get("claude_model", "claude-3-5-sonnet-20240620")
+        logging.info(f"Using model: {self.model}")
         self.max_tokens = config.get("max_tokens", 4096)
         self.url = "https://api.anthropic.com/v1/messages"
         self.headers = {

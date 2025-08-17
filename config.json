@@ -1,9 +1,9 @@
 {
   "llm_streaming": true,
   "audio_recording_chunk_duration_sec": 0.3,
-  "ai_model_api": "openai",
-  "claude_model": "claude-sonnet-4-20250514",
-  "claude_use_search":true,
+  "ai_model_api": "claude",
+  "claude_model": "claude-3-7-sonnet-latest",
+  "claude_use_search":false,
   "openai_model": "gpt-4o-2024-05-13",
   "openai_use_search":false,
   "admin_email": "treskunov@gmail.com"

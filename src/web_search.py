@@ -283,6 +283,7 @@ class WebSearcher:
         self.config = config
 
     async def search_providers_async(self, query: str, enabled_providers):
+        logger.info(f"Searching for {query} with providers: {enabled_providers}")
         tasks = [
             getattr(self, provider).search(query) for provider in enabled_providers
         ]
@@ -301,6 +302,7 @@ class WebSearcher:
         return combined_result
 
     async def search_async(self, query: str) -> str:
+        logger.info(f"Searching for {query}")
         start_time = time.time()
 
         providers = ["google", "google", "tavily", "perplexity"]
