@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Dict
+from typing import Dict, Any, List
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 import logging
@@ -37,12 +37,12 @@ class InterpreterTool:
         Performs an asynchronous code execution using the given parameters. It starts the processing indicator, executes the code asynchronously, stops the processing indicator, and returns the result.
     """
 
-    base_description = """Evaluates python code in a sandbox environment. 
-The environment resets on every execution. 
-You must send the whole script every time and print your outputs. 
-Script should be pure python code that can be evaluated. 
-It should be in python format NOT markdown. 
-The code should NOT be wrapped in backticks. 
+    base_description = """Evaluates python code in a sandbox environment.
+The environment resets on every execution.
+You must send the whole script every time and print your outputs.
+Script should be pure python code that can be evaluated.
+It should be in python format NOT markdown.
+The code should NOT be wrapped in backticks.
 All python packages including requests, matplotlib, scipy, numpy, pandas, \
 etc are available.
 Convey all results through print(), so you can capture the output.
@@ -71,7 +71,6 @@ Convey all results through print(), so you can capture the output.
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "OpenAI-Beta": "assistants=v2",
         }
 
     async def execute_code_async(self, parameters: Dict[str, any]) -> str:
@@ -80,101 +79,141 @@ Convey all results through print(), so you can capture the output.
             return "Error: Missing 'code' parameter"
 
         code = parameters["code"]
-        logger.info(f"Executing code: \n{code}")
-        message = (
-            f"run interpreter for this code```\n{code}\n```\n; "
-            f"return json dictionary only with keys stdout and stderr, omit explanations"
+        logger.info(f"Executing code via Responses API: \n{code}")
+        # Ask the model to strictly return JSON with stdout/stderr only.
+        user_prompt = (
+            "Run this Python code using Code Interpreter and capture printed output and errors. "
+            "Return only a JSON object with keys 'stdout' and 'stderr' (both strings). "
+            "Do not include any explanations or additional text. Code follows:\n\n" \
+            + code
         )
 
-        # Create an Assistant
-        assistant = await self._create_assistant()
+        # Create a Response (non-stream) with code_interpreter tool enabled
+        response = await self._create_response(user_prompt)
 
-        # Create a Thread
-        thread = await self._create_thread()
+        # If the API returned an error object, surface it immediately
+        if isinstance(response, dict) and response.get("error", None):
+            err = response.get("error", {})
+            msg = err.get("message") or str(err)
+            logger.error(f"OpenAI Responses error: {msg}")
+            return f"Error: {msg}"
 
-        # Add a Message to the Thread
-        await self._add_message_to_thread(thread["id"], message)
+        # Some long code runs may return in-progress; wait until completed
+        status = response.get("status")
+        response_id = response.get("id")
+        if response_id and status and status not in ("completed", "failed", "cancelled"):
+            response = await self._wait_for_response(response_id)
 
-        # Run the Assistant
-        run = await self._run_assistant(thread["id"], assistant["id"])
+            # If after waiting we have an error object, return it
+            if isinstance(response, dict) and response.get("error", None):
+                err = response.get("error", {})
+                msg = err.get("message") or str(err)
+                logger.error(f"OpenAI Responses error after wait: {msg}")
+                return f"Error: {msg}"
 
-        # Wait for the Run to complete
-        run = await self._wait_for_run(thread["id"], run["id"])
+        # Extract assistant text result
+        text = self._extract_text_from_response(response)
+        if not text:
+            logger.warning(f"No textual output extracted from response: {json.dumps(response)[:500]}")
+            return "No result found"
 
-        # Retrieve the results
-        messages = await self._get_messages(thread["id"])
+        # Remove code fences if present and parse JSON
+        json_string = text.strip().replace("```json", "").replace("```", "").strip()
+        try:
+            data = json.loads(json_string)
+        except Exception as e:
+            logger.error(f"Failed to parse JSON from response text: {e}; text=\n{text}")
+            return "Error: Failed to parse tool output"
 
-        # Extract and return the last assistant message
-        for message in reversed(messages["data"]):
-            if message["role"] == "assistant":
-                result = message["content"][0]["text"]["value"]
+        stdout = data.get("stdout", "")
+        stderr = data.get("stderr", "")
+        if stderr:
+            result = f"there was an error: {stderr}"
+        else:
+            result = f"the result is {stdout}"
 
-                # Remove the ```json and ``` markers
-                json_string = result.strip().replace("```json", "").replace("```", "")
+        logger.info(f"openai responses result:\n{result}")
+        return result
 
-                # Parse the JSON string
-                data = json.loads(json_string)
-
-                if data["stderr"]:
-                    result = f"there was an error: {data['stderr']}"
-                else:
-                    result = f"the result is {data['stdout']}"
-
-                logger.info(f"openai assistant result:\n{result}")
-                return result
-
-        return "No result found"
-
-    async def _create_assistant(self):
+    async def _create_response(self, input_text: str) -> Dict[str, Any]:
+        payload = {
+            "model": self.model,
+            "input": input_text,
+            "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}],
+        }
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{self.openai_api_base}/assistants",
+                f"{self.openai_api_base}/responses",
                 headers=self.headers,
-                json={"model": self.model, "tools": [{"type": "code_interpreter"}]},
-            ) as response:
-                return await response.json()
+                json=payload,
+            ) as resp:
+                return await resp.json()
 
-    async def _create_thread(self):
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.openai_api_base}/threads", headers=self.headers
-            ) as response:
-                return await response.json()
-
-    async def _add_message_to_thread(self, thread_id: str, content: str):
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.openai_api_base}/threads/{thread_id}/messages",
-                headers=self.headers,
-                json={"role": "user", "content": content},
-            ) as response:
-                return await response.json()
-
-    async def _run_assistant(self, thread_id: str, assistant_id: str):
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.openai_api_base}/threads/{thread_id}/runs",
-                headers=self.headers,
-                json={"assistant_id": assistant_id},
-            ) as response:
-                return await response.json()
-
-    async def _wait_for_run(self, thread_id: str, run_id: str):
-        while True:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self.openai_api_base}/threads/{thread_id}/runs/{run_id}",
-                    headers=self.headers,
-                ) as response:
-                    run = await response.json()
-                    if run["status"] in ["completed", "failed", "cancelled"]:
-                        return run
-                    await asyncio.sleep(1)
-
-    async def _get_messages(self, thread_id: str):
+    async def _get_response(self, response_id: str) -> Dict[str, Any]:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{self.openai_api_base}/threads/{thread_id}/messages",
+                f"{self.openai_api_base}/responses/{response_id}",
                 headers=self.headers,
-            ) as response:
-                return await response.json()
+            ) as resp:
+                return await resp.json()
+
+    async def _wait_for_response(self, response_id: str, poll_interval: float = 1.0) -> Dict[str, Any]:
+        while True:
+            resp = await self._get_response(response_id)
+            status = resp.get("status")
+            if status in ("completed", "failed", "cancelled"):
+                return resp
+            await asyncio.sleep(poll_interval)
+
+    def _extract_text_from_response(self, response: Dict[str, Any]) -> str:
+        """
+        Try to robustly extract assistant text content from Responses API schemas.
+        """
+        # 1) Newer schema: response["output"] is a list of items; pick assistant message text
+        output = response.get("output")
+        if isinstance(output, list) and output:
+            texts: List[str] = []
+            for item in output:
+                # Message item with content array
+                if isinstance(item, dict) and item.get("type") == "message":
+                    content = item.get("content") or []
+                    texts.extend(self._extract_texts_from_content_array(content))
+                # Some variants may flatten text directly
+                if isinstance(item, dict) and "text" in item and isinstance(item["text"], str):
+                    texts.append(item["text"]) 
+            if texts:
+                return "\n".join(t for t in texts if t)
+        # 2) Fallback: response has top-level "content" like a message
+        content = response.get("content")
+        if isinstance(content, list):
+            texts = self._extract_texts_from_content_array(content)
+            if texts:
+                return "\n".join(t for t in texts if t)
+        # 3) Fallback: response["message"]["content"]
+        message = response.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+            if isinstance(content, list):
+                texts = self._extract_texts_from_content_array(content)
+                if texts:
+                    return "\n".join(t for t in texts if t)
+        # 4) Last resort: look for a top-level field "output_text" or "text"
+        if isinstance(response.get("output_text"), str):
+            return response["output_text"]
+        if isinstance(response.get("text"), str):
+            return response["text"]
+        return ""
+
+    def _extract_texts_from_content_array(self, content: List[Any]) -> List[str]:
+        texts: List[str] = []
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            # Common shapes: {"type":"text","text":"..."} or {"type":"output_text","text":"..."}
+            t = part.get("text")
+            if isinstance(t, str):
+                texts.append(t)
+            # Sometimes nested as {"type":"text","text":{"value":"..."}}
+            if isinstance(t, dict) and isinstance(t.get("value"), str):
+                texts.append(t["value"])
+        return texts

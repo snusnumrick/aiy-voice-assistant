@@ -478,6 +478,10 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         try:
             async for event in self._get_response_async(message_list, streaming=True):
                 logger.debug(f"{self._time_str()}Received event: {event}")
+                # Guard against unexpected None or non-dict events
+                if not isinstance(event, dict):
+                    logger.warning(f"{self._time_str()}Skipping non-dict event: {event}")
+                    continue
                 event_type = event.get("type")
 
                 if event_type == "error":
@@ -1159,18 +1163,18 @@ async def main_async():
     model = ClaudeAIModelWithTools(config, tools=[
     # model = OpenAIModelWithTools(config, tools=[
         search_tool.tool_definition(),
-        # interpreter_tool.tool_definition(),
+        interpreter_tool.tool_definition(),
         # wizard_tool.tool_definition(),
     ])
     # ], timezone=timezone)
     # model = ClaudeAIModel(config)
     messages = [
         {"role": "system", "content": system},
-        # {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4."},
+        {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4. Use code interpreter tool"},
         # {"role": "user", "content": "how many r in word strawberry? think it through"},
         # {"role": "user", "content": "в каком клубе снйчас играет Месси"},
         # {"role": "user", "content": "где именно встретятся трамп с путиным, проверь свежие новости"},
-        {"role": "user", "content": "Что такое бегство декурионов в Поздней Римской империи?"},
+        # {"role": "user", "content": "Что такое бегство декурионов в Поздней Римской империи?"},
     ]
     m = ""
     async for response_part in model.get_response_async(messages):
