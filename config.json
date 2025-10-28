@@ -2,7 +2,7 @@
   "llm_streaming": true,
   "audio_recording_chunk_duration_sec": 0.3,
   "ai_model_api": "claude",
-  "claude_model": "claude-haiku-4-5",
+  "claude_model": "claude-sonnet-4-5",
   "claude_use_search":false,
   "openai_model": "gpt-4o-2024-05-13",
   "openai_use_search":false,
