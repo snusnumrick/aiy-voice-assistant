@@ -250,7 +250,7 @@ class ResponsePlayer:
                 logger.warning(
                     "reinit as player is stopped."
                 )
-                self.__init__(playlist=[playitem], leds=self.leds, timezone=self.timezone)
+                self.__init__(playlist=[], leds=self.leds, timezone=self.timezone)
 
             emo, file, text = playitem
             light = None if emo is None else emo.get("light", None)

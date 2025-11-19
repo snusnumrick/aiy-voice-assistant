@@ -115,6 +115,53 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
     return modified_text, extracted_rules
 
 
+def _get_base_rules_russian() -> str:
+    """Base rules that are tool-independent (preserved from current implementation)"""
+    return (
+        "Если в ответе на твой запрос указано время без указания часового пояса, "
+        "считай что это Восточное стандартное время. "
+        "Если тебе надо что-то запомнить, "
+        "пошли мне сообщение в таком формате: $remember: <текст, который тебе нужно запомнить>$. "
+        "Таких фактов в твоем сообщении тоже может быть несколько. "
+        "Например, $remember: <первый текст, который тебе нужно запомнить>$ "
+        "$remember: <второй текст, который тебе нужно запомнить>$. "
+        "Когда не совсем понятно, какое ударение надо ставить в слове, "
+        "используй знак + перед предполагаемой ударной гласной. "
+        "Знак ударения + всегда ставится непосредственно перед "
+        "ударной гласной буквой в слове. "
+        "Например: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
+        "Этот знак никогда не ставится в конце слова или перед согласными. "
+        "Его единственная функция - указать на ударный гласный звук. "
+        "Используй знак + только в русском языке. "
+        "Если я прошу тебя как-то поменяться (например, не используй обсценную лексику), "
+        "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
+        "$rule: <текст нового правила>$. "
+        "Таких запросов в твоем сообщении тоже может быть несколько."
+    )
+
+
+def _get_base_rules_english() -> str:
+    """English version of base rules"""
+    return (
+        "For web searches: $internet query:<query in English>$. "
+        "To remember: $remember:<text>$. For new rules: $rule:<text>$ "
+        "When it's not entirely clear where to place the stress in a word, "
+        "use the '+' sign before the presumed stressed vowel. "
+        "The stress mark '+' is always placed directly before "
+        "the stressed vowel letter in the word. "
+        "For example: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
+        "This sign is never placed at the end of a word or before consonants. "
+        "Its sole function is to indicate the stressed vowel sound. Use it only in Russian."
+    )
+
+
+def _combine_rules(base_rules: str, dynamic_rules: str) -> str:
+    """Combine base rules with dynamic tool rules"""
+    if dynamic_rules:
+        return f"{base_rules}\n\n{dynamic_rules}"
+    return base_rules
+
+
 class ConversationManager:
     """
     Manages the conversation flow, including message history and interaction with AI models.
@@ -146,25 +193,11 @@ class ConversationManager:
         self.current_language_code = "ru"
         self.enabled_tools = enabled_tools or []
 
-        # Base rules (general, tool-independent)
-        self.base_rules_russian = self._get_base_rules_russian()
-        self.base_rules_english = self._get_base_rules_english()
-
-        # Dynamic rules from enabled tools
-        self.dynamic_rules_russian = self._generate_tool_rules("russian")
-        self.dynamic_rules_english = self._generate_tool_rules("english")
-
-        # Combined hard_rules
-        self.hard_rules_russian = self._combine_rules(
-            self.base_rules_russian,
-            self.dynamic_rules_russian
+        # hard rules
+        self.hard_rules = _combine_rules(
+            _get_base_rules_russian(),
+            self._generate_tool_rules("russian")
         )
-        self.hard_rules_english = self._combine_rules(
-            self.base_rules_english,
-            self.dynamic_rules_english
-        )
-
-        self.hard_rules = self.hard_rules_russian
 
         self.default_system_prompt_russian = (
             "Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
@@ -209,66 +242,9 @@ class ConversationManager:
                 if rule_text:
                     rules.append(rule_text)
 
-        return "\n\n".join(rules)
+        logger.info(f"Generated tool rules: {rules}")
 
-    def _get_base_rules_russian(self) -> str:
-        """Base rules that are tool-independent (preserved from current implementation)"""
-        return (
-            "Если в ответе на твой запрос указано время без указания часового пояса, "
-            "считай что это Восточное стандартное время. "
-            "Если тебе надо что-то запомнить, "
-            "пошли мне сообщение в таком формате: $remember: <текст, который тебе нужно запомнить>$. "
-            "Таких фактов в твоем сообщении тоже может быть несколько. "
-            "Например, $remember: <первый текст, который тебе нужно запомнить>$ "
-            "$remember: <второй текст, который тебе нужно запомнить>$. "
-            "Когда не совсем понятно, какое ударение надо ставить в слове, "
-            "используй знак + перед предполагаемой ударной гласной. "
-            "Знак ударения + всегда ставится непосредственно перед "
-            "ударной гласной буквой в слове. "
-            "Например: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
-            "Этот знак никогда не ставится в конце слова или перед согласными. "
-            "Его единственная функция - указать на ударный гласный звук. "
-            "Используй знак + только в русском языке. "
-            "Если я прошу тебя как-то поменяться (например, не используй обсценную лексику), "
-            "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
-            "$rule: <текст нового правила>$. "
-            "Таких запросов в твоем сообщении тоже может быть несколько."
-        )
-
-    def _get_base_rules_english(self) -> str:
-        """English version of base rules"""
-        return (
-            "For web searches: $internet query:<query in English>$. "
-            "To remember: $remember:<text>$. For new rules: $rule:<text>$ "
-            "When it's not entirely clear where to place the stress in a word, "
-            "use the '+' sign before the presumed stressed vowel. "
-            "The stress mark '+' is always placed directly before "
-            "the stressed vowel letter in the word. "
-            "For example: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
-            "This sign is never placed at the end of a word or before consonants. "
-            "Its sole function is to indicate the stressed vowel sound. Use it only in Russian."
-        )
-
-    def _combine_rules(self, base_rules: str, dynamic_rules: str) -> str:
-        """Combine base rules with dynamic tool rules"""
-        if dynamic_rules:
-            return f"{base_rules}\n\n{dynamic_rules}"
-        return base_rules
-
-    # NEW: Method to regenerate rules if tool list changes
-    def regenerate_tool_rules(self):
-        """Regenerate tool-specific rules (useful for testing or hot-reload)"""
-        self.dynamic_rules_russian = self._generate_tool_rules("russian")
-        self.dynamic_rules_english = self._generate_tool_rules("english")
-
-        self.hard_rules_russian = self._combine_rules(
-            self.base_rules_russian,
-            self.dynamic_rules_russian
-        )
-        self.hard_rules_english = self._combine_rules(
-            self.base_rules_english,
-            self.dynamic_rules_english
-        )
+        return "".join(rules)
 
     def get_system_prompt(self):
         from src.responce_player import emotions_prompt, language_prompt
