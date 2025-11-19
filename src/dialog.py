@@ -273,8 +273,6 @@ class DialogManager:
                         self.response_player
                     )
                     logger.info(f"({time_string_ms(self.timezone)}) You said: {text}")
-                    # Clear queues for next conversation while keeping player active
-                    self.response_player.clear_queues()
 
                     if text:
                         await asyncio.gather(

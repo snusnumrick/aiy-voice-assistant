@@ -29,6 +29,8 @@ class MiniMaxMusicTool:
         self.response_player = response_player
         self.button_state = button_state
         self._cleanup_files = []  # Track temp files for cleanup
+        self.music_dir = Path("/tmp/generated_music")  # Directory for saved MP3 files
+        self.music_dir.mkdir(parents=True, exist_ok=True)
 
     def tool_definition(self) -> Tool:
         """Return tool definition for AI model"""
@@ -81,14 +83,15 @@ class MiniMaxMusicTool:
         2. Make streaming API request
         3. Parse SSE response for hex audio data
         4. Convert MP3 hex → MP3 bytes → WAV bytes → WAV file
-        5. Add WAV to ResponsePlayer queue (interruptible playback)
-        6. Return success message
+        5. Save complete MP3 file
+        6. Add WAV to ResponsePlayer queue (interruptible playback)
+        7. Return success message with MP3 file path
 
         Args:
             parameters: Dict with 'prompt' and 'lyrics' keys
 
         Returns:
-            str: Success/error message
+            str: Success/error message with MP3 file path
         """
         # Validate parameters
         if "prompt" not in parameters or "lyrics" not in parameters:
@@ -125,7 +128,7 @@ class MiniMaxMusicTool:
                     response.raise_for_status()
 
                     chunk_count = 0
-                    audio_data = bytearray()
+                    mp3_audio_data = bytearray()  # Store complete MP3 data
 
                     # Parse SSE (Server-Sent Events) response
                     async for line in response.content:
@@ -145,7 +148,7 @@ class MiniMaxMusicTool:
                                     if 'audio' in data:
                                         hex_data = data['audio']
                                         mp3_bytes = bytes.fromhex(hex_data)
-                                        audio_data.extend(mp3_bytes)
+                                        mp3_audio_data.extend(mp3_bytes)
 
                                         # Convert MP3 bytes to WAV
                                         mp3_audio = AudioSegment.from_mp3(io.BytesIO(mp3_bytes))
@@ -192,8 +195,20 @@ class MiniMaxMusicTool:
                     # Cleanup old temp files (keep last 50)
                     self._cleanup_temp_files()
 
-                    if chunk_count > 0:
-                        return f"Music generated and playing: '{lyrics[:50]}...'"
+                    if chunk_count > 0 and mp3_audio_data:
+                        # Save complete MP3 file
+                        timestamp = int(time.time())
+                        # Create safe filename from lyrics
+                        safe_lyrics = "".join(c if c.isalnum() or c.isspace() else "_" for c in lyrics[:30])
+                        safe_lyrics = "_".join(safe_lyrics.split())  # Replace spaces with underscores
+                        mp3_filename = f"music_{timestamp}_{safe_lyrics}.mp3"
+                        mp3_path = self.music_dir / mp3_filename
+                        
+                        with open(mp3_path, "wb") as f:
+                            f.write(mp3_audio_data)
+                        
+                        logger.info(f"Saved MP3 file: {mp3_path}")
+                        return f"Music generated and playing. MP3 file saved at: {mp3_path}"
                     else:
                         return "Error: No audio data received from API"
 

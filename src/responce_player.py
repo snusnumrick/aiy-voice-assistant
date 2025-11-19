@@ -248,9 +248,9 @@ class ResponsePlayer:
         with self.lock:
             if self._stopped:
                 logger.warning(
-                    f"Ignoring add request for {playitem} as player is stopped."
+                    "reinit as player is stopped."
                 )
-                return
+                self.__init__(playlist=[playitem], leds=self.leds, timezone=self.timezone)
 
             emo, file, text = playitem
             light = None if emo is None else emo.get("light", None)
