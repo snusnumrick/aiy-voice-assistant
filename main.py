@@ -202,7 +202,7 @@ def main():
             logger.info("Using Claude model")
             ai_model = ClaudeAIModelWithTools(config, tools=tools, timezone=timezone)
 
-        conversation_manager = ConversationManager(config, ai_model, timezone)
+        conversation_manager = ConversationManager(config, ai_model, timezone, enabled_tools=tools)
 
         logger.info("All components initialized. Starting main conversation loop.")
 

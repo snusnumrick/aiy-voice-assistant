@@ -50,6 +50,26 @@ class MiniMaxMusicTool:
             ],
             required=["prompt", "lyrics"],
             processor=self.generate_music_async,
+
+            # RULE CONTRIBUTIONS
+            rule_instructions={
+                "russian": (
+                    "Когда пользователь просит создать, сгенерировать, сочинить или написать музыку, "
+                    "используй инструмент generate_music. "
+                    "Триггеры: 'создай музыку', 'сгенерируй песню', 'сочини мелодию', "
+                    "'напиши композицию', 'сделай трек'. "
+                    "Всегда уточни у пользователя жанр, настроение, описание или характеристики "
+                    "желаемой музыки перед генерацией."
+                ),
+                "english": (
+                    "When user asks to create, generate, compose, or write music, "
+                    "use generate_music tool. "
+                    "Triggers: 'create music', 'generate song', 'compose melody', "
+                    "'write composition', 'make a track'. "
+                    "Always ask for genre, mood, description, or characteristics of desired music "
+                    "before generation."
+                )
+            }
         )
 
     async def generate_music_async(self, parameters: Dict) -> str:

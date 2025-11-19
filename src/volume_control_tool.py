@@ -131,6 +131,26 @@ Returns the new volume level after adjustment.
             ],
             processor=self.adjust_volume,
             required=["action"],
+
+            # RULE CONTRIBUTIONS
+            rule_instructions={
+                "russian": (
+                    "Используй инструмент control_speaker_volume, когда пользователь просит "
+                    "изменить громкость, даже если он не упоминает слово 'громкость' явно. "
+                    "Триггеры: 'тише', 'громче', 'убавь звук', 'прибавь звук', 'сделай тише', "
+                    "'сделай громче', 'уменьши громкость', 'увеличь громкость'. "
+                    "Если пользователь просит 'тише на X', используй action='decrease' и value=X. "
+                    "Если просит 'громче на X', используй action='increase' и value=X."
+                ),
+                "english": (
+                    "Use the control_speaker_volume tool when user asks to change volume, "
+                    "even if they don't explicitly say 'volume'. "
+                    "Triggers: 'quieter', 'louder', 'turn down', 'turn up', 'make it quieter', "
+                    "'make it louder', 'decrease volume', 'increase volume'. "
+                    "If user says 'quieter by X', use action='decrease' and value=X. "
+                    "If 'louder by X', use action='increase' and value=X."
+                )
+            }
         )
 
     async def adjust_volume(self, parameters: Dict[str, any]) -> str:

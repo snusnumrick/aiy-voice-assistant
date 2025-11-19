@@ -54,6 +54,7 @@ class Tool(BaseModel):
     parameters: List[ToolParameter]
     processor: Callable[[Dict[str, any]], Coroutine[any, any, str]]
     required: List[str] = Field(default_factory=list)
+    rule_instructions: Dict[str, str] = Field(default_factory=dict)
 
     def __post_init__(self):
         """Validate that all required fields exist in parameters."""

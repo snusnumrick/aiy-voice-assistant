@@ -16,7 +16,7 @@ import sys
 import glob
 from collections import deque
 from pathlib import Path
-from typing import List, Tuple, AsyncGenerator, Deque, Dict
+from typing import List, Tuple, AsyncGenerator, Deque, Dict, Optional
 
 from src.llm_tools import optimize_rules, optimize_facts
 from src.responce_player import extract_emotions, extract_language
@@ -125,7 +125,7 @@ class ConversationManager:
         message_history (deque): A queue of message dictionaries representing the conversation history.
     """
 
-    def __init__(self, config, ai_model: AIModel, timezone: str):
+    def __init__(self, config, ai_model: AIModel, timezone: str, enabled_tools: Optional[List] = None):
         """
         Initialize the ConversationManager.
 
@@ -133,6 +133,7 @@ class ConversationManager:
             config (Config): The application configuration object.
             ai_model (AIModel): The AI model to use for generating responses.
             timezone (str): Current timezone to store time
+            enabled_tools (Optional[List]): List of enabled tools for dynamic rule generation
         """
         self.config = config
         self.searcher = WebSearcher(config)
@@ -143,58 +144,24 @@ class ConversationManager:
         self.location = get_location()
         self.timezone = timezone
         self.current_language_code = "ru"
+        self.enabled_tools = enabled_tools or []
 
-        self.hard_rules_russian = (
-            "Если в ответе на твой запрос указано время без указания часового пояса, "
-            "считай что это Восточное стандартное время. "
-            "Если тебе надо что-то запомнить, "
-            "пошли мне сообщение в таком формате: $remember: <текст, который тебе нужно запомнить>$. "
-            "Таких фактов в твоем сообщении тоже может быть несколько. "
-            "Например, $remember: <первый текст, который тебе нужно запомнить>$ "
-            "$remember: <второй текст, который тебе нужно запомнить>$. "
-            "Когда не совсем понятно, какое ударение надо ставить в слове, "
-            "используй знак + перед предполагаемой ударной гласной. "
-            "Знак ударения + всегда ставится непосредственно перед "
-            "ударной гласной буквой в слове. "
-            "Например: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
-            "Этот знак никогда не ставится в конце слова или перед согласными. "
-            "Его единственная функция - указать на ударный гласный звук. "
-            "Используй знак + только в русском языке. "
-            "Если я прошу тебя как-то поменяться (например, не используй обсценную лексику), "
-            "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
-            "$rule: <текст нового правила>$. "
-            "Таких запросов в твоем сообщении тоже может быть несколько. "
-            "Ты можешь контролировать громкость динамика. Используй инструмент control_speaker_volume, "
-            "когда пользователь просит изменить громкость, даже если он не упоминает слово 'громкость' явно. "
-            "Например, если пользователь говорит 'говори погромче', используй инструмент для увеличения громкости. "
-            "Если говорит 'сделай потише', используй инструмент для уменьшения громкости. "
-            "Всегда подтверждай изменение громкости пользователю и упоминай новый уровень громкости. "
-            "У тебя есть доступ к инструменту генерации музыки. Когда пользователь просит спеть песню, "
-            "сгенерировать музыку или колыбельную, используй инструмент generate_music с подробным описанием "
-            "стиля музыки (prompt) и текстом песни (lyrics). Инструмент автоматически сгенерирует и начнёт "
-            "воспроизводить музыку. Примеры когда использовать: 'Спой колыбельную', 'Спой песню про...', "
-            "'Сгенерируй музыку', 'Пой песню с такими словами...'"
+        # Base rules (general, tool-independent)
+        self.base_rules_russian = self._get_base_rules_russian()
+        self.base_rules_english = self._get_base_rules_english()
+
+        # Dynamic rules from enabled tools
+        self.dynamic_rules_russian = self._generate_tool_rules("russian")
+        self.dynamic_rules_english = self._generate_tool_rules("english")
+
+        # Combined hard_rules
+        self.hard_rules_russian = self._combine_rules(
+            self.base_rules_russian,
+            self.dynamic_rules_russian
         )
-
-        self.hard_rules_english = (
-            "For web searches: $internet query:<query in English>$. "
-            "To remember: $remember:<text>$. For new rules: $rule:<text>$ "
-            "When it's not entirely clear where to place the stress in a word, "
-            "use the '+' sign before the presumed stressed vowel. "
-            "The stress mark '+' is always placed directly before "
-            "the stressed vowel letter in the word. "
-            "For example: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
-            "This sign is never placed at the end of a word or before consonants. "
-            "Its sole function is to indicate the stressed vowel sound. Use it only in Russian. "
-            "You can control the speaker volume. Use the control_speaker_volume tool "
-            "when the user asks to change the volume, even if they don't explicitly mention 'volume'. "
-            "For example, if the user says 'speak louder', use the tool to increase the volume. "
-            "If they say 'make it quieter', use the tool to decrease the volume. "
-            "Always confirm the volume change to the user and mention the new volume level. "
-            "You have access to a music generation tool. When users ask for a song, music, or lullaby, "
-            "use the generate_music tool with a detailed description of the music style (prompt) and "
-            "song lyrics (lyrics). The tool will automatically generate and play the music. "
-            "Examples: 'Sing a lullaby', 'Sing a song about...', 'Generate music', 'Sing with these words...'"
+        self.hard_rules_english = self._combine_rules(
+            self.base_rules_english,
+            self.dynamic_rules_english
         )
 
         self.hard_rules = self.hard_rules_russian
@@ -223,6 +190,84 @@ class ConversationManager:
 
         self.message_history: Deque[dict] = deque(
             [{"role": "system", "content": self.get_system_prompt()}]
+        )
+
+    def _generate_tool_rules(self, language: str) -> str:
+        """
+        Collect and combine rule_instructions from all enabled tools.
+
+        Args:
+            language: Language code ('russian' or 'english')
+
+        Returns:
+            Combined natural language rules for all tools that provide them
+        """
+        rules = []
+        for tool in self.enabled_tools:
+            if hasattr(tool, 'rule_instructions') and language in tool.rule_instructions:
+                rule_text = tool.rule_instructions[language].strip()
+                if rule_text:
+                    rules.append(rule_text)
+
+        return "\n\n".join(rules)
+
+    def _get_base_rules_russian(self) -> str:
+        """Base rules that are tool-independent (preserved from current implementation)"""
+        return (
+            "Если в ответе на твой запрос указано время без указания часового пояса, "
+            "считай что это Восточное стандартное время. "
+            "Если тебе надо что-то запомнить, "
+            "пошли мне сообщение в таком формате: $remember: <текст, который тебе нужно запомнить>$. "
+            "Таких фактов в твоем сообщении тоже может быть несколько. "
+            "Например, $remember: <первый текст, который тебе нужно запомнить>$ "
+            "$remember: <второй текст, который тебе нужно запомнить>$. "
+            "Когда не совсем понятно, какое ударение надо ставить в слове, "
+            "используй знак + перед предполагаемой ударной гласной. "
+            "Знак ударения + всегда ставится непосредственно перед "
+            "ударной гласной буквой в слове. "
+            "Например: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
+            "Этот знак никогда не ставится в конце слова или перед согласными. "
+            "Его единственная функция - указать на ударный гласный звук. "
+            "Используй знак + только в русском языке. "
+            "Если я прошу тебя как-то поменяться (например, не используй обсценную лексику), "
+            "чтобы запомнить это новое правило, пошли мне сообщение в таком формате: "
+            "$rule: <текст нового правила>$. "
+            "Таких запросов в твоем сообщении тоже может быть несколько."
+        )
+
+    def _get_base_rules_english(self) -> str:
+        """English version of base rules"""
+        return (
+            "For web searches: $internet query:<query in English>$. "
+            "To remember: $remember:<text>$. For new rules: $rule:<text>$ "
+            "When it's not entirely clear where to place the stress in a word, "
+            "use the '+' sign before the presumed stressed vowel. "
+            "The stress mark '+' is always placed directly before "
+            "the stressed vowel letter in the word. "
+            "For example: к+оса (прическа); кос+а (инструмент); кос+а (участок суши). "
+            "This sign is never placed at the end of a word or before consonants. "
+            "Its sole function is to indicate the stressed vowel sound. Use it only in Russian."
+        )
+
+    def _combine_rules(self, base_rules: str, dynamic_rules: str) -> str:
+        """Combine base rules with dynamic tool rules"""
+        if dynamic_rules:
+            return f"{base_rules}\n\n{dynamic_rules}"
+        return base_rules
+
+    # NEW: Method to regenerate rules if tool list changes
+    def regenerate_tool_rules(self):
+        """Regenerate tool-specific rules (useful for testing or hot-reload)"""
+        self.dynamic_rules_russian = self._generate_tool_rules("russian")
+        self.dynamic_rules_english = self._generate_tool_rules("english")
+
+        self.hard_rules_russian = self._combine_rules(
+            self.base_rules_russian,
+            self.dynamic_rules_russian
+        )
+        self.hard_rules_english = self._combine_rules(
+            self.base_rules_english,
+            self.dynamic_rules_english
         )
 
     def get_system_prompt(self):
