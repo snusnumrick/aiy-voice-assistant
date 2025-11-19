@@ -25,7 +25,7 @@ class ButtonState:
     def __init__(self):
         """Initialize the button state."""
         self.button_pressed = False
-        logger.debug("ButtonState initialized")
+        logger.info("ButtonState initialized")
 
     def press(self):
         """
@@ -34,7 +34,7 @@ class ButtonState:
         This should be called when hardware button is pressed.
         """
         self.button_pressed = True
-        logger.debug("Button marked as pressed")
+        logger.info("Button marked as pressed")
 
     def reset(self):
         """
@@ -43,7 +43,7 @@ class ButtonState:
         This should be called after processing a button press.
         """
         self.button_pressed = False
-        logger.debug("Button state reset")
+        logger.info("Button state reset")
 
     def __call__(self) -> bool:
         """

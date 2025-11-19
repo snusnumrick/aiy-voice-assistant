@@ -4,7 +4,7 @@ import io
 import time
 import aiohttp
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 from pydub import AudioSegment
 from src.config import Config
 from src.ai_models_with_tools import Tool, ToolParameter
@@ -56,7 +56,7 @@ class MiniMaxMusicTool:
             # RULE CONTRIBUTIONS
             rule_instructions={
                 "russian": (
-                    "Когда пользователь просит создать, сгенерировать, сочинить или написать музыку, "
+                    "Когда пользователь просит спеть, сыграть, создать, сгенерировать, сочинить или написать музыку, "
                     "используй инструмент generate_music. "
                     "Триггеры: 'создай музыку', 'сгенерируй песню', 'сочини мелодию', "
                     "'напиши композицию', 'сделай трек'. "
@@ -64,7 +64,7 @@ class MiniMaxMusicTool:
                     "желаемой музыки перед генерацией."
                 ),
                 "english": (
-                    "When user asks to create, generate, compose, or write music, "
+                    "When user asks to sing, play, create, generate, compose, or write music, "
                     "use generate_music tool. "
                     "Triggers: 'create music', 'generate song', 'compose melody', "
                     "'write composition', 'make a track'. "
@@ -95,6 +95,7 @@ class MiniMaxMusicTool:
         """
         # Validate parameters
         if "prompt" not in parameters or "lyrics" not in parameters:
+            logger.error("Missing 'prompt' or 'lyrics' parameter")
             return "Error: Both 'prompt' and 'lyrics' are required"
 
         prompt = parameters["prompt"]
