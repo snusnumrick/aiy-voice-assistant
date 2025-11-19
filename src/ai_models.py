@@ -13,12 +13,12 @@ import logging
 import os
 import sys
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import AsyncGenerator, Dict, List, Optional, Union
 
 import aiohttp
 import requests
 from pydantic import BaseModel
-from enum import Enum
 
 from src.config import Config
 from src.tools import retry_async_generator, time_string_ms, yield_complete_sentences

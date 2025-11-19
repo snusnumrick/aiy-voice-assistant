@@ -20,6 +20,8 @@ from dotenv import load_dotenv
 from aiy.board import Board
 from aiy.leds import Color, Leds
 from src.ai_models_with_tools import ClaudeAIModelWithTools, OpenAIModelWithTools
+from src.responce_player import ResponsePlayer
+from src.shared_state import ButtonState
 from src.code_interpreter_tool import InterpreterTool
 from src.config import Config
 from src.conversation_manager import ConversationManager
@@ -187,6 +189,10 @@ def main():
 
         conversation_manager = ConversationManager(config, ai_model, timezone)
 
+        # Create shared state objects
+        button_state = ButtonState()
+        response_player = ResponsePlayer([], leds, timezone)
+
         logger.info("All components initialized. Starting main conversation loop.")
 
         # Start the main conversation loop
@@ -199,6 +205,8 @@ def main():
                 conversation_manager,
                 config,
                 timezone,
+                button_state,
+                response_player,
             )
         )
 

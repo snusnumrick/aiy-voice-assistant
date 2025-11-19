@@ -489,6 +489,27 @@ class ResponsePlayer:
             "Playback stopped, all queues cleared, and player set to stopped state"
         )
 
+    def clear_queues(self):
+        """
+        Clear all queues without stopping the player.
+
+        This method removes all items from merge_queue, playlist, and wav_list
+        without stopping playback or changing the player's state.
+        """
+        def clear_queue(q):
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    break
+
+        with self.lock:
+            clear_queue(self.merge_queue)
+            clear_queue(self.playlist)
+            self.wav_list.clear()
+
+        logger.debug("All queues cleared")
+
     def is_playing(self) -> bool:
         """
         Check if audio is currently playing or queued for playback.

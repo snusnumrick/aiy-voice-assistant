@@ -111,7 +111,7 @@ class TestAIModels(unittest.TestCase):
             mock_init.assert_called_once()
             _, kwargs = mock_init.call_args
             self.assertEqual(kwargs['base_url'], 'https://api.perplexity.ai')
-            self.assertEqual(kwargs['model_id'], 'llama-3-sonar-large-32k-online')
+            self.assertEqual(kwargs['model_id'], 'sonar')
 
 
 if __name__ == '__main__':
