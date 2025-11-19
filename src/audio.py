@@ -28,6 +28,7 @@ from google.cloud import speech
 
 from src.config import Config
 from src.responce_player import ResponsePlayer
+from src.shared_state import ButtonState
 from src.tools import time_string_ms, get_timezone, combine_audio_files
 from src.tts_engine import TTSEngine
 from src.background_tasks import BackgroundTaskManager
@@ -184,6 +185,7 @@ class SpeechTranscriber:
 
     Attributes:
         button (Button): The AIY Kit button object.
+        button_state (ButtonState): Shared button press state for checking across components.
         leds (Leds): The AIY Kit LED object for visual feedback.
         config (Config): The application configuration object.
         button_is_pressed (bool): Flag to track button press state.
@@ -194,6 +196,7 @@ class SpeechTranscriber:
     def __init__(
         self,
         button: Button,
+        button_state: ButtonState,
         leds: Leds,
         config,
         cleaning: Optional[Callable] = None,
@@ -204,15 +207,16 @@ class SpeechTranscriber:
 
         Args:
             button (Button): The AIY Kit button object.
+            button_state (ButtonState): Shared button press state for checking across components.
             leds (Leds): The AIY Kit LED object.
             config (Config): The application configuration object.
             cleaning (Optional[Callable]): Optional callback function to clean the audio stream.
             timezone (Optional[str]): The timezone of the current location.
         """
         self.button = button
+        self.button_state = button_state
         self.leds = leds
         self.config = config
-        self.button_is_pressed = False
         self.setup_speech_service()
         self.breathing_period_ms = self.config.get("ready_breathing_period_ms", 10000)
         self.led_breathing_color = self.config.get(
@@ -363,7 +367,7 @@ class SpeechTranscriber:
                     ):
                         chunks_deque.popleft()
 
-                if (status == RecordingStatus.NOT_STARTED) and self.button_is_pressed:
+                if (status == RecordingStatus.NOT_STARTED) and self.button_state():
                     stop_playing()
                     start_listening()
                     logger.debug(f"{len(chunks_deque)} audio chunks buffered")
@@ -388,11 +392,10 @@ class SpeechTranscriber:
                     chunks.append(chunk)
                     yield chunks_deque.popleft()
 
-                if status == RecordingStatus.STARTED and not self.button_is_pressed:
+                if status == RecordingStatus.STARTED and not self.button_state():
                     start_processing()
                     status = RecordingStatus.FINISHED
 
-        self.setup_button_callbacks()
         logger.info("Press the button and speak")
 
         with Recorder() as recorder:
@@ -437,28 +440,6 @@ class SpeechTranscriber:
                 logger.error(f"Error transcribing speech: {str(e)}")
                 text = ""
         return text
-
-    def setup_button_callbacks(self):
-        """
-        Set up callbacks for button press and release events.
-        """
-        self.button.when_pressed = self.button_pressed
-        self.button.when_released = self.button_released
-        logger.debug("set button callback")
-
-    def button_pressed(self):
-        """
-        Callback function for button press event.
-        """
-        self.button_is_pressed = True
-        logger.debug("Button pressed")
-
-    def button_released(self):
-        """
-        Callback function for button release event.
-        """
-        self.button_is_pressed = False
-        logger.debug("Button released")
 
     def wait_for_button_press(self):
         """

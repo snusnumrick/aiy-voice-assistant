@@ -185,7 +185,7 @@ class DialogManager:
         self.button_state = button_state
         self.response_player = response_player
         self.transcriber = SpeechTranscriber(
-            button, leds, config, cleaning=self.cleaning_routine, timezone=timezone
+            button, button_state, leds, config, cleaning=self.cleaning_routine, timezone=timezone
         )
 
     async def cleaning_routine(self):
@@ -300,17 +300,10 @@ class DialogManager:
         ai_message = ""
         ai_responses_complete = False
 
-        def _set_button_pressed():
-            self.button_state.press()
-            logger.debug("Button press detected, initiating shutdown sequence")
-
         def _set_ai_responses_complete():
             nonlocal ai_responses_complete
             ai_responses_complete = True
             logger.debug("AI response generation marked as complete")
-
-        self.button.when_pressed = _set_button_pressed
-        logger.debug("Button callback set for interruption")
 
         conversation_response_generator = self.conversation_manager.get_response(text)
         logger.debug(f"Initialized conversation response generator for input: {text}")
