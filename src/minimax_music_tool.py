@@ -42,12 +42,12 @@ class MiniMaxMusicTool:
                 ToolParameter(
                     name="prompt",
                     type="string",
-                    description="Music style description and mood"
+                    description="Music style description and mood, 10 to 2000 characters"
                 ),
                 ToolParameter(
                     name="lyrics",
                     type="string",
-                    description="Song lyrics"
+                    description="Song lyrics, 10 to 3000 characters"
                 ),
             ],
             required=["prompt", "lyrics"],
@@ -100,6 +100,13 @@ class MiniMaxMusicTool:
 
         prompt = parameters["prompt"]
         lyrics = parameters["lyrics"]
+
+        if len(prompt) < 10:
+            return "Error: 'prompt' should be at least 10 characters"
+        if len(lyrics) < 10:
+            return "Error: 'lyrics' should be at least 10 characters"
+
+
 
         logger.info(f"Generating music: prompt='{prompt}', lyrics='{lyrics[:50]}...'")
 
