@@ -160,6 +160,9 @@ def main():
 
         # Create shared state objects (needed by some tools)
         button_state = ButtonState()
+        board.button.when_pressed = lambda _: button_state.press()
+        board.button.when_released = lambda _: button_state.reset()
+
         response_player = ResponsePlayer([], leds, timezone)
 
         # Create MiniMax music tool (requires response_player and button_state)
