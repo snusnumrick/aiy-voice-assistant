@@ -168,7 +168,12 @@ class ConversationManager:
             "когда пользователь просит изменить громкость, даже если он не упоминает слово 'громкость' явно. "
             "Например, если пользователь говорит 'говори погромче', используй инструмент для увеличения громкости. "
             "Если говорит 'сделай потише', используй инструмент для уменьшения громкости. "
-            "Всегда подтверждай изменение громкости пользователю и упоминай новый уровень громкости."
+            "Всегда подтверждай изменение громкости пользователю и упоминай новый уровень громкости. "
+            "У тебя есть доступ к инструменту генерации музыки. Когда пользователь просит спеть песню, "
+            "сгенерировать музыку или колыбельную, используй инструмент generate_music с подробным описанием "
+            "стиля музыки (prompt) и текстом песни (lyrics). Инструмент автоматически сгенерирует и начнёт "
+            "воспроизводить музыку. Примеры когда использовать: 'Спой колыбельную', 'Спой песню про...', "
+            "'Сгенерируй музыку', 'Пой песню с такими словами...'"
         )
 
         self.hard_rules_english = (
@@ -185,7 +190,11 @@ class ConversationManager:
             "when the user asks to change the volume, even if they don't explicitly mention 'volume'. "
             "For example, if the user says 'speak louder', use the tool to increase the volume. "
             "If they say 'make it quieter', use the tool to decrease the volume. "
-            "Always confirm the volume change to the user and mention the new volume level."
+            "Always confirm the volume change to the user and mention the new volume level. "
+            "You have access to a music generation tool. When users ask for a song, music, or lullaby, "
+            "use the generate_music tool with a detailed description of the music style (prompt) and "
+            "song lyrics (lyrics). The tool will automatically generate and play the music. "
+            "Examples: 'Sing a lullaby', 'Sing a song about...', 'Generate music', 'Sing with these words...'"
         )
 
         self.hard_rules = self.hard_rules_russian

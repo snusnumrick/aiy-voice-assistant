@@ -40,6 +40,7 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 - **Russian Stress Marking**: Ability to add stress marks to Russian words, enhancing pronunciation guidance and language learning.
 - **Code Interpretation**: Can execute Python code, allowing for complex computations and data analysis, with results conveyed verbally.
 - **Volume Control**: Ability to adjust speaker volume through voice commands, enhancing user comfort and accessibility.
+- **Music Generation**: Generate and play music with lyrics using MiniMax API, supporting lullabies, songs, and custom musical compositions with streaming playback.
 - **Comprehensive Weather Information**: Provides detailed weather data including:
   - Current conditions and forecasts (hourly/daily)
   - UV index and ozone levels
@@ -68,7 +69,8 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 - Poetry for dependency management
 - Rust compiler
 - ZSH shell with Oh My Zsh
-- API keys for: OpenAI, Google, **Yandex**, **Anthropic**, **ElevenLabs**, **Tavily**, OpenRouter, **Perplexity**,  **Tomorrow.io**, **Maps.co Geocoding**
+- ffmpeg (required for music generation audio conversion)
+- API keys for: OpenAI, Google, **Yandex**, **Anthropic**, **ElevenLabs**, **Tavily**, OpenRouter, **Perplexity**,  **Tomorrow.io**, **Maps.co Geocoding**, MiniMax (optional, for music generation)
 (in **bold** are keys for default configuration)
 - Additional system packages and development tools (detailed in setup instructions)
 
@@ -152,10 +154,12 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
     git clone https://github.com/snusnumrick/aiy-voice-assistant.git
     cd aiy-voice-assistant
     pyenv local 3.9
-    sudo apt install cmake cython
+    sudo apt install cmake cython ffmpeg
     poetry install
     pip install google-cloud-speech google-cloud-texttospeech
     ```
+
+    Note: ffmpeg is required for music generation features (MP3 to WAV conversion).
 
 11. **Configure the assistant:**
 
@@ -194,7 +198,8 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
         TOMORROW_API_KEY=your_tomorrow_io_api_key        # For weather data
         GEOCODE_API_KEY=your_maps_co_geocoding_api_key   # For location lookup
         WAQI_API_KEY=your_waqi_api_key                   # For air quality data
-        OPENUV_API_KEY=your_openuv_api_key 
+        OPENUV_API_KEY=your_openuv_api_key               # For UV index data
+        MINIMAX_API_KEY=your_minimax_api_key             # For music generation (optional)
     ```
     Notes
     1. Make sure to keep your `.env` file secure and never commit it to version control.
@@ -333,7 +338,18 @@ Once the assistant is running, here's how to interact with it:
      - To set a specific volume: "Установи громкость на 50 процентов" (Set the volume to 50 percent)
    - The assistant will confirm the volume change after adjusting it.
 
-8. **Weather Information:**
+8. **Music Generation:**
+   - Ask the assistant to sing songs, generate music, or play lullabies
+   - Examples:
+     - "Спой колыбельную про звёздочки" (Sing a lullaby about stars)
+     - "Спой песню про лето" (Sing a song about summer)
+     - "Сгенерируй весёлую музыку" (Generate happy music)
+     - "Пой песню с такими словами: [your lyrics]" (Sing a song with these words: [your lyrics])
+   - Music starts playing within 1-2 seconds of generation
+   - You can interrupt playback at any time by pressing the button
+   - Requires MiniMax API key (see setup instructions)
+
+9. **Weather Information:**
    - Get comprehensive current weather: "Какая сейчас погода в Москве?" (What's the current weather in Moscow?)
    - Get hourly forecast: "Почасовой прогноз погоды для Санкт-Петербурга" (Hourly weather forecast for Saint Petersburg)
    - Get daily forecast: "Прогноз погоды на неделю в Лондоне" (Weekly weather forecast for London)
@@ -444,6 +460,7 @@ The assistant uses cron to manage Tailscale for optimal performance:
   - `code_interpreter_tool.py`: Tool for executing Python code and returning results
   - `volume_control_tool.py`: Tool for adjusting speaker volume
   - `wizard_tool.py`: Advanced analytical reasoning tool for complex questions
+  - `minimax_music_tool.py`: Music generation tool using MiniMax API for creating songs and lullabies
 
 ## Troubleshooting
 
@@ -477,7 +494,16 @@ The assistant uses cron to manage Tailscale for optimal performance:
     ```
   * For immediate remote access: ```sudo tailscale up```
   * To disable immediately: ```sudo tailscale down```
-  * 
+
+- For music generation issues:
+  * Verify MINIMAX_API_KEY is set in .env file
+  * Ensure ffmpeg is installed: ```ffmpeg -version```
+  * Check MiniMax API key validity and quota
+  * Check /tmp directory has sufficient space for temporary files
+  * Music generation requires streaming support - verify network connection
+  * If playback is interrupted, temporary WAV files are automatically cleaned up
+  * Maximum 50 temporary music files are kept, older files are auto-deleted
+
 ## Performance Considerations
 
 - Response time and quality may vary between different AI models

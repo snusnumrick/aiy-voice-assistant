@@ -34,6 +34,7 @@ from src.tts_engine import ElevenLabsTTSEngine, Language, YandexTTSEngine
 from src.volume_control_tool import VolumeControlTool
 from src.web_search_tool import WebSearchTool
 from src.wizard_tool import WizardTool
+from src.minimax_music_tool import MiniMaxMusicTool
 
 # Set up signal handling for graceful shutdown
 signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
@@ -157,6 +158,20 @@ def main():
         time.sleep(1)
         leds.update(Leds.rgb_off())
 
+        # Create shared state objects (needed by some tools)
+        button_state = ButtonState()
+        response_player = ResponsePlayer([], leds, timezone)
+
+        # Create MiniMax music tool (requires response_player and button_state)
+        minimax_tool = MiniMaxMusicTool(
+            config=config,
+            response_player=response_player,
+            button_state=button_state
+        )
+
+        # Add MiniMax music tool to tools list
+        tools.append(minimax_tool.tool_definition())
+
         # Initialize components
         elevenlabs_engine = None
         try:
@@ -188,10 +203,6 @@ def main():
             ai_model = ClaudeAIModelWithTools(config, tools=tools, timezone=timezone)
 
         conversation_manager = ConversationManager(config, ai_model, timezone)
-
-        # Create shared state objects
-        button_state = ButtonState()
-        response_player = ResponsePlayer([], leds, timezone)
 
         logger.info("All components initialized. Starting main conversation loop.")
 
