@@ -25,7 +25,7 @@ class MiniMaxMusicTool:
         """
         self.config = config
         self.api_key = os.environ.get("MINIMAX_API_KEY")
-        self.base_url = config.get("minimax_base_url", "https://api.minimax.chat")
+        self.base_url = config.get("minimax_base_url", "https://api.minimax.io")
         self.response_player = response_player
         self.button_state = button_state
         self._cleanup_files = []  # Track temp files for cleanup
