@@ -324,7 +324,7 @@ class MiniMaxMusicTool:
                             f.write(mp3_audio_data)
 
                         logger.info(f"Saved MP3 file: {mp3_path}")
-                        return f"Music generated and playing. MP3 file saved at: {mp3_path}"
+                        return f"Music generated and playing; saved as a file at {mp3_path}"
                     else:
                         return "Error: No audio data received from API"
 
