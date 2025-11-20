@@ -63,7 +63,7 @@ def send_email(subject: str, body: str, config: Config, sendto: str = None, atta
                     encoders.encode_base64(part)
                     part.add_header(
                         'Content-Disposition',
-                        f'attachment; filename= {os.path.basename(filepath)}'
+                        f'attachment; filename="{os.path.basename(filepath)}"'
                     )
                     msg.attach(part)
             except FileNotFoundError:
@@ -128,7 +128,7 @@ async def send_email_async(subject: str, body: str, config: Config, sendto: str 
                     encoders.encode_base64(part)
                     part.add_header(
                         'Content-Disposition',
-                        f'attachment; filename= {os.path.basename(filepath)}'
+                        f'attachment; filename="{os.path.basename(filepath)}"'
                     )
                     msg.attach(part)
             except FileNotFoundError:
