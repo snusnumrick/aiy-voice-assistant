@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import uuid
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -17,6 +18,32 @@ from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 
 logger = logging.getLogger(__name__)
+
+
+def clean_body_for_attachments(body: str) -> str:
+    """
+    Removes external download links from email body when attachments are present.
+    This prevents spam classification from external links with credentials.
+
+    :param body: Original email body text
+    :return: Cleaned body text
+    """
+    # Remove lines containing http/https URLs
+    lines = body.split('\n')
+    cleaned_lines = []
+
+    for line in lines:
+        # Skip lines that contain http:// or https://
+        if 'http://' in line or 'https://' in line:
+            # Check if this is a download link (contains common patterns)
+            if any(pattern in line.lower() for pattern in
+                   ['download', 'ссылк', 'http', '.com', '.org', '.net', 'oss-', 'amazonaws']):
+                # Replace with a note about attachment
+                cleaned_lines.append("[Файл прикреплён к письму]")
+                continue
+        cleaned_lines.append(line)
+
+    return '\n'.join(cleaned_lines)
 
 
 def send_email(subject: str, body: str, config: Config, sendto: str = None, attachments: list = None):
@@ -44,6 +71,10 @@ def send_email(subject: str, body: str, config: Config, sendto: str = None, atta
     username = config.get("assistant_email_username", "cubick@treskunov.net")
 
     password = os.environ.get("EMAIL_PASSWORD")
+
+    # Clean body if attachments are present to avoid spam classification
+    if attachments:
+        body = clean_body_for_attachments(body)
 
     # Create message
     msg = MIMEMultipart()
@@ -126,6 +157,10 @@ async def send_email_async(subject: str, body: str, config: Config, sendto: str 
     username = config.get("assistant_email_username", "cubick@treskunov.net")
 
     password = os.environ.get("EMAIL_PASSWORD")
+
+    # Clean body if attachments are present to avoid spam classification
+    if attachments:
+        body = clean_body_for_attachments(body)
 
     # Create message
     msg = MIMEMultipart()
