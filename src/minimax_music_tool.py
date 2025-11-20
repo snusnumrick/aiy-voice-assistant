@@ -35,7 +35,7 @@ class MiniMaxMusicTool:
         self.music_dir.mkdir(parents=True, exist_ok=True)
         self.executor = ThreadPoolExecutor(max_workers=2)  # For parallel MP3 decoding
         self.chunks_per_decode = 10  # Buffer 10 chunks before decoding (ensures valid MP3 frames)
-        self.max_buffers = 2  # Maintain up to 2 buffers in parallel
+        self.max_buffers = 4  # Increased to 4 for smoother parallel processing, prevents decode bottlenecks
 
     def _decode_buffered_mp3_to_wav(self, buffered_mp3: bytes, buffer_idx: int) -> str:
         """
@@ -225,7 +225,7 @@ class MiniMaxMusicTool:
                                             chunk_count += 1
 
                                             # Decode when buffer reaches threshold (ensures valid MP3 frames and reduces final buffer size)
-                                            if len(current_buffer) >= 20000:  # Lowered from 50KB to 20KB to avoid large final buffers
+                                            if len(current_buffer) >= 4000:  # Small 4KB buffers for smooth playback, eliminates pauses
                                                 # Submit buffer for decoding in thread pool
                                                 loop = asyncio.get_event_loop()
                                                 buffer_copy = bytes(current_buffer)  # Copy for thread safety
