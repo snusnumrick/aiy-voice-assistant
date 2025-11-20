@@ -262,21 +262,21 @@ class MiniMaxMusicTool:
                                             logger.info("Button pressed during music generation, stopping")
                                             break
 
-                                    # Check for completion
-                                    if data.get('is_finish', False):
-                                        logger.info(f"Music generation complete: {chunk_count} chunks, {buffer_count} buffers")
-                                        break
+                                        # Check for completion
+                                        if data.get('is_finish', False):
+                                                logger.info(f"Music generation complete: {chunk_count} chunks, {buffer_count} buffers")
+                                                break
 
-                                    # Check for errors
-                                    if 'error' in data:
-                                        error_msg = data['error']
-                                        logger.error(f"API error received: {error_msg}")
-                                        logger.error(f"Full error data: {data}")
-                                        return f"Error generating music: {error_msg}"
+                                        # Check for errors
+                                        if 'error' in data:
+                                            error_msg = data['error']
+                                            logger.error(f"API error received: {error_msg}")
+                                            logger.error(f"Full error data: {data}")
+                                            return f"Error generating music: {error_msg}"
 
-                                except (json.JSONDecodeError, KeyError, ValueError) as e:
-                                    logger.warning(f"Failed to parse SSE data: {e}")
-                                    continue
+                                    except (json.JSONDecodeError, KeyError, ValueError) as e:
+                                        logger.warning(f"Failed to parse SSE data: {e}")
+                                        continue
                     except ValueError as e:
                         # Handle aiohttp "Chunk too big" error from empty/malformed chunks
                         if "Chunk too big" in str(e):
