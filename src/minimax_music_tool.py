@@ -224,8 +224,8 @@ class MiniMaxMusicTool:
 
                                             chunk_count += 1
 
-                                            # Decode when buffer is full (ensures valid MP3 frames)
-                                            if len(current_buffer) >= 50000:  # ~50KB buffer
+                                            # Decode when buffer reaches threshold (ensures valid MP3 frames and reduces final buffer size)
+                                            if len(current_buffer) >= 20000:  # Lowered from 50KB to 20KB to avoid large final buffers
                                                 # Submit buffer for decoding in thread pool
                                                 loop = asyncio.get_event_loop()
                                                 buffer_copy = bytes(current_buffer)  # Copy for thread safety
@@ -352,4 +352,85 @@ class MiniMaxMusicTool:
         """Clean up resources - call when done using the tool"""
         self.executor.shutdown(wait=True)
         logger.info("MiniMaxMusicTool executor shut down")
+
+
+class MockResponsePlayer:
+    """Mock ResponsePlayer for testing"""
+    def __init__(self):
+        self.queue = []
+
+    def add(self, item):
+        """Add item to playback queue"""
+        self.queue.append(item)
+        logger.info(f"Added to playback queue: {item[2] if len(item) > 2 else 'audio'}")
+
+
+class MockButtonState:
+    """Mock ButtonState for testing"""
+    def __init__(self):
+        self.pressed = False
+
+    def __call__(self):
+        """Return current button state"""
+        return self.pressed
+
+
+async def main():
+    """Test function to run MiniMaxMusicTool directly"""
+    logger.info("Starting MiniMaxMusicTool test...")
+
+    # Check for API key
+    api_key = os.environ.get("MINIMAX_API_KEY")
+    if not api_key:
+        print("Error: MINIMAX_API_KEY environment variable not set")
+        print("Please set it with: export MINIMAX_API_KEY=your_api_key")
+        return
+
+    # Create mock dependencies
+    class MockConfig:
+        def get(self, key, default=None):
+            if key == "minimax_base_url":
+                return "https://api.minimax.io"
+            return default
+
+    config = MockConfig()
+    response_player = MockResponsePlayer()
+    button_state = MockButtonState()
+
+    # Create tool instance
+    tool = MiniMaxMusicTool(config, response_player, button_state)
+
+    try:
+        # Test parameters
+        test_prompt = "Upbeat electronic music with energetic beats and futuristic sounds"
+        test_lyrics = "Dancing through the night, feeling so alive, electronic dreams are calling"
+
+        logger.info("Generating test music...")
+        result = await tool.generate_music_async({
+            "prompt": test_prompt,
+            "lyrics": test_lyrics
+        })
+
+        print(f"\n{'='*60}")
+        print(f"Result: {result}")
+        print(f"{'='*60}\n")
+
+        logger.info(f"Playback queue size: {len(response_player.queue)}")
+
+    except Exception as e:
+        logger.error(f"Test failed: {e}", exc_info=True)
+        print(f"\nError: {e}\n")
+    finally:
+        tool.close()
+
+
+if __name__ == "__main__":
+    # Configure logging for test
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
+    # Run the async main function
+    asyncio.run(main())
 
