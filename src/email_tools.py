@@ -105,14 +105,30 @@ def send_email(subject: str, body: str, config: Config, sendto: str = None, atta
                     import urllib.parse
                     filename = os.path.basename(filepath)
 
-                    # RFC 2231 encoding for non-ASCII filenames
-                    encoded_filename = urllib.parse.quote(filename.encode('utf-8'))
-
-                    # Add Content-Disposition with both filename and filename* parameters
-                    part.add_header(
-                        'Content-Disposition',
-                        f"attachment; filename={filename}; filename*=UTF-8''{encoded_filename}"
-                    )
+                    # Check if filename contains non-ASCII characters
+                    try:
+                        filename.encode('ascii')
+                        # ASCII-only filename, use simple parameter
+                        part.add_header(
+                            'Content-Disposition',
+                            f"attachment; filename=\"{filename}\""
+                        )
+                    except UnicodeEncodeError:
+                        # Non-ASCII filename, use RFC 2231 encoding
+                        # For RFC 2231, encode only non-ASCII characters
+                        # Keep ASCII letters, numbers, dots, underscores, hyphens as-is
+                        encoded_chars = []
+                        for byte in filename.encode('utf-8'):
+                            if (byte >= 65 and byte <= 90) or (byte >= 97 and byte <= 122) or \
+                               (byte >= 48 and byte <= 57) or byte in [46, 95, 45]:  # A-Z, a-z, 0-9, ., _, -
+                                encoded_chars.append(chr(byte))
+                            else:
+                                encoded_chars.append(f'%{byte:02X}')
+                        encoded_filename = ''.join(encoded_chars)
+                        part.add_header(
+                            'Content-Disposition',
+                            f"attachment; filename*=UTF-8''{encoded_filename}"
+                        )
 
                     msg.attach(part)
             except FileNotFoundError:
@@ -191,14 +207,30 @@ async def send_email_async(subject: str, body: str, config: Config, sendto: str 
                     import urllib.parse
                     filename = os.path.basename(filepath)
 
-                    # RFC 2231 encoding for non-ASCII filenames
-                    encoded_filename = urllib.parse.quote(filename.encode('utf-8'))
-
-                    # Add Content-Disposition with both filename and filename* parameters
-                    part.add_header(
-                        'Content-Disposition',
-                        f"attachment; filename={filename}; filename*=UTF-8''{encoded_filename}"
-                    )
+                    # Check if filename contains non-ASCII characters
+                    try:
+                        filename.encode('ascii')
+                        # ASCII-only filename, use simple parameter
+                        part.add_header(
+                            'Content-Disposition',
+                            f"attachment; filename=\"{filename}\""
+                        )
+                    except UnicodeEncodeError:
+                        # Non-ASCII filename, use RFC 2231 encoding
+                        # For RFC 2231, encode only non-ASCII characters
+                        # Keep ASCII letters, numbers, dots, underscores, hyphens as-is
+                        encoded_chars = []
+                        for byte in filename.encode('utf-8'):
+                            if (byte >= 65 and byte <= 90) or (byte >= 97 and byte <= 122) or \
+                               (byte >= 48 and byte <= 57) or byte in [46, 95, 45]:  # A-Z, a-z, 0-9, ., _, -
+                                encoded_chars.append(chr(byte))
+                            else:
+                                encoded_chars.append(f'%{byte:02X}')
+                        encoded_filename = ''.join(encoded_chars)
+                        part.add_header(
+                            'Content-Disposition',
+                            f"attachment; filename*=UTF-8''{encoded_filename}"
+                        )
 
                     msg.attach(part)
             except FileNotFoundError:
@@ -265,8 +297,50 @@ class SendEmailTool:
 
 
 async def main():
+    """Test function to send email with attachments."""
+    import tempfile
+
     config = Config()
-    await send_email_async("hello", "4", config)
+
+    # Create test files for attachment testing
+    test_dir = tempfile.mkdtemp(prefix="email_test_")
+
+    # Test 1: ASCII filename
+    ascii_file = os.path.join(test_dir, "test_file_ascii.txt")
+    with open(ascii_file, "w", encoding="utf-8") as f:
+        f.write("This is a test file with ASCII filename.\n")
+
+    # Test 2: Cyrillic filename (like the music file)
+    cyrillic_file = os.path.join(test_dir, "Тест_Файл_Кириллица.txt")
+    with open(cyrillic_file, "w", encoding="utf-8") as f:
+        f.write("Это тестовый файл с кириллицей в имени.\n")
+
+    # Send email with both attachments
+    subject = "Test Email with Attachments"
+    body = """This is a test email to verify attachment functionality.
+
+Test files:
+- ASCII filename: test_file_ascii.txt
+- Cyrillic filename: Тест_Файл_Кириллица.txt
+
+If you can read this, the email was sent successfully!
+"""
+
+    print(f"Sending test email to {config.get('user_email_address', 'your-email@example.com')}")
+    print(f"Attachments: {[ascii_file, cyrillic_file]}")
+
+    await send_email_async(
+        subject=subject,
+        body=body,
+        config=config,
+        attachments=[ascii_file, cyrillic_file]
+    )
+
+    print("\nTest complete! Check your email.")
+
+    # Cleanup
+    import shutil
+    shutil.rmtree(test_dir)
 
 
 if __name__ == "__main__":
