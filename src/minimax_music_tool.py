@@ -33,9 +33,9 @@ class MiniMaxMusicTool:
         self._cleanup_files = []  # Track temp files for cleanup
         self.music_dir = Path("/tmp/generated_music")  # Directory for saved MP3 files
         self.music_dir.mkdir(parents=True, exist_ok=True)
-        self.executor = ThreadPoolExecutor(max_workers=2)  # For parallel MP3 decoding
+        self.executor = ThreadPoolExecutor(max_workers=2)  # Pi Zero W has 1 core, 2 workers optimal
         self.chunks_per_decode = 10  # Buffer 10 chunks before decoding (ensures valid MP3 frames)
-        self.max_buffers = 4  # Increased to 4 for smoother parallel processing, prevents decode bottlenecks
+        self.max_buffers = 3  # Reduced from 4 to prevent long waits, keeps memory low and latency minimal
 
     def _decode_buffered_mp3_to_wav(self, buffered_mp3: bytes, buffer_idx: int) -> str:
         """
@@ -160,8 +160,8 @@ class MiniMaxMusicTool:
                         "lyrics": lyrics,
                         "stream": True,
                         "audio_setting": {
-                            "sample_rate": 16000,
-                            "bitrate": 32000,
+                            "sample_rate": 16000,  # Minimum valid sample rate for Pi Zero W
+                            "bitrate": 32000,      # Minimum valid bitrate (3x smaller files, faster processing)
                             "format": "mp3"
                         }
                     },
@@ -225,7 +225,15 @@ class MiniMaxMusicTool:
                                             chunk_count += 1
 
                                             # Decode when buffer reaches threshold (ensures valid MP3 frames and reduces final buffer size)
-                                            if len(current_buffer) >= 4000:  # Small 4KB buffers for smooth playback, eliminates pauses
+                                            # Pi Zero W: Larger buffers to reduce decode overhead (CPU is the bottleneck)
+                                            # First buffer: start after 2KB for immediate playback
+                                            # Subsequent buffers: use 6KB to reduce decode frequency
+                                            is_first_buffer = (buffer_count == 0 and len(mp3_audio_data) < 2000)
+                                            buffer_threshold = (2000 if is_first_buffer else 6000)
+
+                                            if len(current_buffer) >= buffer_threshold:
+                                                # Log timing to diagnose pauses
+                                                logger.info(f"Buffer {buffer_count}: {len(current_buffer)} bytes, threshold was {buffer_threshold}, total received: {len(mp3_audio_data)} bytes")
                                                 # Submit buffer for decoding in thread pool
                                                 loop = asyncio.get_event_loop()
                                                 buffer_copy = bytes(current_buffer)  # Copy for thread safety
@@ -247,6 +255,7 @@ class MiniMaxMusicTool:
                                                 # Wait for oldest buffer to decode if max buffers reached
                                                 if len(processing_tasks) >= self.max_buffers:
                                                     oldest_idx, oldest_task = processing_tasks.pop(0)
+                                                    logger.info(f"Waiting for buffer {oldest_idx} to decode (max buffers reached)")
                                                     wav_file = await oldest_task
                                                     self._cleanup_files.append(wav_file)
                                                     # Add to ResponsePlayer queue for interruptible playback
@@ -305,6 +314,7 @@ class MiniMaxMusicTool:
                     # Wait for all remaining buffers to finish decoding
                     logger.info(f"Waiting for {len(processing_tasks)} remaining buffers to decode")
                     for idx, task in processing_tasks:
+                        logger.info(f"Waiting for final buffer {idx} to decode")
                         wav_file = await task
                         self._cleanup_files.append(wav_file)
                         # Add to ResponsePlayer queue for interruptible playback
