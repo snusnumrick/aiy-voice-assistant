@@ -38,7 +38,6 @@ from .audio import SpeechTranscriber
 from .config import Config
 from .conversation_manager import ConversationManager
 from .responce_player import ResponsePlayer
-from .shared_state import ButtonState
 from .tools import time_string_ms, save_to_conversation
 from .tts_engine import TTSEngine, Tone, Language
 
@@ -144,7 +143,6 @@ class DialogManager:
         conversation_manager (ConversationManager): Manages the conversation state and generates responses.
         config (Config): The application configuration object.
         timezone (str): The timezone to use for the conversation loop.
-        button_state (ButtonState): Shared button press state for checking across components.
         transcriber (SpeechTranscriber): Handles speech-to-text conversion.
         response_player (ResponsePlayer): Plays synthesized speech responses.
     """
@@ -158,7 +156,6 @@ class DialogManager:
         conversation_manager: ConversationManager,
         config: Config,
         timezone: str,
-        button_state: ButtonState,
         response_player: ResponsePlayer,
     ):
         """
@@ -172,7 +169,6 @@ class DialogManager:
             conversation_manager (ConversationManager): Manages the conversation state and generates responses.
             config (Config): The application configuration object.
             timezone (str): The timezone to use for the conversation loop.
-            button_state (ButtonState): Shared button press state for checking across components.
             response_player (ResponsePlayer): The audio response player for playback.
         """
         self.button = button
@@ -182,10 +178,9 @@ class DialogManager:
         self.conversation_manager = conversation_manager
         self.config = config
         self.timezone = timezone
-        self.button_state = button_state
         self.response_player = response_player
         self.transcriber = SpeechTranscriber(
-            button, button_state, leds, config, cleaning=self.cleaning_routine, timezone=timezone
+            button, leds, config, cleaning=self.cleaning_routine, timezone=timezone
         )
 
     async def cleaning_routine(self):
@@ -297,13 +292,22 @@ class DialogManager:
         """
         response_count = 0
         synthesis_tasks = []
+        button_pressed = False
         ai_message = ""
         ai_responses_complete = False
+
+        def _set_button_pressed():
+            nonlocal button_pressed
+            button_pressed = True
+            logger.debug("Button press detected, initiating shutdown sequence")
 
         def _set_ai_responses_complete():
             nonlocal ai_responses_complete
             ai_responses_complete = True
             logger.debug("AI response generation marked as complete")
+
+        self.button.when_pressed = _set_button_pressed
+        logger.debug("Button callback set for interruption")
 
         conversation_response_generator = self.conversation_manager.get_response(text)
         logger.debug(f"Initialized conversation response generator for input: {text}")
@@ -315,7 +319,7 @@ class DialogManager:
             try:
                 logger.debug("Starting AI response processing loop")
                 async for ai_response in conversation_response_generator:
-                    if self.button_state():
+                    if button_pressed:
                         logger.info(
                             "Button press detected, stopping AI response processing"
                         )
@@ -356,7 +360,7 @@ class DialogManager:
             nonlocal synthesis_tasks
             try:
                 logger.debug("Starting synthesis task processing loop")
-                while not self.button_state():
+                while not button_pressed:
                     if ai_responses_complete and not synthesis_tasks:
                         logger.debug(
                             "AI responses complete and no more synthesis tasks, exiting loop"
@@ -373,7 +377,7 @@ class DialogManager:
                     # else:
                     #     logger.debug("No synthesis tasks to process, waiting...")
                     await asyncio.sleep(0.1)
-                if self.button_state():
+                if button_pressed:
                     logger.info(
                         "Button pressed, immediately exiting synthesis task processing"
                     )
@@ -424,7 +428,7 @@ class DialogManager:
                 logger.debug("All tasks cancelled")
 
             # Only stop the response player if button was pressed
-            if self.button_state():
+            if button_pressed:
                 if self.response_player:
                     logger.debug("Button pressed, stopping response player")
                     self.response_player.stop()
@@ -509,7 +513,6 @@ async def main_loop_async(
     conversation_manager: ConversationManager,
     config: Config,
     timezone: str,
-    button_state: ButtonState,
     response_player: ResponsePlayer,
 ) -> None:
     """
@@ -525,7 +528,6 @@ async def main_loop_async(
         conversation_manager (ConversationManager): Manages the conversation state and generates responses.
         config (Config): The application configuration object.
         timezone (str): The timezone to use for the conversation loop.
-        button_state (ButtonState): Shared button press state for checking across components.
         response_player (ResponsePlayer): The audio response player for playback.
     """
     dialog_manager = DialogManager(
@@ -536,7 +538,6 @@ async def main_loop_async(
         conversation_manager,
         config,
         timezone,
-        button_state,
         response_player,
     )
     await dialog_manager.main_loop_async()

@@ -1,8 +1,6 @@
 import os
 import time
 import aiohttp
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict
 from pydub import AudioSegment
@@ -12,53 +10,28 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
-def _decode_full_mp3_to_wav(mp3_path: str) -> str:
-    """
-    Decode complete MP3 file to WAV (Pi Zero W: single decode operation to avoid real-time pauses)
-
-    Args:
-        mp3_path: Path to the MP3 file
-
-    Returns:
-        str: Path to the generated WAV file
-    """
-    # Load and decode the complete MP3 file
-    mp3_audio = AudioSegment.from_mp3(mp3_path)
-
-    # Export to WAV format
-    wav_path = mp3_path.replace(".mp3", ".wav")
-    mp3_audio.export(wav_path, format="wav")
-
-    logger.info(f"Decoded MP3 to WAV: {wav_path}")
-    return wav_path
-
-
 class MiniMaxMusicTool:
-    def __init__(self, config: Config, response_player, button_state):
+    def __init__(self, config: Config, response_player):
         """
         Initialize MiniMax music tool
 
         Args:
             config: Configuration object
             response_player: ResponsePlayer instance for audio playback
-            button_state: ButtonState instance for shared button press state
         """
         self.config = config
         self.api_key = os.environ.get("MINIMAX_API_KEY")
         self.base_url = config.get("minimax_base_url", "https://api.minimax.io")
         self.response_player = response_player
-        self.button_state = button_state
         self._cleanup_files = []  # Track temp files for cleanup
         self.music_dir = Path("/tmp/generated_music")  # Directory for saved MP3 files
         self.music_dir.mkdir(parents=True, exist_ok=True)
-        self.executor = ThreadPoolExecutor(max_workers=1)  # Pi Zero W: single-threaded (single decode operation)
 
     def tool_definition(self) -> Tool:
         """Return tool definition for AI model"""
         return Tool(
             name="generate_music",
-            description="Generate music using MiniMax API (Pi Zero W optimized)",
+            description="Generate music using MiniMax API",
             iterative=True,
             parameters=[
                 ToolParameter(
@@ -103,13 +76,13 @@ class MiniMaxMusicTool:
 
         Process (Pi Zero W optimized - non-streaming):
         1. Validate parameters
-        2. Make non-streaming API request (stream: false, output_format: url)
-        3. Receive audio URL in single response
+        2. Make a non-streaming API request (stream: false, output_format: url)
+        3. Receive audio URL in a single response
         4. Download MP3 from URL
         5. Save complete MP3 file locally
         6. Decode MP3 → WAV once (single operation, no real-time CPU load)
-        7. Add WAV to ResponsePlayer queue (interruptible playback)
-        8. Return success message with download URL (for email) + local path
+        7. Add WAV to the ResponsePlayer queue (interruptible playback)
+        8. Return the success message with download URL (for email) + local path
 
         Args:
             parameters: Dict with 'prompt' and 'lyrics' keys
@@ -135,7 +108,7 @@ class MiniMaxMusicTool:
         logger.info(f"Generating music: prompt='{prompt}', lyrics='{lyrics[:50]}...'")
 
         try:
-            # Make streaming API request to MiniMax
+            # Make a streaming API request to MiniMax
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{self.base_url}/v1/music_generation",
@@ -187,35 +160,37 @@ class MiniMaxMusicTool:
                     # Store URL for inclusion in response message
                     audio_url_for_email = audio_url
 
-                    # Cleanup old temp files (keep last 50)
+                    # Clean up old temp files (keep last 50)
                     self._cleanup_temp_files()
 
-                    if mp3_audio_data:
-                        # Save complete MP3 file
-                        timestamp = int(time.time())
-                        # Create safe filename from lyrics
-                        safe_lyrics = "".join(c if c.isalnum() or c.isspace() else "_" for c in lyrics[:30])
-                        safe_lyrics = "_".join(safe_lyrics.split())  # Replace spaces with underscores
-                        mp3_filename = f"music_{timestamp}_{safe_lyrics}.mp3"
-                        mp3_path = self.music_dir / mp3_filename
-
-                        with open(mp3_path, "wb") as f:
-                            f.write(mp3_audio_data)
-
-                        logger.info(f"Saved MP3 file: {mp3_path}")
-
-                        # Decode complete MP3 to WAV once (Pi Zero W: avoid real-time decode)
-                        logger.info("Decoding complete MP3 to WAV (single decode operation)")
-                        wav_file = _decode_full_mp3_to_wav(str(mp3_path))
-
-                        # Add to ResponsePlayer queue for playback
-                        self.response_player.add((None, wav_file, "generated music"))
-                        logger.info(f"Added to playback queue: {wav_file}")
-
-                        # Return URL for email inclusion + local path for debugging
-                        return f"Music generated and playing. Download URL (valid 24h): {audio_url_for_email}\nLocal MP3: {mp3_path}"
-                    else:
+                    if not mp3_audio_data:
                         return "Error: No audio data received from API"
+
+                    # Save a complete MP3 file
+                    timestamp = int(time.time())
+                    # Create a safe filename from lyrics
+                    safe_lyrics = "".join(c if c.isalnum() or c.isspace() else "_" for c in lyrics[:30])
+                    safe_lyrics = "_".join(safe_lyrics.split())  # Replace spaces with underscores
+                    mp3_filename = f"music_{timestamp}_{safe_lyrics}.mp3"
+                    mp3_path = self.music_dir / mp3_filename
+
+                    with open(mp3_path, "wb") as f:
+                        f.write(mp3_audio_data)
+
+                    logger.info(f"Saved MP3 file: {mp3_path}")
+
+                    # Decode complete MP3 to WAV once (Pi Zero W: avoid real-time decode)
+                    logger.info("Decoding complete MP3 to WAV (single decode operation)")
+                    mp3_audio = AudioSegment.from_mp3(mp3_path)
+                    wav_file = str(mp3_path).replace(".mp3", ".wav")
+                    mp3_audio.export(wav_file, format="wav")
+
+                    # Add to ResponsePlayer queue for playback
+                    self.response_player.add((None, wav_file, "generated music"))
+                    logger.info(f"Added to playback queue: {wav_file}")
+
+                    # Return URL for email inclusion + local path for debugging
+                    return f"Music generated and playing. Download URL (valid 24h): {audio_url_for_email}\nLocal MP3: {mp3_path}"
 
         except aiohttp.ClientError as e:
             logger.error(f"HTTP request failed: {e}")
@@ -239,8 +214,7 @@ class MiniMaxMusicTool:
 
     def close(self):
         """Clean up resources - call when done using the tool"""
-        self.executor.shutdown(wait=True)
-        logger.info("MiniMaxMusicTool executor shut down")
+        pass
 
 
 class MockResponsePlayer:
@@ -314,6 +288,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    import asyncio
+
     # Configure logging for test
     logging.basicConfig(
         level=logging.INFO,

@@ -185,10 +185,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     ],
                 }
             )
-            logger.info(f"Tool {tool_name} result: {tool_result}")
-            response = self.get_response(messages)
-            logger.info(f"Response from AI: {response}")
-            return response
+            return self.get_response(messages)
         return ""
 
     @retry_async_generator()

@@ -21,7 +21,6 @@ from aiy.board import Board
 from aiy.leds import Color, Leds
 from src.ai_models_with_tools import ClaudeAIModelWithTools, OpenAIModelWithTools
 from src.responce_player import ResponsePlayer
-from src.shared_state import ButtonState
 from src.code_interpreter_tool import InterpreterTool
 from src.config import Config
 from src.conversation_manager import ConversationManager
@@ -158,18 +157,12 @@ def main():
         time.sleep(1)
         leds.update(Leds.rgb_off())
 
-        # Create shared state objects (needed by some tools)
-        button_state = ButtonState()
-        board.button.when_pressed = lambda : button_state.press()
-        board.button.when_released = lambda : button_state.reset()
-
         response_player = ResponsePlayer([], leds, timezone)
 
         # Create MiniMax music tool (requires response_player and button_state)
         minimax_tool = MiniMaxMusicTool(
             config=config,
-            response_player=response_player,
-            button_state=button_state
+            response_player=response_player
         )
 
         # Add MiniMax music tool to tools list
@@ -219,7 +212,6 @@ def main():
                 conversation_manager,
                 config,
                 timezone,
-                button_state,
                 response_player,
             )
         )
