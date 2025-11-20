@@ -1,6 +1,4 @@
 import os
-import json
-import io
 import time
 import aiohttp
 import asyncio
@@ -13,6 +11,27 @@ from src.ai_models_with_tools import Tool, ToolParameter
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _decode_full_mp3_to_wav(mp3_path: str) -> str:
+    """
+    Decode complete MP3 file to WAV (Pi Zero W: single decode operation to avoid real-time pauses)
+
+    Args:
+        mp3_path: Path to the MP3 file
+
+    Returns:
+        str: Path to the generated WAV file
+    """
+    # Load and decode the complete MP3 file
+    mp3_audio = AudioSegment.from_mp3(mp3_path)
+
+    # Export to WAV format
+    wav_path = mp3_path.replace(".mp3", ".wav")
+    mp3_audio.export(wav_path, format="wav")
+
+    logger.info(f"Decoded MP3 to WAV: {wav_path}")
+    return wav_path
 
 
 class MiniMaxMusicTool:
@@ -34,27 +53,6 @@ class MiniMaxMusicTool:
         self.music_dir = Path("/tmp/generated_music")  # Directory for saved MP3 files
         self.music_dir.mkdir(parents=True, exist_ok=True)
         self.executor = ThreadPoolExecutor(max_workers=1)  # Pi Zero W: single-threaded (single decode operation)
-
-    def _decode_full_mp3_to_wav(self, mp3_path: str) -> str:
-        """
-        Decode complete MP3 file to WAV (Pi Zero W: single decode operation to avoid real-time pauses)
-
-        Args:
-            mp3_path: Path to the MP3 file
-
-        Returns:
-            str: Path to the generated WAV file
-        """
-        # Load and decode the complete MP3 file
-        mp3_audio = AudioSegment.from_mp3(mp3_path)
-
-        # Export to WAV format
-        wav_path = mp3_path.replace(".mp3", ".wav")
-        mp3_audio.export(wav_path, format="wav")
-
-        logger.info(f"Decoded MP3 to WAV: {wav_path}")
-        return wav_path
-
 
     def tool_definition(self) -> Tool:
         """Return tool definition for AI model"""
@@ -172,11 +170,11 @@ class MiniMaxMusicTool:
                         return f"Error generating music: {error_msg}"
 
                     # Extract URL
-                    if 'audio_url' not in result:
+                    if 'data' not in result or 'audio' not in result['data']:
                         logger.error("No audio_url in response")
                         return "Error: No audio URL received from API"
 
-                    audio_url = result['audio_url']
+                    audio_url = result['data']['audio']
                     logger.info(f"Received audio URL: {audio_url}")
 
                     # Download MP3 from URL
@@ -188,11 +186,6 @@ class MiniMaxMusicTool:
 
                     # Store URL for inclusion in response message
                     audio_url_for_email = audio_url
-
-                    # Check for button press interrupt
-                    if self.button_state():
-                        logger.info("Button pressed during music generation, stopping")
-                        return "Generation stopped by user"
 
                     # Cleanup old temp files (keep last 50)
                     self._cleanup_temp_files()
@@ -213,12 +206,7 @@ class MiniMaxMusicTool:
 
                         # Decode complete MP3 to WAV once (Pi Zero W: avoid real-time decode)
                         logger.info("Decoding complete MP3 to WAV (single decode operation)")
-                        loop = asyncio.get_event_loop()
-                        wav_file = await loop.run_in_executor(
-                            self.executor,
-                            self._decode_full_mp3_to_wav,
-                            mp3_path
-                        )
+                        wav_file = _decode_full_mp3_to_wav(str(mp3_path))
 
                         # Add to ResponsePlayer queue for playback
                         self.response_player.add((None, wav_file, "generated music"))
