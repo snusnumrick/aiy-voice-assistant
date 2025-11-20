@@ -23,7 +23,6 @@ from src.responce_player import extract_emotions, extract_language
 from src.tools import (
     format_message_history,
     clean_response,
-    time_string_ms,
     fix_stress_marks_russian,
 )
 
@@ -313,9 +312,9 @@ class ConversationManager:
         ):
             crt = clean_response(response_text)
 
-            logger.info(
-                f"{time_string_ms(self.timezone)}) AI response: {text} -> {response_text}"
-            )
+            # logger.info(
+            #     f"{time_string_ms(self.timezone)}) AI response: {text} -> {response_text}"
+            # )
             if self.message_history[-1]["role"] != "assistant":
                 self.message_history.append({"role": "assistant", "content": crt})
             else:
