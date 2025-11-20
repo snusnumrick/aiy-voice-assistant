@@ -33,44 +33,34 @@ class MiniMaxMusicTool:
         self._cleanup_files = []  # Track temp files for cleanup
         self.music_dir = Path("/tmp/generated_music")  # Directory for saved MP3 files
         self.music_dir.mkdir(parents=True, exist_ok=True)
-        self.executor = ThreadPoolExecutor(max_workers=2)  # Pi Zero W has 1 core, 2 workers optimal
-        self.chunks_per_decode = 10  # Buffer 10 chunks before decoding (ensures valid MP3 frames)
-        self.max_buffers = 3  # Reduced from 4 to prevent long waits, keeps memory low and latency minimal
+        self.executor = ThreadPoolExecutor(max_workers=1)  # Pi Zero W: single-threaded (single decode operation)
 
-    def _decode_buffered_mp3_to_wav(self, buffered_mp3: bytes, buffer_idx: int) -> str:
+    def _decode_full_mp3_to_wav(self, mp3_path: str) -> str:
         """
-        Decode buffered MP3 data to WAV file (for thread pool)
+        Decode complete MP3 file to WAV (Pi Zero W: single decode operation to avoid real-time pauses)
 
         Args:
-            buffered_mp3: Buffered MP3 audio data containing multiple chunks
-            buffer_idx: Buffer index for filename
+            mp3_path: Path to the MP3 file
 
         Returns:
             str: Path to the generated WAV file
         """
-        # Convert buffered MP3 bytes to WAV
-        mp3_audio = AudioSegment.from_mp3(io.BytesIO(buffered_mp3))
+        # Load and decode the complete MP3 file
+        mp3_audio = AudioSegment.from_mp3(mp3_path)
 
-        # Export to WAV format in-memory
-        wav_io = io.BytesIO()
-        mp3_audio.export(wav_io, format="wav")
-        wav_bytes = wav_io.getvalue()
+        # Export to WAV format
+        wav_path = mp3_path.replace(".mp3", ".wav")
+        mp3_audio.export(wav_path, format="wav")
 
-        # Save to temporary file
-        timestamp = int(time.time() * 1000)  # millisecond timestamp
-        wav_file = f"/tmp/music_buffer_{timestamp}_{buffer_idx}.wav"
-
-        with open(wav_file, "wb") as f:
-            f.write(wav_bytes)
-
-        return wav_file
+        logger.info(f"Decoded MP3 to WAV: {wav_path}")
+        return wav_path
 
 
     def tool_definition(self) -> Tool:
         """Return tool definition for AI model"""
         return Tool(
             name="generate_music",
-            description="Generate music using MiniMax API",
+            description="Generate music using MiniMax API (Pi Zero W optimized)",
             iterative=True,
             parameters=[
                 ToolParameter(
@@ -113,20 +103,21 @@ class MiniMaxMusicTool:
         """
         Generate music using MiniMax API and play immediately
 
-        Process:
+        Process (Pi Zero W optimized - non-streaming):
         1. Validate parameters
-        2. Make streaming API request
-        3. Parse SSE response for hex audio data
-        4. Convert MP3 hex → MP3 bytes → WAV bytes → WAV file
-        5. Save complete MP3 file
-        6. Add WAV to ResponsePlayer queue (interruptible playback)
-        7. Return success message with MP3 file path
+        2. Make non-streaming API request (stream: false, output_format: url)
+        3. Receive audio URL in single response
+        4. Download MP3 from URL
+        5. Save complete MP3 file locally
+        6. Decode MP3 → WAV once (single operation, no real-time CPU load)
+        7. Add WAV to ResponsePlayer queue (interruptible playback)
+        8. Return success message with download URL (for email) + local path
 
         Args:
             parameters: Dict with 'prompt' and 'lyrics' keys
 
         Returns:
-            str: Success/error message with MP3 file path
+            str: Success message with download URL (valid 24h) + local MP3 path
         """
         # Validate parameters
         if "prompt" not in parameters or "lyrics" not in parameters:
@@ -158,7 +149,8 @@ class MiniMaxMusicTool:
                         "model": "music-2.0",
                         "prompt": prompt,
                         "lyrics": lyrics,
-                        "stream": True,
+                        "stream": False,  # Pi Zero W: single response, no real-time processing
+                        "output_format": "url",  # Get URL for email inclusion + download for playback
                         "audio_setting": {
                             "sample_rate": 16000,  # Minimum valid sample rate for Pi Zero W
                             "bitrate": 32000,      # Minimum valid bitrate (3x smaller files, faster processing)
@@ -169,159 +161,43 @@ class MiniMaxMusicTool:
                 ) as response:
                     response.raise_for_status()
 
-                    chunk_count = 0
-                    buffer_count = 0
-                    mp3_audio_data = bytearray()  # Store complete MP3 data
-                    current_buffer = bytearray()  # Buffer for current decoding batch
-                    processing_tasks = []  # Track concurrent decoding tasks
+                    # Pi Zero W: Get audio URL in one response (non-streaming)
+                    logger.info("Receiving audio URL...")
+                    result = await response.json()
 
-                    # Parse SSE (Server-Sent Events) response with buffered parallel processing
-                    try:
-                        async for line in response.content:
-                            if line:
-                                line_str = line.decode('utf-8')
+                    # Check for API errors
+                    if 'error' in result:
+                        error_msg = result['error']
+                        logger.error(f"API error: {error_msg}")
+                        return f"Error generating music: {error_msg}"
 
-                                # Skip SSE comments
-                                if line_str.startswith(':'):
-                                    continue
+                    # Extract URL
+                    if 'audio_url' not in result:
+                        logger.error("No audio_url in response")
+                        return "Error: No audio URL received from API"
 
-                                # Parse SSE data format: "data: {json}"
-                                if line_str.startswith('data: '):
-                                    try:
-                                        data = json.loads(line_str[6:])['data']
+                    audio_url = result['audio_url']
+                    logger.info(f"Received audio URL: {audio_url}")
 
-                                        # Log full data structure for debugging
-                                        logger.info(f"SSE data keys: {list(data.keys())}")
-                                        if 'status' in data:
-                                            logger.info(f"SSE status: {data['status']}")
+                    # Download MP3 from URL
+                    logger.info("Downloading MP3 from URL...")
+                    async with session.get(audio_url) as download_response:
+                        download_response.raise_for_status()
+                        mp3_audio_data = await download_response.read()
+                        logger.info(f"Downloaded {len(mp3_audio_data)} bytes ({len(mp3_audio_data) / 1024:.1f} KB)")
 
-                                        # Check if this is an error message from the API
-                                        if 'msg' in data or 'message' in data:
-                                            api_msg = data.get('msg') or data.get('message')
-                                            logger.error(f"API message: {api_msg}")
-                                            logger.error(f"Full API data: {data}")
+                    # Store URL for inclusion in response message
+                    audio_url_for_email = audio_url
 
-                                        # Check for hex audio data
-                                        if 'audio' in data:
-                                            # Skip empty chunks (end markers or heartbeats)
-                                            if data['audio'] == '' or len(data['audio']) == 0:
-                                                logger.info(f"Skipping empty chunk {chunk_count}")
-                                                chunk_count += 1
-                                                continue
-                                        try:
-                                            hex_data = data['audio']
-                                            logger.info(f"Received chunk {chunk_count}, hex data length: {len(hex_data)}")
-
-                                            # Check if hex data is too large
-                                            if len(hex_data) > 1000000:  # 1MB of hex = ~500KB binary
-                                                logger.error(f"Hex data too large: {len(hex_data)} characters")
-
-                                            mp3_bytes = bytes.fromhex(hex_data)
-                                            logger.info(f"Decoded to {len(mp3_bytes)} bytes")
-
-                                            mp3_audio_data.extend(mp3_bytes)
-                                            current_buffer.extend(mp3_bytes)
-
-                                            chunk_count += 1
-
-                                            # Decode when buffer reaches threshold (ensures valid MP3 frames and reduces final buffer size)
-                                            # Pi Zero W: Larger buffers to reduce decode overhead (CPU is the bottleneck)
-                                            # First buffer: start after 2KB for immediate playback
-                                            # Subsequent buffers: use 6KB to reduce decode frequency
-                                            is_first_buffer = (buffer_count == 0 and len(mp3_audio_data) < 2000)
-                                            buffer_threshold = (2000 if is_first_buffer else 6000)
-
-                                            if len(current_buffer) >= buffer_threshold:
-                                                # Log timing to diagnose pauses
-                                                logger.info(f"Buffer {buffer_count}: {len(current_buffer)} bytes, threshold was {buffer_threshold}, total received: {len(mp3_audio_data)} bytes")
-                                                # Submit buffer for decoding in thread pool
-                                                loop = asyncio.get_event_loop()
-                                                buffer_copy = bytes(current_buffer)  # Copy for thread safety
-                                                task = loop.run_in_executor(
-                                                    self.executor,
-                                                    self._decode_buffered_mp3_to_wav,
-                                                    buffer_copy,
-                                                    buffer_count
-                                                )
-
-                                                # Store task with buffer index for tracking
-                                                processing_tasks.append((buffer_count, task))
-
-                                                # Clear buffer for next batch
-                                                current_buffer = bytearray()
-                                                buffer_count += 1
-
-                                                # Limit concurrent processing to prevent memory issues
-                                                # Wait for oldest buffer to decode if max buffers reached
-                                                if len(processing_tasks) >= self.max_buffers:
-                                                    oldest_idx, oldest_task = processing_tasks.pop(0)
-                                                    logger.info(f"Waiting for buffer {oldest_idx} to decode (max buffers reached)")
-                                                    wav_file = await oldest_task
-                                                    self._cleanup_files.append(wav_file)
-                                                    # Add to ResponsePlayer queue for interruptible playback
-                                                    self.response_player.add((None, wav_file, "generated music"))
-                                                    logger.info(f"Processed buffer {oldest_idx}")
-
-                                        except Exception as e:
-                                            logger.error(f"Error processing audio chunk {chunk_count}: {e}", exc_info=True)
-                                            raise
-
-                                        # Check for button press interrupt
-                                        if self.button_state():
-                                            logger.info("Button pressed during music generation, stopping")
-                                            break
-
-                                        # Check for completion
-                                        if data.get('is_finish', False):
-                                                logger.info(f"Music generation complete: {chunk_count} chunks, {buffer_count} buffers")
-                                                break
-
-                                        # Check for errors
-                                        if 'error' in data:
-                                            error_msg = data['error']
-                                            logger.error(f"API error received: {error_msg}")
-                                            logger.error(f"Full error data: {data}")
-                                            return f"Error generating music: {error_msg}"
-
-                                    except (json.JSONDecodeError, KeyError, ValueError) as e:
-                                        logger.warning(f"Failed to parse SSE data: {e}")
-                                        continue
-                    except ValueError as e:
-                        # Handle aiohttp "Chunk too big" error from empty/malformed chunks
-                        if "Chunk too big" in str(e):
-                            logger.info(f"Reached end of stream (aiohttp chunk limit): {e}")
-                        else:
-                            logger.error(f"ValueError during streaming: {e}", exc_info=True)
-                            raise
+                    # Check for button press interrupt
+                    if self.button_state():
+                        logger.info("Button pressed during music generation, stopping")
+                        return "Generation stopped by user"
 
                     # Cleanup old temp files (keep last 50)
                     self._cleanup_temp_files()
 
-                    # Decode any remaining buffered data
-                    if current_buffer:
-                        logger.info(f"Decoding final buffer of {len(current_buffer)} bytes")
-                        loop = asyncio.get_event_loop()
-                        buffer_copy = bytes(current_buffer)
-                        task = loop.run_in_executor(
-                            self.executor,
-                            self._decode_buffered_mp3_to_wav,
-                            buffer_copy,
-                            buffer_count
-                        )
-                        processing_tasks.append((buffer_count, task))
-                        buffer_count += 1
-
-                    # Wait for all remaining buffers to finish decoding
-                    logger.info(f"Waiting for {len(processing_tasks)} remaining buffers to decode")
-                    for idx, task in processing_tasks:
-                        logger.info(f"Waiting for final buffer {idx} to decode")
-                        wav_file = await task
-                        self._cleanup_files.append(wav_file)
-                        # Add to ResponsePlayer queue for interruptible playback
-                        self.response_player.add((None, wav_file, "generated music"))
-                        logger.info(f"Processed final buffer {idx}")
-
-                    if chunk_count > 0 and mp3_audio_data:
+                    if mp3_audio_data:
                         # Save complete MP3 file
                         timestamp = int(time.time())
                         # Create safe filename from lyrics
@@ -334,7 +210,22 @@ class MiniMaxMusicTool:
                             f.write(mp3_audio_data)
 
                         logger.info(f"Saved MP3 file: {mp3_path}")
-                        return f"Music generated and playing; saved as a file at {mp3_path}"
+
+                        # Decode complete MP3 to WAV once (Pi Zero W: avoid real-time decode)
+                        logger.info("Decoding complete MP3 to WAV (single decode operation)")
+                        loop = asyncio.get_event_loop()
+                        wav_file = await loop.run_in_executor(
+                            self.executor,
+                            self._decode_full_mp3_to_wav,
+                            mp3_path
+                        )
+
+                        # Add to ResponsePlayer queue for playback
+                        self.response_player.add((None, wav_file, "generated music"))
+                        logger.info(f"Added to playback queue: {wav_file}")
+
+                        # Return URL for email inclusion + local path for debugging
+                        return f"Music generated and playing. Download URL (valid 24h): {audio_url_for_email}\nLocal MP3: {mp3_path}"
                     else:
                         return "Error: No audio data received from API"
 
