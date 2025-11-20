@@ -44,6 +44,11 @@ class MiniMaxMusicTool:
                     type="string",
                     description="Song lyrics, 10 to 3000 characters"
                 ),
+                ToolParameter(
+                    name="emotion",
+                    type="object",
+                    description="Optional emotion dictionary with format: {'light': {'color': [R,G,B], 'behavior': 'continuous/blinking/breathing', 'brightness': 'dark/medium/bright', 'period': seconds}, 'voice': {'tone': 'plain/happy'}}"
+                ),
             ],
             required=["prompt", "lyrics"],
             processor=self.generate_music_async,
@@ -97,6 +102,7 @@ class MiniMaxMusicTool:
 
         prompt = parameters["prompt"]
         lyrics = parameters["lyrics"]
+        emotion = parameters.get("emotion", None)
 
         if len(prompt) < 10:
             return "Error: 'prompt' should be at least 10 characters"
@@ -186,7 +192,7 @@ class MiniMaxMusicTool:
                     mp3_audio.export(wav_file, format="wav")
 
                     # Add to ResponsePlayer queue for playback
-                    self.response_player.add((None, wav_file, "generated music"))
+                    self.response_player.add((emotion, wav_file, "generated music"))
                     logger.info(f"Added to playback queue: {wav_file}")
 
                     # Return URL for email inclusion + local path for debugging
