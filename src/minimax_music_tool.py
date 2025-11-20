@@ -62,6 +62,7 @@ class MiniMaxMusicTool:
                     "'напиши композицию', 'сделай трек'. "
                     "Всегда уточни у пользователя жанр, настроение, описание или характеристики "
                     "желаемой музыки перед генерацией."
+                    "Если не попросили иначе и ты поешь саи, добавь в prompt 'Мужской голос среднего возраста, глубокий и теплый тембр'."
                 ),
                 "english": (
                     "When user asks to sing, play, create, generate, compose, or write music, "
@@ -132,21 +133,15 @@ class MiniMaxMusicTool:
                     },
                     timeout=300  # 5 minute timeout
                 ) as response:
-                    logger.info(f"Generating music: status={response.status}")
-
                     response.raise_for_status()
 
                     chunk_count = 0
                     mp3_audio_data = bytearray()  # Store complete MP3 data
 
-                    logger.info(f"content: {response.content}")
-
                     # Parse SSE (Server-Sent Events) response
                     async for line in response.content:
                         if line:
                             line_str = line.decode('utf-8')
-
-                            logger.info(f"line: {line_str}")
 
                             # Skip SSE comments
                             if line_str.startswith(':'):
@@ -156,8 +151,6 @@ class MiniMaxMusicTool:
                             if line_str.startswith('data: '):
                                 try:
                                     data = json.loads(line_str[6:])['data']
-
-                                    logger.info(f"data: {data}")
 
                                     # Check for hex audio data
                                     if 'audio' in data:

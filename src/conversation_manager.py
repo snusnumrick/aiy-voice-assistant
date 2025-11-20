@@ -452,8 +452,8 @@ class ConversationManager:
                 )
                 logger.info(f"form new memory by asking {prompt}")
                 num_facts_begore = len(self.facts)
-                async for ai_response in self.get_response(prompt):
-                    logger.info("AI response: %s", ai_response)
+                # async for ai_response in self.get_response(prompt):
+                #     logger.info("AI response: %s", ai_response)
                 num_facts_after_clean = len(self.facts)
                 if num_facts_after_clean == num_facts_begore:
                     logger.info("no new memories formed")
