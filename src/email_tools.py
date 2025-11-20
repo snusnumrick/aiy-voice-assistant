@@ -2,6 +2,8 @@ import logging
 import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 from typing import Dict
 
 if __name__ == "__main__":
@@ -16,7 +18,7 @@ from src.config import Config
 logger = logging.getLogger(__name__)
 
 
-def send_email(subject: str, body: str, config: Config, sendto: str = None):
+def send_email(subject: str, body: str, config: Config, sendto: str = None, attachments: list = None):
     """
     Sends an email to the user with the given subject and body using the provided email configuration.
     If the `sendto` parameter is not provided, the email will be sent to the default user_email_address from the config.
@@ -26,6 +28,7 @@ def send_email(subject: str, body: str, config: Config, sendto: str = None):
     :param config: A Config object containing the email configuration.
     :param sendto: Optional string representing the recipient's email address. If not specified, falls back to the
                   user's default email address (`user_email_address`) in the configuration.
+    :param attachments: Optional list of file paths to attach to the email.
     :return: None
 
     """
@@ -50,6 +53,24 @@ def send_email(subject: str, body: str, config: Config, sendto: str = None):
     # Attach body to the email
     msg.attach(MIMEText(body, "plain"))
 
+    # Attach files if provided
+    if attachments:
+        for filepath in attachments:
+            try:
+                with open(filepath, "rb") as attachment:
+                    part = MIMEBase('application', 'octet-stream')
+                    part.set_payload(attachment.read())
+                    encoders.encode_base64(part)
+                    part.add_header(
+                        'Content-Disposition',
+                        f'attachment; filename= {os.path.basename(filepath)}'
+                    )
+                    msg.attach(part)
+            except FileNotFoundError:
+                logger.error(f"Attachment file not found: {filepath}")
+            except Exception as e:
+                logger.error(f"Error attaching file {filepath}: {str(e)}")
+
     try:
         # Create SMTP session
         with smtplib.SMTP(smtp_server, smtp_port) as server:
@@ -63,7 +84,7 @@ def send_email(subject: str, body: str, config: Config, sendto: str = None):
         logger.error(f"An error occurred: {str(e)}")
 
 
-async def send_email_async(subject: str, body: str, config: Config, sendto: str = None):
+async def send_email_async(subject: str, body: str, config: Config, sendto: str = None, attachments: list = None):
     """
     Sends an email to the user asynchronously with the given subject and body using the provided email configuration.
     Sends an email to the user asynchronously with the given subject and body using the provided email configuration.
@@ -73,6 +94,7 @@ async def send_email_async(subject: str, body: str, config: Config, sendto: str 
     :param config: A Config object containing the email configuration.
     :param sendto: Optional string representing the recipient's email address. If not specified, falls back to the
                    user's default email address (`user_email_address`) in the configuration.
+    :param attachments: Optional list of file paths to attach to the email.
     :return: None
     """
     import aiosmtplib
@@ -95,6 +117,24 @@ async def send_email_async(subject: str, body: str, config: Config, sendto: str 
 
     # Attach body to the email
     msg.attach(MIMEText(body, "plain"))
+
+    # Attach files if provided
+    if attachments:
+        for filepath in attachments:
+            try:
+                with open(filepath, "rb") as attachment:
+                    part = MIMEBase('application', 'octet-stream')
+                    part.set_payload(attachment.read())
+                    encoders.encode_base64(part)
+                    part.add_header(
+                        'Content-Disposition',
+                        f'attachment; filename= {os.path.basename(filepath)}'
+                    )
+                    msg.attach(part)
+            except FileNotFoundError:
+                logger.error(f"Attachment file not found: {filepath}")
+            except Exception as e:
+                logger.error(f"Error attaching file {filepath}: {str(e)}")
 
     try:
         # Create SMTP client and send email
@@ -135,6 +175,11 @@ class SendEmailTool:
                     type="string",
                     description="Optional recipient's email address. If not provided, the default address will be used.",
                 ),
+                ToolParameter(
+                    name="attachments",
+                    type="array",
+                    description="Optional list of file paths to attach to the email.",
+                ),
             ],
             processor=self.do_send_email,
             required=["subject", "body"],
@@ -145,7 +190,8 @@ class SendEmailTool:
         subject = parameters.get("subject", "")
         body = parameters.get("body", "")
         to = parameters.get("to", None)
-        await send_email_async(subject, body, self.config, sendto=to)
+        attachments = parameters.get("attachments", None)
+        await send_email_async(subject, body, self.config, sendto=to, attachments=attachments)
 
 
 async def main():
