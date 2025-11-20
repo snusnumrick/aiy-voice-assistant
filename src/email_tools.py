@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -50,6 +51,13 @@ def send_email(subject: str, body: str, config: Config, sendto: str = None, atta
     msg["To"] = user_email_address
     msg["Subject"] = subject
 
+    # Add authentication headers to improve deliverability
+    # Extract domain from assistant email address for Message-ID
+    sender_domain = assistant_email_address.split('@')[1] if '@' in assistant_email_address else 'localhost'
+    msg["Message-ID"] = f"<{uuid.uuid4()}@{sender_domain}>"
+    msg["X-Mailer"] = "AIY Voice Assistant"
+    msg["X-Priority"] = "3"
+
     # Attach body to the email
     msg.attach(MIMEText(body, "plain"))
 
@@ -61,10 +69,20 @@ def send_email(subject: str, body: str, config: Config, sendto: str = None, atta
                     part = MIMEBase('application', 'octet-stream')
                     part.set_payload(attachment.read())
                     encoders.encode_base64(part)
+
+                    # Safely encode filename for email headers
+                    import urllib.parse
+                    filename = os.path.basename(filepath)
+
+                    # RFC 2231 encoding for non-ASCII filenames
+                    encoded_filename = urllib.parse.quote(filename.encode('utf-8'))
+
+                    # Add Content-Disposition with both filename and filename* parameters
                     part.add_header(
                         'Content-Disposition',
-                        f'attachment; filename="{os.path.basename(filepath)}"'
+                        f"attachment; filename={filename}; filename*=UTF-8''{encoded_filename}"
                     )
+
                     msg.attach(part)
             except FileNotFoundError:
                 logger.error(f"Attachment file not found: {filepath}")
@@ -115,6 +133,13 @@ async def send_email_async(subject: str, body: str, config: Config, sendto: str 
     msg["To"] = user_email_address
     msg["Subject"] = subject
 
+    # Add authentication headers to improve deliverability
+    # Extract domain from assistant email address for Message-ID
+    sender_domain = assistant_email_address.split('@')[1] if '@' in assistant_email_address else 'localhost'
+    msg["Message-ID"] = f"<{uuid.uuid4()}@{sender_domain}>"
+    msg["X-Mailer"] = "AIY Voice Assistant"
+    msg["X-Priority"] = "3"
+
     # Attach body to the email
     msg.attach(MIMEText(body, "plain"))
 
@@ -126,10 +151,20 @@ async def send_email_async(subject: str, body: str, config: Config, sendto: str 
                     part = MIMEBase('application', 'octet-stream')
                     part.set_payload(attachment.read())
                     encoders.encode_base64(part)
+
+                    # Safely encode filename for email headers
+                    import urllib.parse
+                    filename = os.path.basename(filepath)
+
+                    # RFC 2231 encoding for non-ASCII filenames
+                    encoded_filename = urllib.parse.quote(filename.encode('utf-8'))
+
+                    # Add Content-Disposition with both filename and filename* parameters
                     part.add_header(
                         'Content-Disposition',
-                        f'attachment; filename="{os.path.basename(filepath)}"'
+                        f"attachment; filename={filename}; filename*=UTF-8''{encoded_filename}"
                     )
+
                     msg.attach(part)
             except FileNotFoundError:
                 logger.error(f"Attachment file not found: {filepath}")
