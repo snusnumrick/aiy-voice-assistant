@@ -176,30 +176,38 @@ class MiniMaxMusicTool:
                     processing_tasks = []  # Track concurrent decoding tasks
 
                     # Parse SSE (Server-Sent Events) response with buffered parallel processing
-                    async for line in response.content:
-                        if line:
-                            line_str = line.decode('utf-8')
+                    try:
+                        async for line in response.content:
+                            if line:
+                                line_str = line.decode('utf-8')
 
-                            # Skip SSE comments
-                            if line_str.startswith(':'):
-                                continue
+                                # Skip SSE comments
+                                if line_str.startswith(':'):
+                                    continue
 
-                            # Parse SSE data format: "data: {json}"
-                            if line_str.startswith('data: '):
-                                try:
-                                    data = json.loads(line_str[6:])['data']
+                                # Parse SSE data format: "data: {json}"
+                                if line_str.startswith('data: '):
+                                    try:
+                                        data = json.loads(line_str[6:])['data']
 
-                                    # Log full data structure for debugging
-                                    logger.info(f"SSE data keys: {list(data.keys())}")
+                                        # Log full data structure for debugging
+                                        logger.info(f"SSE data keys: {list(data.keys())}")
+                                        if 'status' in data:
+                                            logger.info(f"SSE status: {data['status']}")
 
-                                    # Check if this is an error message from the API
-                                    if 'msg' in data or 'message' in data:
-                                        api_msg = data.get('msg') or data.get('message')
-                                        logger.error(f"API message: {api_msg}")
-                                        logger.error(f"Full API data: {data}")
+                                        # Check if this is an error message from the API
+                                        if 'msg' in data or 'message' in data:
+                                            api_msg = data.get('msg') or data.get('message')
+                                            logger.error(f"API message: {api_msg}")
+                                            logger.error(f"Full API data: {data}")
 
-                                    # Check for hex audio data
-                                    if 'audio' in data:
+                                        # Check for hex audio data
+                                        if 'audio' in data:
+                                            # Skip empty chunks (end markers or heartbeats)
+                                            if data['audio'] == '' or len(data['audio']) == 0:
+                                                logger.info(f"Skipping empty chunk {chunk_count}")
+                                                chunk_count += 1
+                                                continue
                                         try:
                                             hex_data = data['audio']
                                             logger.info(f"Received chunk {chunk_count}, hex data length: {len(hex_data)}")
@@ -269,6 +277,13 @@ class MiniMaxMusicTool:
                                 except (json.JSONDecodeError, KeyError, ValueError) as e:
                                     logger.warning(f"Failed to parse SSE data: {e}")
                                     continue
+                    except ValueError as e:
+                        # Handle aiohttp "Chunk too big" error from empty/malformed chunks
+                        if "Chunk too big" in str(e):
+                            logger.info(f"Reached end of stream (aiohttp chunk limit): {e}")
+                        else:
+                            logger.error(f"ValueError during streaming: {e}", exc_info=True)
+                            raise
 
                     # Cleanup old temp files (keep last 50)
                     self._cleanup_temp_files()
