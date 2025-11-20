@@ -34,21 +34,22 @@ class MiniMaxMusicTool:
         self.music_dir = Path("/tmp/generated_music")  # Directory for saved MP3 files
         self.music_dir.mkdir(parents=True, exist_ok=True)
         self.executor = ThreadPoolExecutor(max_workers=2)  # For parallel MP3 decoding
-        self.buffer_size = 5  # Process 5 chunks ahead to minimize pauses
+        self.chunks_per_decode = 10  # Buffer 10 chunks before decoding (ensures valid MP3 frames)
+        self.max_buffers = 2  # Maintain up to 2 buffers in parallel
 
-    def _decode_chunk_to_wav(self, mp3_bytes: bytes, chunk_idx: int) -> str:
+    def _decode_buffered_mp3_to_wav(self, buffered_mp3: bytes, buffer_idx: int) -> str:
         """
-        Decode MP3 chunk to WAV file in a blocking operation (for thread pool)
+        Decode buffered MP3 data to WAV file (for thread pool)
 
         Args:
-            mp3_bytes: Raw MP3 audio data as bytes
-            chunk_idx: Chunk index for filename
+            buffered_mp3: Buffered MP3 audio data containing multiple chunks
+            buffer_idx: Buffer index for filename
 
         Returns:
             str: Path to the generated WAV file
         """
-        # Convert MP3 bytes to WAV
-        mp3_audio = AudioSegment.from_mp3(io.BytesIO(mp3_bytes))
+        # Convert buffered MP3 bytes to WAV
+        mp3_audio = AudioSegment.from_mp3(io.BytesIO(buffered_mp3))
 
         # Export to WAV format in-memory
         wav_io = io.BytesIO()
@@ -57,7 +58,7 @@ class MiniMaxMusicTool:
 
         # Save to temporary file
         timestamp = int(time.time() * 1000)  # millisecond timestamp
-        wav_file = f"/tmp/music_{timestamp}_{chunk_idx}.wav"
+        wav_file = f"/tmp/music_buffer_{timestamp}_{buffer_idx}.wav"
 
         with open(wav_file, "wb") as f:
             f.write(wav_bytes)
@@ -169,10 +170,12 @@ class MiniMaxMusicTool:
                     response.raise_for_status()
 
                     chunk_count = 0
+                    buffer_count = 0
                     mp3_audio_data = bytearray()  # Store complete MP3 data
+                    current_buffer = bytearray()  # Buffer for current decoding batch
                     processing_tasks = []  # Track concurrent decoding tasks
 
-                    # Parse SSE (Server-Sent Events) response with parallel processing
+                    # Parse SSE (Server-Sent Events) response with buffered parallel processing
                     async for line in response.content:
                         if line:
                             line_str = line.decode('utf-8')
@@ -191,30 +194,38 @@ class MiniMaxMusicTool:
                                         hex_data = data['audio']
                                         mp3_bytes = bytes.fromhex(hex_data)
                                         mp3_audio_data.extend(mp3_bytes)
-
-                                        # Decode chunk in parallel using thread pool
-                                        loop = asyncio.get_event_loop()
-                                        task = loop.run_in_executor(
-                                            self.executor,
-                                            self._decode_chunk_to_wav,
-                                            mp3_bytes,
-                                            chunk_count
-                                        )
-
-                                        # Store task with chunk index for tracking
-                                        processing_tasks.append((chunk_count, task))
+                                        current_buffer.extend(mp3_bytes)
 
                                         chunk_count += 1
 
-                                        # Limit concurrent processing to prevent memory issues
-                                        # Wait for oldest task to complete if buffer is full
-                                        if len(processing_tasks) >= self.buffer_size:
-                                            oldest_idx, oldest_task = processing_tasks.pop(0)
-                                            wav_file = await oldest_task
-                                            self._cleanup_files.append(wav_file)
-                                            # Add to ResponsePlayer queue for interruptible playback
-                                            self.response_player.add((None, wav_file, "generated music"))
-                                            logger.debug(f"Processed chunk {oldest_idx}")
+                                        # Decode when buffer is full (ensures valid MP3 frames)
+                                        if len(current_buffer) >= 50000:  # ~50KB buffer
+                                            # Submit buffer for decoding in thread pool
+                                            loop = asyncio.get_event_loop()
+                                            buffer_copy = bytes(current_buffer)  # Copy for thread safety
+                                            task = loop.run_in_executor(
+                                                self.executor,
+                                                self._decode_buffered_mp3_to_wav,
+                                                buffer_copy,
+                                                buffer_count
+                                            )
+
+                                            # Store task with buffer index for tracking
+                                            processing_tasks.append((buffer_count, task))
+
+                                            # Clear buffer for next batch
+                                            current_buffer = bytearray()
+                                            buffer_count += 1
+
+                                            # Limit concurrent processing to prevent memory issues
+                                            # Wait for oldest buffer to decode if max buffers reached
+                                            if len(processing_tasks) >= self.max_buffers:
+                                                oldest_idx, oldest_task = processing_tasks.pop(0)
+                                                wav_file = await oldest_task
+                                                self._cleanup_files.append(wav_file)
+                                                # Add to ResponsePlayer queue for interruptible playback
+                                                self.response_player.add((None, wav_file, "generated music"))
+                                                logger.debug(f"Processed buffer {oldest_idx}")
 
                                         # Check for button press interrupt
                                         if self.button_state():
@@ -223,7 +234,7 @@ class MiniMaxMusicTool:
 
                                     # Check for completion
                                     if data.get('is_finish', False):
-                                        logger.info(f"Music generation complete: {chunk_count} chunks")
+                                        logger.info(f"Music generation complete: {chunk_count} chunks, {buffer_count} buffers")
                                         break
 
                                     # Check for errors
@@ -239,14 +250,28 @@ class MiniMaxMusicTool:
                     # Cleanup old temp files (keep last 50)
                     self._cleanup_temp_files()
 
-                    # Wait for all remaining chunks to finish decoding
-                    logger.debug(f"Waiting for {len(processing_tasks)} remaining chunks to decode")
+                    # Decode any remaining buffered data
+                    if current_buffer:
+                        logger.debug(f"Decoding final buffer of {len(current_buffer)} bytes")
+                        loop = asyncio.get_event_loop()
+                        buffer_copy = bytes(current_buffer)
+                        task = loop.run_in_executor(
+                            self.executor,
+                            self._decode_buffered_mp3_to_wav,
+                            buffer_copy,
+                            buffer_count
+                        )
+                        processing_tasks.append((buffer_count, task))
+                        buffer_count += 1
+
+                    # Wait for all remaining buffers to finish decoding
+                    logger.debug(f"Waiting for {len(processing_tasks)} remaining buffers to decode")
                     for idx, task in processing_tasks:
                         wav_file = await task
                         self._cleanup_files.append(wav_file)
                         # Add to ResponsePlayer queue for interruptible playback
                         self.response_player.add((None, wav_file, "generated music"))
-                        logger.debug(f"Processed final chunk {idx}")
+                        logger.debug(f"Processed final buffer {idx}")
 
                     if chunk_count > 0 and mp3_audio_data:
                         # Save complete MP3 file
