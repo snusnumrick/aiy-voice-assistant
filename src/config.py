@@ -41,12 +41,12 @@ class Config(BaseModel):
             try:
                 with open(config_file, "r") as f:
                     file_config = json.load(f)
-                    logger.info(f"Loaded config from {config_file}: {file_config}")
                     init_data.update(file_config)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Error parsing config file {config_file}: {str(e)}")
         else:
             logger.warning(f"Config file {config_file} not found")
+        logger.info(f"Loaded shared config: {init_data}")
 
         # Load from user config file (overrides shared config)
         if os.path.exists(user_config_file):
@@ -58,6 +58,7 @@ class Config(BaseModel):
                 raise ValueError(
                     f"Error parsing user config file {user_config_file}: {str(e)}"
                 )
+        logger.info(f"Loaded shared config: {init_data}")
 
         # Load from environment variables (overrides both config files)
         for key, value in os.environ.items():
@@ -72,10 +73,12 @@ class Config(BaseModel):
 
         # Update with any direct arguments (highest precedence)
         init_data.update(data)
+        logger.info(f"Loaded shared config: {init_data}")
 
         # Initialize the Pydantic model with our collected data
         super().__init__(**init_data)
 
+        logger.info(f"Loaded shared config: {init_data}")
         logger.info(f"Loaded configuration: {self.dict()}")
 
     def get(self, key: str, default: Any = None) -> Any:
