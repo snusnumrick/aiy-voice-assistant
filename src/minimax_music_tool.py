@@ -63,7 +63,7 @@ class MiniMaxMusicTool:
                     "Всегда уточни у пользователя жанр, настроение, описание или характеристики "
                     "желаемой музыки перед генерацией."
                     "Если не попросили иначе и ты поешь саи, добавь в prompt 'Мужской голос среднего возраста, глубокий и теплый тембр'. "
-                    "После получения ответа от инструмента обязательно сохрани URL для скачивания и локальный путь к файлу в память, "
+                    "После получения ответа от инструмента обязательно сохрани текст песни и локальный путь к файлу в память, "
                     "используя формат: "
                     "$remember: Сгенерированная музыка: <описание из prompt>, текст: <lyrics>, файл: <путь>. Удали из памяти через 24 часа.$."
                 ),
@@ -74,7 +74,7 @@ class MiniMaxMusicTool:
                     "'write composition', 'make a track'. "
                     "Always ask for genre, mood, description, or characteristics of desired music "
                     "before generation. "
-                    "After receiving the tool response, always save the download URL and local file path to memory using format: "
+                    "After receiving the tool response, always save the lyrics and local file path to memory using format: "
                     "$remember: Generated music: <description from prompt>, lyrics: <lyrics>, file: <path> Remove from memory in 24 hours$."
                 )
             }
