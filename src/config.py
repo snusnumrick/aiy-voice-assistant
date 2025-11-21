@@ -44,6 +44,8 @@ class Config(BaseModel):
                     init_data.update(file_config)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Error parsing config file {config_file}: {str(e)}")
+        else:
+            logger.warning(f"Config file {config_file} not found")
 
         # Load from user config file (overrides shared config)
         if os.path.exists(user_config_file):
