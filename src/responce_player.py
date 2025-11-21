@@ -346,7 +346,7 @@ class ResponsePlayer:
                     if self.wav_list:
                         self._process_wav_list()
             with self.condition:
-                if self.merge_queue.empty() and not self._should_play:
+                if self.merge_queue.empty() and self._should_play:
                     self.condition.wait(timeout=1.0)
         logger.debug("Merge process ended")
 
