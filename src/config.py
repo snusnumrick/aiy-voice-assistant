@@ -8,7 +8,7 @@ import logging
 import os
 import json
 from typing import Any, Dict
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +23,7 @@ class Config(BaseModel):
     4. config.json (shared configuration)
     """
 
-    class Config:
-        extra = "allow"
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
     def __init__(
         self,
@@ -42,11 +40,11 @@ class Config(BaseModel):
                 with open(config_file, "r") as f:
                     file_config = json.load(f)
                     init_data.update(file_config)
+                    logger.info(f"Loaded shared config from {config_file}")
             except json.JSONDecodeError as e:
                 raise ValueError(f"Error parsing config file {config_file}: {str(e)}")
         else:
             logger.warning(f"Config file {config_file} not found")
-        logger.info(f"Loaded shared config: {init_data}")
 
         # Load from user config file (overrides shared config)
         if os.path.exists(user_config_file):
@@ -54,11 +52,11 @@ class Config(BaseModel):
                 with open(user_config_file, "r") as f:
                     user_config = json.load(f)
                     init_data.update(user_config)
+                    logger.info(f"Loaded user config from {user_config_file}")
             except json.JSONDecodeError as e:
                 raise ValueError(
                     f"Error parsing user config file {user_config_file}: {str(e)}"
                 )
-        logger.info(f"Loaded shared config: {init_data}")
 
         # Load from environment variables (overrides both config files)
         for key, value in os.environ.items():
@@ -73,13 +71,11 @@ class Config(BaseModel):
 
         # Update with any direct arguments (highest precedence)
         init_data.update(data)
-        logger.info(f"Loaded shared config: {init_data}")
 
         # Initialize the Pydantic model with our collected data
         super().__init__(**init_data)
 
-        logger.info(f"Loaded shared config: {init_data}")
-        logger.info(f"Loaded configuration: {self.dict()}")
+        logger.info(f"Configuration initialized with {len(init_data)} settings")
 
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -92,7 +88,7 @@ class Config(BaseModel):
         Returns:
             Any: The value associated with the key, or the default value if not found.
         """
-        return self.__dict__.get(key, default)
+        return getattr(self, key, default)
 
     def __getitem__(self, key: str) -> Any:
         """
@@ -107,10 +103,9 @@ class Config(BaseModel):
         Raises:
             KeyError: If the key is not found in the configuration.
         """
-        try:
-            return self.__dict__[key]
-        except KeyError:
-            raise KeyError(key)
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(key)
 
     def __setitem__(self, key: str, value: Any) -> None:
         """
@@ -120,7 +115,7 @@ class Config(BaseModel):
             key (str): The configuration key to set.
             value (Any): The value to associate with the key.
         """
-        self.__dict__[key] = value
+        setattr(self, key, value)
 
     def __contains__(self, key: str) -> bool:
         """
@@ -132,20 +127,22 @@ class Config(BaseModel):
         Returns:
             bool: True if the key exists in the configuration, False otherwise.
         """
-        return key in self.__dict__
+        return hasattr(self, key)
 
-    def dict(self) -> Dict[str, Any]:
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
         """
         Get a dictionary representation of the configuration.
 
         Returns:
             Dict[str, Any]: Dictionary containing all configuration values.
         """
-        return {
-            key: value
-            for key, value in self.__dict__.items()
-            if not key.startswith("_")
-        }
+        # Get the base model dump
+        data = super().model_dump(**kwargs)
+        # Include any extra fields that might be in __dict__
+        for key, value in self.__dict__.items():
+            if not key.startswith("_") and key not in data:
+                data[key] = value
+        return data
 
     def __str__(self) -> str:
         """
@@ -154,7 +151,7 @@ class Config(BaseModel):
         Returns:
             str: A string representation of the configuration data.
         """
-        return f"Config({self.dict()})"
+        return f"Config({self.model_dump()})"
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

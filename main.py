@@ -122,7 +122,7 @@ def main():
     logger.info("Starting AI Voice Assistant")
 
     config = Config()
-    print(config.dict())
+    print(config.model_dump())
     timezone = get_timezone()
     # System timezone is now set by run.sh
     use_claude_search = config.get("claude_use_search", False)
