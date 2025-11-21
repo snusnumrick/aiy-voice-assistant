@@ -376,7 +376,7 @@ class DialogManager:
                         # logger.debug(f"Processed {len(processed_tasks)} tasks, {len(synthesis_tasks)} remaining")
                     # else:
                     #     logger.debug("No synthesis tasks to process, waiting...")
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.01)
                 if button_pressed:
                     logger.info(
                         "Button pressed, immediately exiting synthesis task processing"
