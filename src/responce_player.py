@@ -235,6 +235,7 @@ class ResponsePlayer:
 
         # start with light off
         self.change_light_behavior({})
+        self._playback_completed.set() # Set initially to prevent blocking stop() when no playback has occurred
 
         for item in playlist:
             self.add(item)
