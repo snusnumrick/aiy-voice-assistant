@@ -84,17 +84,6 @@ class ButtonState(Enum):
     PRESSED = 1
     DEPRESSED = 2
 
-def time_string_ms() -> str:
-    from datetime import datetime
-    import pytz
-
-    # 07:00.989
-    return (
-        datetime.now(pytz.utc)
-        .astimezone(pytz.timezone('UTC'))
-        .strftime("%M:%S.%f")[:-3]
-    )
-
 logger = logging.getLogger(__name__)
 
 
@@ -123,14 +112,14 @@ class Button:
                         pressed = True
                         when_pressed = now
                         self._state = ButtonState.PRESSED
-                        logger.info(f"({time_string_ms()}) Button pressed")
+                        logger.info("Button pressed")
 
                         self._trigger(self._pressed_queue, self._pressed_callback)
                 else:
                     if pressed:
                         pressed = False
                         self._state = ButtonState.DEPRESSED
-                        logger.info(f"({time_string_ms()}) Button depressed")
+                        logger.info("Button depressed")
                         self._trigger(self._released_queue, self._released_callback)
             self._done.wait(0.05)
 

@@ -21,7 +21,7 @@ from typing import Optional, List, Iterator, Callable
 
 import aiohttp
 import grpc
-from aiy.board import Button
+from aiy.board import Button, ButtonState
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import AudioFormat, Recorder
 from google.cloud import speech
@@ -186,7 +186,6 @@ class SpeechTranscriber:
         button (Button): The AIY Kit button object.
         leds (Leds): The AIY Kit LED object for visual feedback.
         config (Config): The application configuration object.
-        button_is_pressed (bool): Flag to track button press state.
         speech_client (speech.SpeechClient): Google Cloud Speech client.
         streaming_config (speech.StreamingRecognitionConfig): Configuration for streaming recognition.
     """
@@ -212,7 +211,6 @@ class SpeechTranscriber:
         self.button = button
         self.leds = leds
         self.config = config
-        self.button_is_pressed = False
         self.setup_speech_service()
         self.breathing_period_ms = self.config.get("ready_breathing_period_ms", 10000)
         self.led_breathing_color = self.config.get(
@@ -361,7 +359,7 @@ class SpeechTranscriber:
                     ):
                         chunks_deque.popleft()
 
-                if (status == RecordingStatus.NOT_STARTED) and self.button_is_pressed:
+                if (status == RecordingStatus.NOT_STARTED) and self.button.state == ButtonState.PRESSED:
                     stop_playing()
                     start_listening()
                     logger.debug(f"{len(chunks_deque)} audio chunks buffered")
@@ -386,11 +384,10 @@ class SpeechTranscriber:
                     chunks.append(chunk)
                     yield chunks_deque.popleft()
 
-                if status == RecordingStatus.STARTED and not self.button_is_pressed:
+                if status == RecordingStatus.STARTED and self.button.state != ButtonState.PRESSED:
                     start_processing()
                     status = RecordingStatus.FINISHED
 
-        self.setup_button_callbacks()
         logger.info("Press the button and speak")
 
         with Recorder() as recorder:
@@ -435,28 +432,6 @@ class SpeechTranscriber:
                 logger.error(f"Error transcribing speech: {str(e)}")
                 text = ""
         return text
-
-    def setup_button_callbacks(self):
-        """
-        Set up callbacks for button press and release events.
-        """
-        self.button.when_pressed = self.button_pressed
-        self.button.when_released = self.button_released
-        logger.debug("set button callback")
-
-    def button_pressed(self):
-        """
-        Callback function for button press event.
-        """
-        self.button_is_pressed = True
-        logger.debug("Button pressed")
-
-    def button_released(self):
-        """
-        Callback function for button release event.
-        """
-        self.button_is_pressed = False
-        logger.debug("Button released")
 
     def wait_for_button_press(self):
         """
