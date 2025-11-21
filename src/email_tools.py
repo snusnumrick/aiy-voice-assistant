@@ -1,6 +1,5 @@
 import logging
 import os
-import re
 import uuid
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -9,9 +8,8 @@ from email import encoders
 from typing import Dict
 
 if __name__ == "__main__":
-    # add current directory to python path
+    # add the current directory to the python path
     import sys
-
     sys.path.append(os.getcwd())
 
 from src.ai_models_with_tools import Tool, ToolParameter
@@ -102,7 +100,6 @@ def send_email(subject: str, body: str, config: Config, sendto: str = None, atta
                     encoders.encode_base64(part)
 
                     # Safely encode filename for email headers
-                    import urllib.parse
                     filename = os.path.basename(filepath)
 
                     # Check if filename contains non-ASCII characters
@@ -204,7 +201,6 @@ async def send_email_async(subject: str, body: str, config: Config, sendto: str 
                     encoders.encode_base64(part)
 
                     # Safely encode filename for email headers
-                    import urllib.parse
                     filename = os.path.basename(filepath)
 
                     # Check if filename contains non-ASCII characters
