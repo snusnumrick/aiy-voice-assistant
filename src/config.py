@@ -41,6 +41,7 @@ class Config(BaseModel):
             try:
                 with open(config_file, "r") as f:
                     file_config = json.load(f)
+                    logger.info(f"Loaded config from {config_file}: {file_config}")
                     init_data.update(file_config)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Error parsing config file {config_file}: {str(e)}")
