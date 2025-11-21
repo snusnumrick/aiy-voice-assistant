@@ -4,12 +4,13 @@ Configuration management module.
 This module provides a Config class for loading and managing application configuration
 from both shared and user-specific JSON files and environment variables, using Pydantic for validation.
 """
-
+import logging
 import os
 import json
 from typing import Any, Dict
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
 
 class Config(BaseModel):
     """
@@ -71,6 +72,8 @@ class Config(BaseModel):
 
         # Initialize the Pydantic model with our collected data
         super().__init__(**init_data)
+
+        logger.info(f"Loaded configuration: {self.dict()}")
 
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -146,3 +149,8 @@ class Config(BaseModel):
             str: A string representation of the configuration data.
         """
         return f"Config({self.dict()})"
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+
+    config = Config()
