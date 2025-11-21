@@ -68,12 +68,19 @@ import itertools
 import queue
 import threading
 import time
+from enum import Enum
 
 from collections import namedtuple
 
 from RPi import GPIO
 
 from aiy.leds import Leds, Pattern
+
+
+class ButtonState(Enum):
+    UNKNOWN = 0
+    PRESSED = 1
+    DEPRESSED = 2
 
 class Button:
     """ An interface for the button connected to the AIY board's
@@ -99,10 +106,12 @@ class Button:
                     if not pressed:
                         pressed = True
                         when_pressed = now
+                        self._state = ButtonState.PRESSED
                         self._trigger(self._pressed_queue, self._pressed_callback)
                 else:
                     if pressed:
                         pressed = False
+                        self._state = ButtonState.DEPRESSED
                         self._trigger(self._released_queue, self._released_callback)
             self._done.wait(0.05)
 
@@ -126,6 +135,8 @@ class Button:
 
         self._pressed_queue = queue.Queue()
         self._released_queue = queue.Queue()
+
+        self._state = ButtonState.UNKNOWN
 
         self._done = threading.Event()
         self._thread = threading.Thread(target=self._run)
@@ -152,6 +163,15 @@ class Button:
         self._released_callback = callback
     when_released = property(None, _when_released)
     """A function to run when the button is released."""
+
+    @property
+    def state(self):
+        """Returns the current button state as a ButtonState enum value.
+
+        Returns:
+            ButtonState: UNKNOWN, PRESSED, or DEPRESSED
+        """
+        return self._state
 
     def wait_for_press(self, timeout=None):
         """Pauses the script until the button is pressed or the timeout is reached.
