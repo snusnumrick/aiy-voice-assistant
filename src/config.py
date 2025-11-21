@@ -3,12 +3,21 @@ Configuration management module.
 
 This module provides a Config class for loading and managing application configuration
 from both shared and user-specific JSON files and environment variables, using Pydantic for validation.
+
+Backward compatible with both Pydantic v1 and v2.
 """
 import logging
 import os
 import json
 from typing import Any, Dict
-from pydantic import BaseModel, ConfigDict
+
+# Try to import Pydantic v2 first, fall back to v1
+try:
+    from pydantic import BaseModel, ConfigDict
+    PYDANTIC_V2 = True
+except ImportError:
+    from pydantic import BaseModel
+    PYDANTIC_V2 = False
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +31,13 @@ class Config(BaseModel):
     3. user.json (user-specific overrides)
     4. config.json (shared configuration)
     """
-
-    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+    # Backward compatible configuration for both Pydantic v1 and v2
+    if PYDANTIC_V2:
+        model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+    else:
+        class Config:
+            extra = "allow"
+            arbitrary_types_allowed = True
 
     def __init__(
         self,
@@ -136,13 +150,18 @@ class Config(BaseModel):
         Returns:
             Dict[str, Any]: Dictionary containing all configuration values.
         """
-        # Get the base model dump
-        data = super().model_dump(**kwargs)
-        # Include any extra fields that might be in __dict__
-        for key, value in self.__dict__.items():
-            if not key.startswith("_") and key not in data:
-                data[key] = value
-        return data
+        # Backward compatible dictionary conversion
+        if PYDANTIC_V2:
+            # Get the base model dump
+            data = super().model_dump(**kwargs)
+            # Include any extra fields that might be in __dict__
+            for key, value in self.__dict__.items():
+                if not key.startswith("_") and key not in data:
+                    data[key] = value
+            return data
+        else:
+            # Pydantic v1
+            return super().dict(**kwargs)
 
     def __str__(self) -> str:
         """
