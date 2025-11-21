@@ -87,7 +87,11 @@ def extract_emotions(text: str) -> List[Tuple[Optional[dict], str]]:
 
 
 def language_prompt() -> str:
-    return "If you reply or part of it uses different language than before, use $lang: ru/en/de$. "
+    return (
+        "Start every response with $lang: ru/en/de$ tag. "
+        "When including fragments in other languages, wrap them and switch back to primary response language after "
+        "each foreign fragment. Example: $lang: ru$ Привет $lang: en$ Hello $lang: ru$ как дела?"
+    )
 
 
 def extract_language(text: str, default_lang="ru") -> List[Tuple[str, str]]:
