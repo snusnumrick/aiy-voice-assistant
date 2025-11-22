@@ -209,6 +209,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         self.api_key = api_key
         self.model = config.get("openai_transcription_model", "gpt-4o-transcribe")
         self.language = config.get("language_code", "ru")
+        self.sample_rate = 24000  # OpenAI Realtime API requires 24kHz
         self.base64 = base64
         self.json = json
         self.asyncio = asyncio
@@ -316,6 +317,20 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                         "type": "near_field"
                     }
                 }
+                session_config = {
+                    "type": "transcription_session.update",
+                    "session": {
+                        "input_audio_format": "pcm16",
+                        "turn_detection": {"type": "server_vad", "threshold": 0.5},
+                        "input_audio_transcription": {
+                            "model": self.model,
+                            "language": self.language
+                        },
+                        "input_audio_noise_reduction": {
+                            "type": "near_field"
+                        }
+                    }
+                }
                 logger.info(f"Sending session config: model={self.model}, language={self.language}")
                 await websocket.send(self.json.dumps(session_config))
                 logger.info("Session config sent")
@@ -327,15 +342,19 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                 except asyncio.TimeoutError:
                     logger.warning("Timeout waiting for config acknowledgment")
 
-                # Stream audio chunks
-                logger.info("Starting to stream audio chunks...")
+                # Stream audio chunks with pacing for real-time transcription
+                logger.info("Starting to stream audio chunks with pacing...")
+                import time
+                t_next = time.monotonic()
+                chunk_duration = 0.025  # 25ms between chunks for real-time pacing
+
                 async for chunk in self._async_generator(audio_generator):
                     if chunk:
                         audio_chunk_count += 1
                         if audio_chunk_count % 10 == 0:
                             logger.info(f"Processed {audio_chunk_count} audio chunks...")
 
-                        # Encode audio to base64
+                        # Encode audio to base64 (PCM16)
                         audio_b64 = self.base64.b64encode(chunk).decode('utf-8')
 
                         # Send audio buffer
@@ -345,10 +364,14 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                         }
                         await websocket.send(self.json.dumps(audio_message))
 
-                # Close input stream
-                logger.info(f"Finished streaming {audio_chunk_count} audio chunks. Sending commit...")
-                await websocket.send(self.json.dumps({"type": "input_audio_buffer.commit"}))
-                logger.info("Audio commit sent. Waiting for transcription results...")
+                        # Add pacing delay for real-time transcription
+                        t_next += chunk_duration
+                        await asyncio.sleep(max(0, t_next - time.monotonic()))
+
+                # Signal end of audio
+                logger.info(f"Finished streaming {audio_chunk_count} audio chunks. Sending end...")
+                await websocket.send(self.json.dumps({"type": "input_audio_buffer.end"}))
+                logger.info("Audio end sent. Waiting for transcription results...")
 
                 # Process responses with timeout
                 message_count = 0
@@ -394,24 +417,24 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                                 error_msg = response.get("error", {}).get("message", "Unknown error")
                                 logger.error(f"Transcription failed: {error_msg}")
 
-                            elif event_type == "conversation.item.done":
-                                # Extract transcript from conversation item
-                                item = response.get("item", {})
-                                content = item.get("content", [])
-                                for content_item in content:
-                                    if content_item.get("type") == "input_audio":
-                                        transcript = content_item.get("transcript", "")
-                                        if transcript:
-                                            logger.info(f"Received transcript from conversation item: {transcript}")
-                                            interim_results.append(transcript)
-                                            full_transcript = " ".join(interim_results)
-                                            logger.info("Transcription complete!")
-                                            # Exit both loops by returning early
-                                            return full_transcript.strip()
+                            elif event_type == "conversation.item.input_audio_transcription.delta":
+                                # Streaming delta - accumulate partial transcription
+                                delta = response.get("delta", "")
+                                if delta:
+                                    logger.debug(f"Delta received: {delta}")
+                                    # Keep accumulating in current transcript
+                                    full_transcript += delta
 
-                            elif event_type == "response.done":
-                                logger.info("Received response.done - transcription complete")
-                                return full_transcript.strip()
+                            elif event_type == "conversation.item.input_audio_transcription.completed":
+                                # Final transcription result - move current to completed
+                                logger.info("Transcription completed")
+                                if full_transcript:
+                                    interim_results.append(full_transcript)
+                                    logger.info(f"Final transcript: {full_transcript}")
+                                    # Return immediately when transcription is complete
+                                    return full_transcript.strip()
+                                full_transcript = ""  # Reset for next item
+
 
                         except Exception as e:
                             logger.error(f"Error processing WebSocket message: {str(e)}")
