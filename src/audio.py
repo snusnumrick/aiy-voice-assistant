@@ -209,7 +209,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         self.api_key = api_key
         self.model = config.get("openai_transcription_model", "gpt-4o-transcribe")
         self.language = config.get("language_code", "ru")
-        self.sample_rate = config.get("sample_rate_hertz", 16000)  
+        self.sample_rate = config.get("sample_rate_hertz", 24000)  # OpenAI Realtime API requires at least 24kHz
         self.base64 = base64
         self.json = json
         self.asyncio = asyncio
@@ -230,7 +230,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         Returns:
             str: Transcribed text
         """
-        logger.info("Transcribing audio stream (openai realtime)")
+        logger.debug("Transcribing audio stream (openai realtime)")
 
         import asyncio
 
@@ -270,16 +270,16 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         """
         import websockets
 
-        logger.info("Starting OpenAI Realtime transcription")
+        logger.debug("Starting OpenAI Realtime transcription")
 
         # Get ephemeral token
         try:
-            logger.info("Getting ephemeral token...")
+            logger.debug("Getting ephemeral token...")
             token_response = await self._get_ephemeral_token()
             if not token_response:
                 logger.error("Failed to get ephemeral token")
                 return ""
-            logger.info("Ephemeral token received successfully")
+            logger.debug("Ephemeral token received successfully")
         except Exception as e:
             logger.error(f"Error getting ephemeral token: {str(e)}")
             return ""
@@ -291,7 +291,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
             return ""
 
         uri = f"wss://api.openai.com/v1/realtime?intent=transcription&client_secret={client_secret}"
-        logger.info(f"Connecting to WebSocket: {uri[:80]}...")
+        logger.debug(f"Connecting to WebSocket: {uri[:80]}...")
 
         full_transcript = ""
         interim_results = []
@@ -323,23 +323,23 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                         },
                     },
                 }
-                logger.info(
+                logger.debug(
                     "Sending session config: sample_rate=%s, model=%s",
                     self.sample_rate,
                     self.model,
                 )
                 await websocket.send(self.json.dumps(session_config))
-                logger.info("Session config sent")
+                logger.debug("Session config sent")
 
                 # Wait for config acknowledgment
                 try:
                     config_ack = await asyncio.wait_for(websocket.recv(), timeout=5)
-                    logger.info(f"Config acknowledgment received: {config_ack[:100]}")
+                    logger.debug(f"Config acknowledgment received: {config_ack[:100]}")
                 except asyncio.TimeoutError:
                     logger.warning("Timeout waiting for config acknowledgment")
 
                 # Stream audio chunks with pacing for real-time transcription
-                logger.info("Starting to stream audio chunks with pacing...")
+                logger.debug("Starting to stream audio chunks with pacing...")
                 import time
                 t_next = time.monotonic()
                 chunk_duration = 0.025  # 25ms between chunks for real-time pacing
@@ -348,7 +348,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                     if chunk:
                         audio_chunk_count += 1
                         if audio_chunk_count % 10 == 0:
-                            logger.info(f"Processed {audio_chunk_count} audio chunks...")
+                            logger.debug(f"Processed {audio_chunk_count} audio chunks...")
 
                         # Encode audio to base64 (PCM16)
                         audio_b64 = self.base64.b64encode(chunk).decode('utf-8')
@@ -365,11 +365,11 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                         await asyncio.sleep(max(0, t_next - time.monotonic()))
 
                 # Signal end of audio
-                logger.info(
+                logger.debug(
                     f"Finished streaming {audio_chunk_count} audio chunks. Sending commit..."
                 )
                 await websocket.send(self.json.dumps({"type": "input_audio_buffer.commit"}))
-                logger.info("Audio commit sent. Requesting response...")
+                logger.debug("Audio commit sent. Requesting response...")
 
                 # Process responses with timeout
                 message_count = 0
@@ -378,7 +378,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                     nonlocal message_count, full_transcript
                     async for message in websocket:
                         message_count += 1
-                        logger.info(f"Received WebSocket message #{message_count}: {message}")
+                        logger.debug(f"Received WebSocket message #{message_count}: {message}")
 
                         try:
                             response = self.json.loads(message)
@@ -386,18 +386,18 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
 
                             # Log all event types for debugging
                             if event_type:
-                                logger.info(f"Event type received: {event_type}")
-                                logger.info(f"Full response: {response}")
+                                logger.debug(f"Event type received: {event_type}")
+                                logger.debug(f"Full response: {response}")
 
                             # Handle transcription events
                             if event_type == "input_audio_buffer.committed":
                                 # VAD detected speech commit
-                                logger.info("VAD commit received")
+                                logger.debug("VAD commit received")
 
                             elif event_type == "input_audio_transcription.completed":
                                 # Final transcription result
                                 transcript = response.get("transcript", "")
-                                logger.info(f"Received transcription: {transcript}")
+                                logger.debug(f"Received transcription: {transcript}")
                                 if transcript:
                                     interim_results.append(transcript)
                                     full_transcript = " ".join(interim_results)
@@ -405,7 +405,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                             elif event_type == "input_audio_transcription.final_logprobs":
                                 # Final result with logprobs
                                 transcript = response.get("text", "")
-                                logger.info(f"Received final transcription: {transcript}")
+                                logger.debug(f"Received final transcription: {transcript}")
                                 if transcript:
                                     interim_results.append(transcript)
                                     full_transcript = " ".join(interim_results)
@@ -425,10 +425,10 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
 
                             elif event_type == "conversation.item.input_audio_transcription.completed":
                                 # Final transcription result - move current to completed
-                                logger.info("Transcription completed")
+                                logger.debug("Transcription completed")
                                 if full_transcript:
                                     interim_results.append(full_transcript)
-                                    logger.info(f"Final transcript: {full_transcript}")
+                                    logger.debug(f"Final transcript: {full_transcript}")
                                     # Return immediately when transcription is complete
                                     return full_transcript.strip()
                                 full_transcript = ""  # Reset for next item
@@ -441,7 +441,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                                     if content_item.get("type") == "input_audio":
                                         transcript = content_item.get("transcript", "")
                                         if transcript and transcript != "None":
-                                            logger.info(f"Received transcript from conversation item: {transcript}")
+                                            logger.debug(f"Received transcript from conversation item: {transcript}")
                                             return transcript.strip()
 
 
@@ -457,8 +457,8 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                 except asyncio.TimeoutError:
                     logger.warning("Timeout waiting for transcription response after flush")
 
-                logger.info(f"Total WebSocket messages received: {message_count}")
-                logger.info(f"Final transcript: '{full_transcript}'")
+                logger.debug(f"Total WebSocket messages received: {message_count}")
+                logger.debug(f"Final transcript: '{full_transcript}'")
 
                 return full_transcript.strip()
 
@@ -491,12 +491,12 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                     "model": self.model,
                 }
 
-                logger.info(f"Requesting ephemeral token from {url}")
+                logger.debug(f"Requesting ephemeral token from {url}")
                 async with session.post(url, headers=headers, json=payload) as response:
-                    logger.info(f"Ephemeral token response status: {response.status}")
+                    logger.debug(f"Ephemeral token response status: {response.status}")
                     if response.status == 200:
                         result = await response.json()
-                        logger.info("Ephemeral token received successfully")
+                        logger.debug("Ephemeral token received successfully")
                         return result
                     else:
                         error_text = await response.text()
@@ -522,7 +522,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                 await asyncio.sleep(0.01)
                 yield chunk
         except asyncio.CancelledError:
-            logger.info("Async generator cancelled")
+            logger.debug("Async generator cancelled")
             raise
         except Exception as e:
             logger.error(f"Error in async generator: {str(e)}")
