@@ -307,15 +307,18 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                 # Send session configuration
                 session_config = {
                     "type": "session.update",
-                    "input_audio_transcription": {
-                        "model": self.model,
-                        "language": self.language,
-                    },
                     "session": {
                         "type": "transcription",
+                        "input_audio_format": {
+                            "codec": "pcm16",
+                            "sample_rate_hz": self.sample_rate,
+                            "channel_count": 1,
+                        },
                     },
                 }
-                logger.info(f"Sending session config: model={self.model}, language={self.language}")
+                logger.info(
+                    "Sending session config: sample_rate=%s", self.sample_rate
+                )
                 await websocket.send(self.json.dumps(session_config))
                 logger.info("Session config sent")
 
@@ -353,11 +356,22 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                         await asyncio.sleep(max(0, t_next - time.monotonic()))
 
                 # Signal end of audio
-                logger.info(f"Finished streaming {audio_chunk_count} audio chunks. Sending commit...")
+                logger.info(
+                    f"Finished streaming {audio_chunk_count} audio chunks. Sending commit..."
+                )
                 await websocket.send(self.json.dumps({"type": "input_audio_buffer.commit"}))
                 logger.info("Audio commit sent. Requesting response...")
                 # Request a response to trigger transcription
-                await websocket.send(self.json.dumps({"type": "response.create"}))
+                response_request = {
+                    "type": "response.create",
+                    "response": {
+                        "input_audio_transcription": {
+                            "model": self.model,
+                            "language": self.language,
+                        }
+                    },
+                }
+                await websocket.send(self.json.dumps(response_request))
                 logger.info("Response requested. Waiting for transcription results...")
 
                 # Process responses with timeout
