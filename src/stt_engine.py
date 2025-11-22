@@ -49,7 +49,7 @@ class OpenAISTTEngine(STTEngine):
 
         with open(audio_file, "rb") as f:
             return openai.audio.transcriptions.create(
-                model="whisper-1", file=f, language="en", response_format="text"
+                model="gpt-4o-transcribe", file=f, response_format="text"
             )
 
 

@@ -7,5 +7,8 @@
   "openai_model": "gpt-4o-2024-05-13",
   "openai_use_search":false,
   "admin_email": "treskunov@gmail.com",
-  "minimax_base_url": "https://api.minimax.io"
+  "minimax_base_url": "https://api.minimax.io",
+  "speech_recognition_service": "openai",
+  "openai_transcription_model": "gpt-4o-transcribe",
+  "language_code": "ru"
 }

@@ -170,6 +170,240 @@ class YandexSpeechRecognition(SpeechRecognitionService):
             self.channel.close()
 
 
+class OpenAISpeechRecognition(SpeechRecognitionService):
+    """
+    OpenAI Realtime API speech recognition implementation.
+
+    Uses WebSocket connection to stream audio in real-time to OpenAI's
+    gpt-4o-transcribe model with VAD (Voice Activity Detection).
+    """
+
+    def setup_client(self, config):
+        """
+        Initialize OpenAI client for speech recognition.
+
+        Args:
+            config: Configuration object containing API settings
+
+        Raises:
+            ValueError: If OpenAI API key is not provided
+        """
+        import base64
+        import json
+        import asyncio
+        import websockets
+        from websockets.exceptions import ConnectionClosed
+
+        logger.debug("Setting up OpenAI Realtime Speech client")
+
+        # Get API key from environment variable or config
+        api_key = os.environ.get("OPENAI_API_KEY") or config.get("openai_api_key")
+
+        if not api_key:
+            raise ValueError(
+                "OpenAI API key is not provided. Set OPENAI_API_KEY environment variable "
+                "or 'openai_api_key' in configuration."
+            )
+
+        # Store configuration
+        self.api_key = api_key
+        self.model = config.get("openai_transcription_model", "gpt-4o-transcribe")
+        self.language = config.get("language_code", "ru")
+        self.base64 = base64
+        self.json = json
+        self.asyncio = asyncio
+        self.websockets = websockets
+        self.ConnectionClosed = ConnectionClosed
+
+    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+        """
+        Transcribe audio stream using OpenAI Realtime API.
+
+        Establishes WebSocket connection and streams audio chunks in real-time.
+        Uses VAD for automatic speech detection and returns interim/final results.
+
+        Args:
+            audio_generator: Iterator yielding audio chunks as bytes
+            config: Configuration object
+
+        Returns:
+            str: Transcribed text
+        """
+        logger.debug("Transcribing audio stream (openai realtime)")
+
+        try:
+            # Import asyncio and websockets
+            import asyncio
+
+            # Create new event loop for this synchronous context
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            # Run the async transcription
+            result = loop.run_until_complete(
+                self._transcribe_stream_async(audio_generator)
+            )
+
+            loop.close()
+            return result
+
+        except Exception as e:
+            logger.error(f"Error transcribing audio with OpenAI: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return ""
+
+    async def _transcribe_stream_async(self, audio_generator: Iterator[bytes]) -> str:
+        """
+        Async implementation of stream transcription.
+
+        Args:
+            audio_generator: Iterator yielding audio chunks as bytes
+
+        Returns:
+            str: Transcribed text
+        """
+        import websockets
+
+        # Get ephemeral token
+        try:
+            token_response = await self._get_ephemeral_token()
+            if not token_response:
+                logger.error("Failed to get ephemeral token")
+                return ""
+        except Exception as e:
+            logger.error(f"Error getting ephemeral token: {str(e)}")
+            return ""
+
+        # Establish WebSocket connection
+        client_secret = token_response.get("client_secret", {}).get("value")
+        if not client_secret:
+            logger.error("No client_secret in token response")
+            return ""
+
+        uri = f"wss://api.openai.com/v1/realtime?intent=transcription&client_secret={client_secret}"
+
+        full_transcript = ""
+        interim_results = []
+
+        try:
+            async with websockets.connect(
+                uri,
+                extra_headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "OpenAI-Beta": "realtime-v1"
+                }
+            ) as websocket:
+                # Send session configuration
+                session_config = {
+                    "type": "transcription_session.update",
+                    "input_audio_format": "pcm16",
+                    "input_audio_transcription": {
+                        "model": self.model,
+                        "language": self.language
+                    },
+                    "turn_detection": None,
+                    "input_audio_noise_reduction": {
+                        "type": "near_field"
+                    }
+                }
+                await websocket.send(self.json.dumps(session_config))
+
+                # Stream audio chunks
+                async for chunk in self._async_generator(audio_generator):
+                    if chunk:
+                        # Encode audio to base64
+                        audio_b64 = self.base64.b64encode(chunk).decode('utf-8')
+
+                        # Send audio buffer
+                        audio_message = {
+                            "type": "input_audio_buffer.append",
+                            "audio": audio_b64
+                        }
+                        await websocket.send(self.json.dumps(audio_message))
+
+                # Process responses
+                async for message in websocket:
+                    try:
+                        response = self.json.loads(message)
+                        event_type = response.get("type")
+
+                        # Handle transcription events
+                        if event_type == "input_audio_buffer.committed":
+                            # VAD detected speech commit
+                            logger.debug("VAD commit received")
+
+                        elif event_type == "input_audio_transcription.completed":
+                            # Final transcription result
+                            transcript = response.get("transcript", "")
+                            if transcript:
+                                interim_results.append(transcript)
+                                full_transcript = " ".join(interim_results)
+                                logger.debug(f"Received transcription: {transcript}")
+
+                        elif event_type == "input_audio_transcription.failed":
+                            # Transcription failed
+                            logger.error(f"Transcription failed: {response}")
+
+                    except Exception as e:
+                        logger.error(f"Error processing WebSocket message: {str(e)}")
+                        continue
+
+                return full_transcript.strip()
+
+        except websockets.exceptions.WebSocketException as e:
+            logger.error(f"WebSocket error: {str(e)}")
+            return ""
+        except Exception as e:
+            logger.error(f"Error in async transcription: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return ""
+
+    async def _get_ephemeral_token(self):
+        """
+        Get ephemeral token for WebSocket authentication.
+
+        Returns:
+            dict: Response containing client_secret
+        """
+        import aiohttp
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = "https://api.openai.com/v1/realtime/transcription_sessions"
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                }
+
+                async with session.post(url, headers=headers, json={}) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Failed to get ephemeral token: {response.status} - {error_text}")
+                        return {}
+        except Exception as e:
+            logger.error(f"Error getting ephemeral token: {str(e)}")
+            return {}
+
+    async def _async_generator(self, sync_generator: Iterator[bytes]):
+        """
+        Convert synchronous generator to async generator.
+
+        Args:
+            sync_generator: Synchronous iterator of bytes
+
+        Yields:
+            bytes: Audio chunks
+        """
+        for chunk in sync_generator:
+            # Small delay to prevent overwhelming the API
+            await asyncio.sleep(0.01)
+            yield chunk
+
+
 class RecordingStatus(Enum):
     NOT_STARTED = 0
     STARTED = 1
@@ -251,6 +485,9 @@ class SpeechTranscriber:
             self.speech_service = GoogleSpeechRecognition()
         elif service_name == "yandex":
             self.speech_service = YandexSpeechRecognition()
+        elif service_name == "openai":
+            logger.info("using openai realtime speech recognition")
+            self.speech_service = OpenAISpeechRecognition()
         else:
             raise ValueError(f"Unsupported speech recognition service: {service_name}")
         self.speech_service.setup_client(self.config)
