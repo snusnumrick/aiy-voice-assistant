@@ -307,12 +307,12 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                 # Send session configuration
                 session_config = {
                     "type": "session.update",
+                    "input_audio_transcription": {
+                        "model": self.model,
+                        "language": self.language,
+                    },
                     "session": {
                         "type": "transcription",
-                        "input_audio_transcription": {
-                            "model": self.model,
-                            "language": self.language,
-                        },
                     },
                 }
                 logger.info(f"Sending session config: model={self.model}, language={self.language}")
