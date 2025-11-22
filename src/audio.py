@@ -309,9 +309,25 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                     "type": "session.update",
                     "session": {
                         "type": "transcription",
+                        "audio": {
+                            "input": {
+                                "format": {
+                                    "type": "audio/pcm",
+                                    "rate": self.sample_rate,
+                                },
+                                "transcription": {
+                                    "model": self.model,
+                                    "language": self.language,
+                                },
+                            }
+                        },
                     },
                 }
-                logger.info("Sending session config for transcription intent")
+                logger.info(
+                    "Sending session config: sample_rate=%s, model=%s",
+                    self.sample_rate,
+                    self.model,
+                )
                 await websocket.send(self.json.dumps(session_config))
                 logger.info("Session config sent")
 
@@ -355,16 +371,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                 await websocket.send(self.json.dumps({"type": "input_audio_buffer.commit"}))
                 logger.info("Audio commit sent. Requesting response...")
                 # Request a response to trigger transcription
-                response_request = {
-                    "type": "response.create",
-                    "response": {
-                        "input_audio_transcription": {
-                            "model": self.model,
-                            "language": self.language,
-                        }
-                    },
-                }
-                await websocket.send(self.json.dumps(response_request))
+                await websocket.send(self.json.dumps({"type": "response.create"}))
                 logger.info("Response requested. Waiting for transcription results...")
 
                 # Process responses with timeout
