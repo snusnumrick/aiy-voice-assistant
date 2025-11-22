@@ -306,7 +306,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
             ) as websocket:
                 # Send session configuration
                 session_config = {
-                    "type": "transcription.session.update",
+                    "type": "transcription_session.update",
                     "input_audio_format": "pcm16",
                     "input_audio_transcription": {
                         "model": self.model,
