@@ -307,14 +307,14 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                 # Send session configuration
                 session_config = {
                     "type": "session.update",
+                    "input_audio_format": "pcm16",
+                    "input_audio_transcription": {
+                        "model": self.model,
+                        "language": self.language,
+                    },
                     "session": {
                         "type": "realtime",
-                        "input_audio_format": "pcm16",
-                        "input_audio_transcription": {
-                            "model": self.model,
-                            "language": self.language
-                        }
-                    }
+                    },
                 }
                 logger.info(f"Sending session config: model={self.model}, language={self.language}")
                 await websocket.send(self.json.dumps(session_config))
