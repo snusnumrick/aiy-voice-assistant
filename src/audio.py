@@ -219,8 +219,8 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         """
         Transcribe audio stream using OpenAI Realtime API.
 
-        Establishes WebSocket connection and streams audio chunks in real-time.
-        Uses VAD for automatic speech detection and returns interim/final results.
+        Runs WebSocket connection in a separate thread to avoid event loop conflicts.
+        Streams PCM16 audio chunks in real-time with transcription results.
 
         Args:
             audio_generator: Iterator yielding audio chunks as bytes
@@ -231,22 +231,27 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         """
         logger.debug("Transcribing audio stream (openai realtime)")
 
-        try:
-            # Import asyncio and websockets
-            import asyncio
+        import asyncio
+        import threading
 
-            # Create new event loop for this synchronous context
+        def run_in_thread():
+            """Run async transcription in a separate thread with its own event loop."""
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(
+                    self._transcribe_stream_async(audio_generator)
+                )
+            finally:
+                loop.close()
 
-            # Run the async transcription
-            result = loop.run_until_complete(
-                self._transcribe_stream_async(audio_generator)
-            )
-
-            loop.close()
-            return result
-
+        # Run in separate thread to avoid event loop conflicts
+        try:
+            # Use ThreadPoolExecutor for proper cleanup
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_in_thread)
+                return future.result()
         except Exception as e:
             logger.error(f"Error transcribing audio with OpenAI: {str(e)}")
             import traceback
@@ -290,8 +295,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
             async with websockets.connect(
                 uri,
                 extra_headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "OpenAI-Beta": "realtime-v1"
+                    "Authorization": f"Bearer {self.api_key}"
                 }
             ) as websocket:
                 # Send session configuration
@@ -322,6 +326,9 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                         }
                         await websocket.send(self.json.dumps(audio_message))
 
+                # Close input stream
+                await websocket.send(self.json.dumps({"type": "input_audio_buffer.flush"}))
+
                 # Process responses
                 async for message in websocket:
                     try:
@@ -344,6 +351,14 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                         elif event_type == "input_audio_transcription.failed":
                             # Transcription failed
                             logger.error(f"Transcription failed: {response}")
+
+                        elif event_type == "input_audio_transcription.final_logprobs":
+                            # Final result with logprobs
+                            transcript = response.get("text", "")
+                            if transcript:
+                                interim_results.append(transcript)
+                                full_transcript = " ".join(interim_results)
+                                logger.debug(f"Received final transcription: {transcript}")
 
                     except Exception as e:
                         logger.error(f"Error processing WebSocket message: {str(e)}")
@@ -398,10 +413,17 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         Yields:
             bytes: Audio chunks
         """
-        for chunk in sync_generator:
-            # Small delay to prevent overwhelming the API
-            await asyncio.sleep(0.01)
-            yield chunk
+        try:
+            for chunk in sync_generator:
+                # Small delay to prevent overwhelming the API
+                await asyncio.sleep(0.01)
+                yield chunk
+        except asyncio.CancelledError:
+            logger.debug("Async generator cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"Error in async generator: {str(e)}")
+            raise
 
 
 class RecordingStatus(Enum):
