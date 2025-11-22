@@ -270,12 +270,16 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         """
         import websockets
 
+        logger.info("Starting OpenAI Realtime transcription")
+
         # Get ephemeral token
         try:
+            logger.info("Getting ephemeral token...")
             token_response = await self._get_ephemeral_token()
             if not token_response:
                 logger.error("Failed to get ephemeral token")
                 return ""
+            logger.info("Ephemeral token received successfully")
         except Exception as e:
             logger.error(f"Error getting ephemeral token: {str(e)}")
             return ""
@@ -287,9 +291,11 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
             return ""
 
         uri = f"wss://api.openai.com/v1/realtime?intent=transcription&client_secret={client_secret}"
+        logger.info(f"Connecting to WebSocket: {uri[:80]}...")
 
         full_transcript = ""
         interim_results = []
+        audio_chunk_count = 0
 
         try:
             async with websockets.connect(
@@ -311,11 +317,25 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                         "type": "near_field"
                     }
                 }
+                logger.info(f"Sending session config: model={self.model}, language={self.language}")
                 await websocket.send(self.json.dumps(session_config))
+                logger.info("Session config sent")
+
+                # Wait for config acknowledgment
+                try:
+                    config_ack = await asyncio.wait_for(websocket.recv(), timeout=5)
+                    logger.info(f"Config acknowledgment received: {config_ack[:100]}")
+                except asyncio.TimeoutError:
+                    logger.warning("Timeout waiting for config acknowledgment")
 
                 # Stream audio chunks
+                logger.info("Starting to stream audio chunks...")
                 async for chunk in self._async_generator(audio_generator):
                     if chunk:
+                        audio_chunk_count += 1
+                        if audio_chunk_count % 10 == 0:
+                            logger.info(f"Processed {audio_chunk_count} audio chunks...")
+
                         # Encode audio to base64
                         audio_b64 = self.base64.b64encode(chunk).decode('utf-8')
 
@@ -327,42 +347,65 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                         await websocket.send(self.json.dumps(audio_message))
 
                 # Close input stream
+                logger.info(f"Finished streaming {audio_chunk_count} audio chunks. Sending flush...")
                 await websocket.send(self.json.dumps({"type": "input_audio_buffer.flush"}))
+                logger.info("Audio flush sent. Waiting for transcription results...")
 
-                # Process responses
-                async for message in websocket:
-                    try:
-                        response = self.json.loads(message)
-                        event_type = response.get("type")
+                # Process responses with timeout
+                message_count = 0
+                try:
+                    # Wait for responses with timeout after flush
+                    async for message in asyncio.wait_for(websocket, timeout=15):
+                        message_count += 1
+                        logger.debug(f"Received WebSocket message #{message_count}: {message[:100]}")
 
-                        # Handle transcription events
-                        if event_type == "input_audio_buffer.committed":
-                            # VAD detected speech commit
-                            logger.debug("VAD commit received")
+                        try:
+                            response = self.json.loads(message)
+                            event_type = response.get("type")
 
-                        elif event_type == "input_audio_transcription.completed":
-                            # Final transcription result
-                            transcript = response.get("transcript", "")
-                            if transcript:
-                                interim_results.append(transcript)
-                                full_transcript = " ".join(interim_results)
-                                logger.debug(f"Received transcription: {transcript}")
+                            # Log all event types for debugging
+                            if event_type:
+                                logger.debug(f"Event type: {event_type}")
 
-                        elif event_type == "input_audio_transcription.failed":
-                            # Transcription failed
-                            logger.error(f"Transcription failed: {response}")
+                            # Handle transcription events
+                            if event_type == "input_audio_buffer.committed":
+                                # VAD detected speech commit
+                                logger.debug("VAD commit received")
 
-                        elif event_type == "input_audio_transcription.final_logprobs":
-                            # Final result with logprobs
-                            transcript = response.get("text", "")
-                            if transcript:
-                                interim_results.append(transcript)
-                                full_transcript = " ".join(interim_results)
-                                logger.debug(f"Received final transcription: {transcript}")
+                            elif event_type == "input_audio_transcription.completed":
+                                # Final transcription result
+                                transcript = response.get("transcript", "")
+                                logger.info(f"Received transcription: {transcript}")
+                                if transcript:
+                                    interim_results.append(transcript)
+                                    full_transcript = " ".join(interim_results)
 
-                    except Exception as e:
-                        logger.error(f"Error processing WebSocket message: {str(e)}")
-                        continue
+                            elif event_type == "input_audio_transcription.final_logprobs":
+                                # Final result with logprobs
+                                transcript = response.get("text", "")
+                                logger.info(f"Received final transcription: {transcript}")
+                                if transcript:
+                                    interim_results.append(transcript)
+                                    full_transcript = " ".join(interim_results)
+
+                            elif event_type == "input_audio_transcription.failed":
+                                # Transcription failed
+                                error_msg = response.get("error", {}).get("message", "Unknown error")
+                                logger.error(f"Transcription failed: {error_msg}")
+
+                            elif event_type == "response.done":
+                                logger.info("Received response.done - transcription complete")
+                                break
+
+                        except Exception as e:
+                            logger.error(f"Error processing WebSocket message: {str(e)}")
+                            continue
+
+                except asyncio.TimeoutError:
+                    logger.warning("Timeout waiting for transcription response after flush")
+
+                logger.info(f"Total WebSocket messages received: {message_count}")
+                logger.info(f"Final transcript: '{full_transcript}'")
 
                 return full_transcript.strip()
 
@@ -392,9 +435,13 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                     "Content-Type": "application/json"
                 }
 
+                logger.info(f"Requesting ephemeral token from {url}")
                 async with session.post(url, headers=headers, json={}) as response:
+                    logger.info(f"Ephemeral token response status: {response.status}")
                     if response.status == 200:
-                        return await response.json()
+                        result = await response.json()
+                        logger.info("Ephemeral token received successfully")
+                        return result
                     else:
                         error_text = await response.text()
                         logger.error(f"Failed to get ephemeral token: {response.status} - {error_text}")
