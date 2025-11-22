@@ -308,7 +308,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                 session_config = {
                     "type": "session.update",
                     "session": {
-                        "type": "transcription_session.update",
+                        "type": "realtime",
                         "input_audio_format": "pcm16",
                         "input_audio_transcription": {
                             "model": self.model,
@@ -368,7 +368,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                     nonlocal message_count, full_transcript
                     async for message in websocket:
                         message_count += 1
-                        logger.info(f"Received WebSocket message #{message_count}: {message[:100]}")
+                        logger.info(f"Received WebSocket message #{message_count}: {message}")
 
                         try:
                             response = self.json.loads(message)
