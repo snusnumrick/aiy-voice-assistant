@@ -306,29 +306,13 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
             ) as websocket:
                 # Send session configuration
                 session_config = {
-                    "type": "transcription_session.update",
-                    "input_audio_format": "pcm16",
-                    "input_audio_transcription": {
-                        "model": self.model,
-                        "language": self.language
-                    },
-                    "turn_detection": None,
-                    "input_audio_noise_reduction": {
-                        "type": "near_field"
-                    }
-                }
-                session_config = {
                     "type": "session.update",
                     "session": {
-                        "type": "transcription_session",
+                        "type": "transcription_session.update",
                         "input_audio_format": "pcm16",
-                        "turn_detection": {"type": "server_vad", "threshold": 0.5},
                         "input_audio_transcription": {
                             "model": self.model,
                             "language": self.language
-                        },
-                        "input_audio_noise_reduction": {
-                            "type": "near_field"
                         }
                     }
                 }
