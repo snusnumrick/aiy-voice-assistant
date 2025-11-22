@@ -353,54 +353,58 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
 
                 # Process responses with timeout
                 message_count = 0
+
+                async def process_messages():
+                    nonlocal message_count
+                    async for message in websocket:
+                        message_count += 1
+                        logger.debug(f"Received WebSocket message #{message_count}: {message[:100]}")
+
+                        try:
+                            response = self.json.loads(message)
+                            event_type = response.get("type")
+
+                            # Log all event types for debugging
+                            if event_type:
+                                logger.debug(f"Event type: {event_type}")
+
+                            # Handle transcription events
+                            if event_type == "input_audio_buffer.committed":
+                                # VAD detected speech commit
+                                logger.debug("VAD commit received")
+
+                            elif event_type == "input_audio_transcription.completed":
+                                # Final transcription result
+                                transcript = response.get("transcript", "")
+                                logger.info(f"Received transcription: {transcript}")
+                                if transcript:
+                                    interim_results.append(transcript)
+                                    full_transcript = " ".join(interim_results)
+
+                            elif event_type == "input_audio_transcription.final_logprobs":
+                                # Final result with logprobs
+                                transcript = response.get("text", "")
+                                logger.info(f"Received final transcription: {transcript}")
+                                if transcript:
+                                    interim_results.append(transcript)
+                                    full_transcript = " ".join(interim_results)
+
+                            elif event_type == "input_audio_transcription.failed":
+                                # Transcription failed
+                                error_msg = response.get("error", {}).get("message", "Unknown error")
+                                logger.error(f"Transcription failed: {error_msg}")
+
+                            elif event_type == "response.done":
+                                logger.info("Received response.done - transcription complete")
+                                break
+
+                        except Exception as e:
+                            logger.error(f"Error processing WebSocket message: {str(e)}")
+                            continue
+
                 try:
                     # Wait for responses with timeout after flush
-                    async with asyncio.timeout(15):
-                        async for message in websocket:
-                            message_count += 1
-                            logger.debug(f"Received WebSocket message #{message_count}: {message[:100]}")
-
-                            try:
-                                response = self.json.loads(message)
-                                event_type = response.get("type")
-
-                                # Log all event types for debugging
-                                if event_type:
-                                    logger.debug(f"Event type: {event_type}")
-
-                                # Handle transcription events
-                                if event_type == "input_audio_buffer.committed":
-                                    # VAD detected speech commit
-                                    logger.debug("VAD commit received")
-
-                                elif event_type == "input_audio_transcription.completed":
-                                    # Final transcription result
-                                    transcript = response.get("transcript", "")
-                                    logger.info(f"Received transcription: {transcript}")
-                                    if transcript:
-                                        interim_results.append(transcript)
-                                        full_transcript = " ".join(interim_results)
-
-                                elif event_type == "input_audio_transcription.final_logprobs":
-                                    # Final result with logprobs
-                                    transcript = response.get("text", "")
-                                    logger.info(f"Received final transcription: {transcript}")
-                                    if transcript:
-                                        interim_results.append(transcript)
-                                        full_transcript = " ".join(interim_results)
-
-                                elif event_type == "input_audio_transcription.failed":
-                                    # Transcription failed
-                                    error_msg = response.get("error", {}).get("message", "Unknown error")
-                                    logger.error(f"Transcription failed: {error_msg}")
-
-                                elif event_type == "response.done":
-                                    logger.info("Received response.done - transcription complete")
-                                    break
-
-                            except Exception as e:
-                                logger.error(f"Error processing WebSocket message: {str(e)}")
-                                continue
+                    await asyncio.wait_for(process_messages(), timeout=15)
 
                 except asyncio.TimeoutError:
                     logger.warning("Timeout waiting for transcription response after flush")
