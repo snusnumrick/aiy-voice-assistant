@@ -309,16 +309,9 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                     "type": "session.update",
                     "session": {
                         "type": "transcription",
-                        "input_audio_format": {
-                            "codec": "pcm16",
-                            "sample_rate_hz": self.sample_rate,
-                            "channel_count": 1,
-                        },
                     },
                 }
-                logger.info(
-                    "Sending session config: sample_rate=%s", self.sample_rate
-                )
+                logger.info("Sending session config for transcription intent")
                 await websocket.send(self.json.dumps(session_config))
                 logger.info("Session config sent")
 
@@ -485,14 +478,17 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
 
         try:
             async with aiohttp.ClientSession() as session:
-                url = "https://api.openai.com/v1/realtime/transcription_sessions"
+                url = "https://api.openai.com/v1/realtime/sessions"
                 headers = {
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json"
                 }
+                payload = {
+                    "model": self.model,
+                }
 
                 logger.info(f"Requesting ephemeral token from {url}")
-                async with session.post(url, headers=headers, json={}) as response:
+                async with session.post(url, headers=headers, json=payload) as response:
                     logger.info(f"Ephemeral token response status: {response.status}")
                     if response.status == 200:
                         result = await response.json()
