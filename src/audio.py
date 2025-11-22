@@ -208,7 +208,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         # Store configuration
         self.api_key = api_key
         self.model = config.get("openai_transcription_model", "gpt-4o-transcribe")
-        self.language = config.get("language_code", "ru")
+        self.language = config.get("language_code", "")
         self.sample_rate = config.get("sample_rate_hertz", 24000)  # OpenAI Realtime API requires at least 24kHz
         self.base64 = base64
         self.json = json
