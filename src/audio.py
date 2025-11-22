@@ -194,7 +194,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         import websockets
         from websockets.exceptions import ConnectionClosed
 
-        logger.debug("Setting up OpenAI Realtime Speech client")
+        logger.info("Setting up OpenAI Realtime Speech client")
 
         # Get API key from environment variable or config
         api_key = os.environ.get("OPENAI_API_KEY") or config.get("openai_api_key")
@@ -229,7 +229,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         Returns:
             str: Transcribed text
         """
-        logger.debug("Transcribing audio stream (openai realtime)")
+        logger.info("Transcribing audio stream (openai realtime)")
 
         import asyncio
 
@@ -357,7 +357,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                     nonlocal message_count, full_transcript
                     async for message in websocket:
                         message_count += 1
-                        logger.debug(f"Received WebSocket message #{message_count}: {message[:100]}")
+                        logger.info(f"Received WebSocket message #{message_count}: {message[:100]}")
 
                         try:
                             response = self.json.loads(message)
@@ -371,7 +371,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                             # Handle transcription events
                             if event_type == "input_audio_buffer.committed":
                                 # VAD detected speech commit
-                                logger.debug("VAD commit received")
+                                logger.info("VAD commit received")
 
                             elif event_type == "input_audio_transcription.completed":
                                 # Final transcription result
@@ -487,7 +487,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                 await asyncio.sleep(0.01)
                 yield chunk
         except asyncio.CancelledError:
-            logger.debug("Async generator cancelled")
+            logger.info("Async generator cancelled")
             raise
         except Exception as e:
             logger.error(f"Error in async generator: {str(e)}")
@@ -689,12 +689,12 @@ class SpeechTranscriber:
                 if (status == RecordingStatus.NOT_STARTED) and self.button.state == ButtonState.PRESSED:
                     stop_playing()
                     start_listening()
-                    logger.debug(f"{len(chunks_deque)} audio chunks buffered")
+                    logger.info(f"{len(chunks_deque)} audio chunks buffered")
                     status = RecordingStatus.STARTED
                     continue
 
                 if not chunks_deque:
-                    logger.debug("No audio chunk available")
+                    logger.info("No audio chunk available")
 
                     # import wave
                     #
@@ -724,7 +724,7 @@ class SpeechTranscriber:
                 if status != RecordingStatus.NOT_STARTED:
                     break
 
-            logger.debug("Processing audio...")
+            logger.info("Processing audio...")
 
             try:
                 audio_queue = queue.Queue()
