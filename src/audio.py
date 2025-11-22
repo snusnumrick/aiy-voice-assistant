@@ -407,12 +407,12 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                                             interim_results.append(transcript)
                                             full_transcript = " ".join(interim_results)
                                             logger.info("Transcription complete!")
-                                            # Exit the loop once we have the transcript
-                                            break
+                                            # Exit both loops by returning early
+                                            return full_transcript.strip()
 
                             elif event_type == "response.done":
                                 logger.info("Received response.done - transcription complete")
-                                break
+                                return full_transcript.strip()
 
                         except Exception as e:
                             logger.error(f"Error processing WebSocket message: {str(e)}")
