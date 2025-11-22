@@ -8,7 +8,8 @@
   "openai_use_search":false,
   "admin_email": "treskunov@gmail.com",
   "minimax_base_url": "https://api.minimax.io",
-  "speech_recognition_service": "openai",
+  "speech_recognition_service": "yandex",
   "openai_transcription_model": "gpt-4o-transcribe",
+  "sample_rate_hertz":24000,
   "language_code": "ru"
 }
