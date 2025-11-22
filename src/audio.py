@@ -209,7 +209,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         self.api_key = api_key
         self.model = config.get("openai_transcription_model", "gpt-4o-transcribe")
         self.language = config.get("language_code", "ru")
-        self.sample_rate = 24000  # OpenAI Realtime API requires 24kHz
+        self.sample_rate = config.get("sample_rate_hertz", 16000)  
         self.base64 = base64
         self.json = json
         self.asyncio = asyncio
@@ -370,9 +370,6 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                 )
                 await websocket.send(self.json.dumps({"type": "input_audio_buffer.commit"}))
                 logger.info("Audio commit sent. Requesting response...")
-                # Request a response to trigger transcription
-                await websocket.send(self.json.dumps({"type": "response.create"}))
-                logger.info("Response requested. Waiting for transcription results...")
 
                 # Process responses with timeout
                 message_count = 0
