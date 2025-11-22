@@ -232,7 +232,6 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         logger.debug("Transcribing audio stream (openai realtime)")
 
         import asyncio
-        import threading
 
         def run_in_thread():
             """Run async transcription in a separate thread with its own event loop."""
@@ -355,7 +354,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                 message_count = 0
 
                 async def process_messages():
-                    nonlocal message_count
+                    nonlocal message_count, full_transcript
                     async for message in websocket:
                         message_count += 1
                         logger.debug(f"Received WebSocket message #{message_count}: {message[:100]}")
@@ -417,6 +416,7 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                         except Exception as e:
                             logger.error(f"Error processing WebSocket message: {str(e)}")
                             continue
+                    return None
 
                 try:
                     # Wait for responses with timeout after flush
