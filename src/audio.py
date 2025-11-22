@@ -318,15 +318,17 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                     }
                 }
                 session_config = {
-                    "type": "session.update",
-                    "input_audio_format": "pcm16",
-                    "turn_detection": {"type": "server_vad", "threshold": 0.5},
-                    "input_audio_transcription": {
-                        "model": self.model,
-                        "language": self.language
-                    },
-                    "input_audio_noise_reduction": {
-                        "type": "near_field"
+                    "type": "transcription_session.update",
+                    "session": {
+                        "input_audio_format": "pcm16",
+                        "turn_detection": {"type": "server_vad", "threshold": 0.5},
+                        "input_audio_transcription": {
+                            "model": self.model,
+                            "language": self.language
+                        },
+                        "input_audio_noise_reduction": {
+                            "type": "near_field"
+                        }
                     }
                 }
                 logger.info(f"Sending session config: model={self.model}, language={self.language}")
