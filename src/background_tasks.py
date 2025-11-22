@@ -40,7 +40,17 @@ class BackgroundTaskManager:
 
     async def check_and_run_tasks(self) -> None:
         """Check and run scheduled tasks if needed."""
-        now = datetime.datetime.now()
+        import pytz
+
+        # Get the local timezone or use configured timezone
+        if self.timezone:
+            tz = pytz.timezone(self.timezone)
+        else:
+            # Use local timezone
+            tz = datetime.datetime.now().astimezone().tzinfo
+
+        # Get current time in the configured timezone
+        now = datetime.datetime.now(tz)
 
         # Check if cleaning is needed
         if (
@@ -48,6 +58,6 @@ class BackgroundTaskManager:
             and self.cleaning_time_start <= now.time() < self.cleaning_time_stop
             and self.last_clean_date != now.date()
         ):
-            logger.debug(f"Running cleaning routine on {now.date()}")
+            logger.debug(f"Running cleaning routine on {now.date()} (timezone: {tz})")
             await self.cleaning_routine()
             self.last_clean_date = now.date()
