@@ -366,7 +366,8 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
 
                             # Log all event types for debugging
                             if event_type:
-                                logger.debug(f"Event type: {event_type}")
+                                logger.info(f"Event type received: {event_type}")
+                                logger.info(f"Full response: {response}")
 
                             # Handle transcription events
                             if event_type == "input_audio_buffer.committed":
