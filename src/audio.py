@@ -347,9 +347,9 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                         await websocket.send(self.json.dumps(audio_message))
 
                 # Close input stream
-                logger.info(f"Finished streaming {audio_chunk_count} audio chunks. Sending flush...")
-                await websocket.send(self.json.dumps({"type": "input_audio_buffer.flush"}))
-                logger.info("Audio flush sent. Waiting for transcription results...")
+                logger.info(f"Finished streaming {audio_chunk_count} audio chunks. Sending commit...")
+                await websocket.send(self.json.dumps({"type": "input_audio_buffer.commit"}))
+                logger.info("Audio commit sent. Waiting for transcription results...")
 
                 # Process responses with timeout
                 message_count = 0
@@ -394,6 +394,21 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                                 # Transcription failed
                                 error_msg = response.get("error", {}).get("message", "Unknown error")
                                 logger.error(f"Transcription failed: {error_msg}")
+
+                            elif event_type == "conversation.item.done":
+                                # Extract transcript from conversation item
+                                item = response.get("item", {})
+                                content = item.get("content", [])
+                                for content_item in content:
+                                    if content_item.get("type") == "input_audio":
+                                        transcript = content_item.get("transcript", "")
+                                        if transcript:
+                                            logger.info(f"Received transcript from conversation item: {transcript}")
+                                            interim_results.append(transcript)
+                                            full_transcript = " ".join(interim_results)
+                                            logger.info("Transcription complete!")
+                                            # Exit the loop once we have the transcript
+                                            break
 
                             elif event_type == "response.done":
                                 logger.info("Received response.done - transcription complete")
