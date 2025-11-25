@@ -52,10 +52,10 @@ class WizardTool:
     - save_report(self, question: str, answer: str) -> str
         Synchronously saves analysis report to a markdown file and returns the filepath.
 
-    - list_reports(self) -> List[Dict]
+    - list_reports(self) -> str
         Lists all saved wizard reports with metadata (filename, creation time, size) - synchronous version.
 
-    - list_reports_async(self) -> List[Dict]
+    - list_reports_async(self) -> str
         Lists all saved wizard reports with metadata (filename, creation time, size) - asynchronous version.
 
     - list_reports_sync(self, parameters: Dict[str, any]) -> str
@@ -110,41 +110,41 @@ class WizardTool:
                 rule_instructions={
                     "russian": (
                         "Ответ может занять очень много времени; используйте с осторожностью. "
-                        # "Перед тем, как задать вопрос, проверьте существующие отчеты, "
-                        # "используя инструмент list_wizard_reports, возможно, он уже был задан ранее."
+                        "Перед тем, как задать вопрос, проверьте существующие отчеты, "
+                        "используя инструмент list_wizard_reports, возможно, он уже был задан ранее."
                     ),
                     "english": (
                         "Response may take a very long time; use sparingly. "
-                        # "Check existing reports, "
-                        # "using list_wizard_reports tool, before asking wizard, "
-                        # "maybe the question was asked before."
+                        "Check existing reports, "
+                        "using list_wizard_reports tool, before asking wizard, "
+                        "maybe the question was asked before."
                     )
                 },
             ),
-            # Tool(
-            #     name="list_wizard_reports",
-            #     description="Lists all saved wizard analysis reports with metadata including filename, "
-            #                 "creation time, and file size. Returns a list of report summaries.",
-            #     iterative=True,
-            #     parameters=[],
-            #     required=[],
-            #     processor=self.list_reports_async,
-            # ),
-            # Tool(
-            #     name="get_wizard_report",
-            #     description="Retrieves the full content of a specific wizard report by filename. "
-            #                 "Returns the complete markdown content of the saved analysis.",
-            #     iterative=True,
-            #     parameters=[
-            #         ToolParameter(
-            #             name="filename",
-            #             type="string",
-            #             description="The filename of the report to retrieve"
-            #         )
-            #     ],
-            #     required=["filename"],
-            #     processor=self.get_report_async,
-            # ),
+            Tool(
+                name="list_wizard_reports",
+                description="Lists all saved wizard analysis reports with metadata including filename, "
+                            "creation time, and file size. Returns a list of report summaries.",
+                iterative=True,
+                parameters=[],
+                required=[],
+                processor=self.list_reports_async,
+            ),
+            Tool(
+                name="get_wizard_report",
+                description="Retrieves the full content of a specific wizard report by filename. "
+                            "Returns the complete markdown content of the saved analysis.",
+                iterative=True,
+                parameters=[
+                    ToolParameter(
+                        name="filename",
+                        type="string",
+                        description="The filename of the report to retrieve"
+                    )
+                ],
+                required=["filename"],
+                processor=self.get_report_async,
+            ),
         ]
 
     def __init__(self, config: Config):
@@ -346,48 +346,30 @@ class WizardTool:
         logger.info(f"Report saved to: {filepath}")
         return str(filepath)
 
-    def list_reports(self) -> List[Dict[str, Union[str, int]]]:
+    def list_reports(self) -> str:
         """
         List all saved wizard reports (synchronous version).
 
-        Returns:
-            List of dictionaries containing report metadata:
-            - filename: str
-            - created: str (ISO format timestamp)
-            - size: int (bytes)
+        Returns comma-separated list of filenames
         """
         reports_dir = Path(self.config.get("wizard_reports_dir", "wizard_reports"))
 
         if not reports_dir.exists():
-            return []
+            return ""
 
-        reports = []
-        for filepath in reports_dir.glob("*.md"):
-            # stat = filepath.stat()
-            reports.append(filepath.name)
-            # reports.append({
-            #     "filename": filepath.name,
-            #     "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-            #     "size": stat.st_size
-            # })
-
+        reports = [filepath.name for filepath in reports_dir.glob("*.md")]
         logger.info(f"Found {len(reports)} reports in {reports_dir}")
-        return reports
+        return ','.join(reports)
 
-    async def list_reports_async(self, parameters: Dict[str, any]) -> List[Dict[str, Union[str, int]]]:
+    async def list_reports_async(self, parameters: Dict[str, any]) -> str:
         """
         List all saved wizard reports (asynchronous version).
 
-        Returns:
-            List of dictionaries containing report metadata:
-            - filename: str
-            - created: str (ISO format timestamp)
-            - size: int (bytes)
+        Returns: comma separated list of filenames
         """
         # Since file system operations are fast, we can run the sync version in a thread pool
         loop = asyncio.get_event_loop()
-        reports = await loop.run_in_executor(None, self.list_reports)
-        return reports
+        return await loop.run_in_executor(None, self.list_reports)
 
     def list_reports_sync(self, parameters: Dict[str, any]) -> str:
         """
@@ -397,10 +379,9 @@ class WizardTool:
             parameters: Dictionary (not used, as this method takes no parameters)
 
         Returns:
-            str: JSON-formatted list of report metadata
+            str: comma-separated list of filenames
         """
-        reports = self.list_reports()
-        return json.dumps(reports, indent=2, ensure_ascii=False)
+        return self.list_reports()
 
     async def get_report_async(self, parameters: Dict[str, any]) -> str:
         """
