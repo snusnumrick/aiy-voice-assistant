@@ -405,7 +405,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             elif delta.get("type") == "input_json_delta":
                 if _current_tool_use is not None:
                     _current_tool_use["input"] = _current_tool_use.get(
-                        "input", ""
+                        "input",
                     ) + delta.get("partial_json", "")
 
         def process_content_block_start(_event: Dict) -> Optional[Dict]:
@@ -449,6 +449,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 yield s
 
             if _current_tool_use:
+                if not _current_tool_use.get("input", ""):
+                    _current_tool_use["input"] = {}
                 async for r in self._process_tool_use_streaming(
                     _current_tool_use, _message_list
                 ):
