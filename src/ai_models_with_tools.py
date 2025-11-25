@@ -539,8 +539,11 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         """Process a tool use request in streaming mode and generate a response."""
 
         try:
-            tool_input = json.loads(tool_use["input"])
-            tool_use["input"] = tool_input
+            if tool_use["input"]:
+                tool_input = json.loads(tool_use["input"])
+                tool_use["input"] = tool_input
+            else:
+                tool_input = {}
             message_list.append({"role": "assistant", "content": [tool_use]})
             tool_name = tool_use["name"]
             tool_use_id = tool_use["id"]
@@ -1165,13 +1168,21 @@ async def main_async():
     # model = OpenAIModelWithTools(config, tools=[
         search_tool.tool_definition(),
         interpreter_tool.tool_definition(),
-        # wizard_tool.tool_definition(),
-    ])
+    ] + wizard_tool.tool_definitions())
     # ], timezone=timezone)
+    language = "russian"
+    for t in wizard_tool.tool_definitions():
+        if hasattr(t, 'rule_instructions') and language in t.rule_instructions:
+            system += t.rule_instructions[language].strip()
     # model = ClaudeAIModel(config)
     messages = [
         {"role": "system", "content": system},
-        {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4. Use code interpreter tool"},
+        {"role": "user", "content": (
+                "Как связаны время и сознание с точки зрения современной науки? "
+                "Какие существуют теории о природе этой связи и "
+                "что говорят последние исследования в нейронауке и философии сознания?"
+            )},
+        # {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4. Use code interpreter tool"},
         # {"role": "user", "content": "how many r in word strawberry? think it through"},
         # {"role": "user", "content": "в каком клубе снйчас играет Месси"},
         # {"role": "user", "content": "где именно встретятся трамп с путиным, проверь свежие новости"},
