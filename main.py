@@ -147,8 +147,7 @@ def main():
             interpreter_tool.tool_definition(),
             volume_control_tool.tool_definition(),
             weather_tool.tool_definition(),
-            wizard_tool.tool_definition(),
-        ]
+        ] + wizard_tool.tool_definitions()
         if not use_builtin_search:
             tools.append(search_tool.tool_definition())
 
