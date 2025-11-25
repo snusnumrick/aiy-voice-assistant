@@ -167,7 +167,7 @@ class GeminiAIModel(AIModel):
     Implementation of AIModel using Google Gemini model.
     """
 
-    def __init__(self, config: Config, model_id: Optional[str] = None):
+    def __init__(self, config: Config, model_id: Optional[str] = None, max_tokens: Optional[int] = None):
         sys_path = sys.path
         sys.path = [p for p in sys.path if p != os.getcwd()]
         import google.generativeai as genai
@@ -177,7 +177,7 @@ class GeminiAIModel(AIModel):
         genai.configure(api_key=os.environ["GEMINI_API_KEY"])
         model_id = model_id or config.get("gemini_model_id", "gemini-1.5-pro-exp-0801")
         self.model = genai.GenerativeModel(model_id)
-        max_tokens = config.get("max_tokens", 4096)
+        max_tokens = max_tokens or config.get("max_tokens", 4096)
         self.generation_config = genai.GenerationConfig(max_output_tokens=max_tokens)
 
     def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
@@ -282,6 +282,7 @@ class OpenAIModel(AIModel):
         model_id: Optional[str] = None,
         reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
         api: Optional[str] = None,
+        max_tokens: Optional[int] = None,
     ): 
         """
         Initialize the OpenAI model.
@@ -293,6 +294,7 @@ class OpenAIModel(AIModel):
             model_id (Optional[str]): The specific model ID to use.
             reasoning_effort (Optional[Union[str, ReasoningEffort]]): Preferred reasoning effort. Accepts ReasoningEffort (quick, thorough, comprehensive) or a string; mapped to OpenAI's "minimal"|"low"|"medium"|"high" for the Responses API.
             api (Optional[str]): Which OpenAI API to use: "responses" (default) or "chat_completions"/"completions".
+            max_tokens (Optional[int]): The maximum number of tokens to generate.
         """
         # Import module to avoid ImportError on old SDKs and allow graceful fallback
         import importlib
@@ -300,7 +302,7 @@ class OpenAIModel(AIModel):
 
         self.model = model_id or config.get("openai_model", "gpt-4o")
         logging.info(f"Using model: {self.model}")
-        self.max_tokens = config.get("max_tokens", 4096)
+        self.max_tokens = max_tokens or config.get("max_tokens", 4096)
         # Preserve for REST fallback
         self.base_url = base_url or getattr(openai, "base_url", None) or "https://api.openai.com/v1"
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
@@ -674,17 +676,20 @@ class ClaudeAIModel(AIModel):
     Implementation of AIModel using Anthropic's Claude model.
     """
 
-    def __init__(self, config: Config, timezone: str = ""):
+    def __init__(self, config: Config, timezone: str = "", model_id: Optional[str] = None, max_tokens: Optional[int] = None):
         """
         Initialize the Claude AI model.
 
         Args:
             config (Config): The application configuration object.
             timezone (str): The timezone to use for timestamps.
+            model_id (Optional[str]): The specific model ID to use.
+            max_tokens (Optional[int]): The maximum number of tokens to generate.
         """
-        self.model = config.get("claude_model", "claude-3-5-sonnet-20240620")
+        self.model = model_id or config.get("claude_model", "claude-sonnet-4-5")
+
         logging.info(f"Using model: {self.model}")
-        self.max_tokens = config.get("max_tokens", 4096)
+        self.max_tokens = max_tokens or config.get("max_tokens", 4096)
         self.url = "https://api.anthropic.com/v1/messages"
         self.headers = {
             "content-type": "application/json",
