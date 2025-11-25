@@ -68,10 +68,11 @@ The application follows this execution flow:
 
 ### Key Directories
 
-- **`src/`** - Core application logic (26 Python modules, ~10K lines)
+- **`src/`** - Core application logic (28 Python modules, ~11K lines)
 - **`aiy/`** - Hardware abstraction for Google Voice Kit V2
-- **`tests/`** - Unit tests (9 test files)
-- **`scripts/`** - Shell deployment scripts
+- **`tests/`** - Unit tests (6 test files)
+- **`scripts/`** - Shell deployment and maintenance scripts
+- **`utils/`** - Utility scripts (file merging, etc.)
 - **`logs/`** - Application logs (auto-rotated)
 
 ### Critical Modules
@@ -94,9 +95,10 @@ The application follows this execution flow:
 - `src/weather_tool.py:1` - Weather data (Tomorrow.io, WAQI, OpenUV)
 - `src/web_search_tool.py:1` - Web search (DuckDuckGo, Google, Tavily)
 - `src/code_interpreter_tool.py:1` - Python code execution
-- `src/wizard_tool.py:1` - Advanced analytical reasoning
+- `src/wizard_tool.py:1` - Advanced analytical reasoning with report management (3 tools: wise_wizard, list_wizard_reports, get_wizard_report)
 - `src/email_tools.py:1` - Email sending functionality
 - `src/volume_control_tool.py:1` - Audio volume control
+- `src/stress_tool.py:1` - Russian word stress marking (via morpher.ru API)
 - `src/minimax_music_tool.py:1` - Music generation using MiniMax API
 
 **Hardware:**
@@ -117,12 +119,21 @@ The application uses a hierarchical configuration system with this precedence:
 - **`user.json.example`** - Template for user-specific overrides (copy to `user.json`)
 - **`.env`** - API keys and sensitive data (never committed)
 
+**Key Configuration Settings:**
+- `ai_model_api` - Primary AI model: "claude" (default), "openai", "gemini"
+- `claude_model` - Claude model variant: "claude-sonnet-4-5" (default)
+- `wizard_model_id` - Model for deep analysis: "gpt-5.1" (OpenAI Responses API)
+- `speech_recognition_service` - STT provider: "yandex" (default), "google", "openai"
+- `language_code` - Conversation language: "ru" (default), "en", etc.
+- `llm_streaming` - Enable streaming responses: true (default)
+
 ### System Integration
 
 **Service Management:**
-- Installed via `setup_service.sh` as `aiy.service`
+- Installed via `setup_service.sh` (root directory) as `aiy.service`
 - Auto-starts on boot
 - Runs in tmux session for monitoring
+- Deployment script: `scripts/run.sh` - Main runner with environment setup
 
 **Tailscale VPN Management:**
 - Automatically enables VPN at night (10 PM - 7 AM) for remote maintenance
@@ -247,13 +258,47 @@ To verify your tool's rules are working:
 3. Test that the rules appear in the ConversationManager's hard_rules
 4. Confirm the AI model receives the rules in its system prompt
 
+### Multi-Tool Classes (Advanced)
+
+Some tool classes provide multiple related tools. The **WizardTool** is a prime example:
+
+**WizardTool - Analytical Reasoning Suite:**
+Returns 3 separate tool definitions via `tool_definitions()` method:
+
+1. **wise_wizard** - Deep analytical reasoning for complex questions
+   - Uses GPT-5 model (OpenAI Responses API) for thorough analysis
+   - Automatically saves reports to markdown files
+   - Should be used sparingly (can take significant time)
+
+2. **list_wizard_reports** - Lists all saved wizard analysis reports
+   - Returns metadata: filename, creation time, file size
+   - Useful to check if a question was already analyzed
+
+3. **get_wizard_report** - Retrieves specific report content
+   - Takes filename parameter
+   - Returns full markdown content of saved analysis
+
+**Registration Example:**
+```python
+wizard_tool = WizardTool(config)
+# Note: tool_definitions() returns a list, so extend instead of append
+tools.extend(wizard_tool.tool_definitions())
+```
+
 ## Development Notes
 
 - **Primary Language**: Python 3.9+
 - **Package Manager**: Poetry
 - **Hardware Target**: Raspberry Pi with Google Voice Kit V2
-- **Primary Language**: Russian (configurable)
-- **Key APIs**: Yandex SpeechKit (default STT/TTS), Claude/OpenAI/Gemini for LLM
+- **Conversation Language**: Russian (configurable via `language_code` in config)
+- **Key APIs**:
+  - STT/TTS: Yandex SpeechKit (default), OpenAI Transcription, ElevenLabs
+  - LLM: Claude Sonnet 4.5 (default), OpenAI GPT-4o, Gemini
+  - Wizard Tool: GPT-5.1 (OpenAI Responses API)
+  - Web Search: DuckDuckGo, Google, Tavily
+  - Weather: Tomorrow.io, WAQI, OpenUV
+  - Stress Marking: morpher.ru
+  - Music: MiniMax API
 - **Tests**: Use `python run_tests.py` or `pytest`
 
 ## Logging
@@ -262,3 +307,39 @@ Logs are stored in `logs/assistant.log` with:
 - Daily rotation (5-day retention)
 - Configurable log levels via `--log-level` flag
 - Both file logging and systemd journal integration
+
+## Maintenance Scripts
+
+Located in `scripts/` directory:
+
+- **`run.sh`** - Main deployment script with environment setup, timezone configuration, and application launch
+- **`check_logs.sh`** - Automated log checking for errors with email notification support
+- **`send_email.sh`** - Utility for sending email notifications from shell scripts
+- **`tailscale-up.sh`** - Enable Tailscale VPN connection
+- **`tailscale-down.sh`** - Disable Tailscale VPN connection
+
+## Common Patterns & Best Practices
+
+### Tool Implementation Pattern
+1. Create tool class with `tool_definition()` or `tool_definitions()` method
+2. Define `Tool` with name, description, parameters, and processor
+3. Implement synchronous processor (for streaming) or async processor
+4. Add `rule_instructions` if tool has non-obvious triggers
+5. Register tool in `main.py` by appending to tools list
+6. Pass tools to `ConversationManager` via `enabled_tools` parameter
+
+### Streaming Response Pattern
+- Tools should use synchronous processors that yield results
+- Async processors can be used for non-streaming tools
+- Response player handles audio playback with interrupt support
+
+### Error Handling
+- Use structured logging with appropriate levels (DEBUG, INFO, WARNING, ERROR)
+- Critical errors should gracefully degrade (e.g., fallback TTS engines)
+- Tool failures should be caught and reported to the user
+
+### Testing Strategy
+- Unit tests in `tests/` directory
+- Mock hardware components for testing without physical device
+- Test both sync and async tool processors
+- Verify tool definitions and parameter validation
