@@ -10,5 +10,6 @@
   "minimax_base_url": "https://api.minimax.io",
   "speech_recognition_service": "openai",
   "openai_transcription_model": "gpt-4o-transcribe",
-  "language_code": "ru"
+  "language_code": "ru",
+  "wizard_model_id": "gpt-5.1"
 }
