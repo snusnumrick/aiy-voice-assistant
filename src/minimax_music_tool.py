@@ -66,7 +66,7 @@ class MiniMaxMusicTool:
 
     def _discover_music_folder(self) -> Path:
         """Discover cubie-server and get music folder path (from example_voice_assistant.py)"""
-        server_url = 'http://cubie-server.local:5001'
+        server_url = 'http://localhost:5001'
 
         try:
             logger.info(f"🔍 Discovering cubie-server at {server_url}...")
