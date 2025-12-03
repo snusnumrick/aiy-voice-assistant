@@ -1,6 +1,7 @@
 import os
 import time
 import aiohttp
+import requests
 from pathlib import Path
 from typing import Dict
 from pydub import AudioSegment
@@ -52,8 +53,60 @@ class MiniMaxMusicTool:
         self.base_url = config.get("minimax_base_url", "https://api.minimax.io")
         self.response_player = response_player
         self._cleanup_files = []  # Track temp files for cleanup
-        self.music_dir = Path("/tmp/generated_music")  # Directory for saved MP3 files
-        self.music_dir.mkdir(parents=True, exist_ok=True)
+
+        # Discover cubie-server music folder (like in example_voice_assistant.py)
+        self.music_dir = self._discover_music_folder()
+        if self.music_dir:
+            logger.info(f"Using music folder from cubie-server: {self.music_dir}")
+        else:
+            # Fallback to temp directory if server not found
+            self.music_dir = Path("/tmp/generated_music")
+            logger.warning(f"cubie-server not found, using fallback: {self.music_dir}")
+            self.music_dir.mkdir(parents=True, exist_ok=True)
+
+    def _discover_music_folder(self) -> Path:
+        """Discover cubie-server and get music folder path (from example_voice_assistant.py)"""
+        server_url = 'http://cubie-server.local:5001'
+
+        try:
+            logger.info(f"🔍 Discovering cubie-server at {server_url}...")
+            response = requests.get(f'{server_url}/api/config', timeout=5)
+
+            if response.status_code == 200:
+                config = response.json()
+                music_folder = config.get('music_folder')
+                if music_folder and os.path.exists(music_folder):
+                    logger.info(f"✅ Server discovered! Music folder: {music_folder}")
+                    return Path(music_folder)
+                else:
+                    logger.warning(f"⚠️ Server returned config but music folder not found: {music_folder}")
+            else:
+                logger.warning(f"❌ Server returned status {response.status_code}")
+
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"❌ Cannot connect to cubie-server: {e}")
+        except Exception as e:
+            logger.warning(f"❌ Error discovering music folder: {e}")
+
+        return None
+
+    def _refresh_music_library(self):
+        """Tell cubie-server to refresh its music library (from example_voice_assistant.py)"""
+        server_url = 'http://cubie-server.local:5001'
+
+        try:
+            response = requests.post(f'{server_url}/api/refresh', timeout=5)
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"🔄 Music library refreshed! ({result.get('count', 'N/A')} tracks)")
+                return True
+            else:
+                logger.warning(f"⚠️ Refresh returned status {response.status_code}")
+                return False
+        except Exception as e:
+            logger.warning(f"⚠️ Could not refresh library: {e}")
+            # Music server has file watching, so this is not critical
+            return False
 
     def tool_definition(self) -> Tool:
         """Return tool definition for AI model"""
@@ -257,6 +310,9 @@ class MiniMaxMusicTool:
                     else:
                         logger.info("Skipping metadata tags (mutagen not available)")
 
+                    # Refresh music library (like in example_voice_assistant.py)
+                    self._refresh_music_library()
+
                     # Decode complete MP3 to WAV once (Pi Zero W: avoid real-time decode)
                     logger.info("Decoding complete MP3 to WAV (single decode operation)")
                     mp3_audio = AudioSegment.from_mp3(mp3_path)
@@ -336,10 +392,9 @@ async def main():
 
     config = MockConfig()
     response_player = MockResponsePlayer()
-    button_state = MockButtonState()
 
     # Create tool instance
-    tool = MiniMaxMusicTool(config, response_player, button_state)
+    tool = MiniMaxMusicTool(config, response_player)
 
     try:
         # Test parameters
