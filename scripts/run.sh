@@ -15,7 +15,7 @@ cd "${PROJECT_ROOT}" || exit
 mkdir -p "${PROJECT_ROOT}/logs"
 
 # wait for the network
-max_attempts=12
+max_attempts=60
 attempt=1
 while ! ping -c 1 github.com >/dev/null 2>&1; do
     if [ $attempt -ge $max_attempts ]; then
