@@ -277,8 +277,13 @@ class GeminiImageTool:
         
         def get_standard_exif():
             exif = image.getexif() # For Pillow 6.2.2, get from image
-            # ImageDescription: Use UTF-8 bytes to support non-ASCII without '????' replacement
-            exif[int(0x010E)] = str(caption).encode('utf-8')
+            
+            # ImageDescription (0x010E): Must be ASCII. 
+            # We force it to safe ASCII string to avoid Pillow crashing when it tries to encode bytes or non-ascii.
+            # Full unicode text is preserved in UserComment and XP tags.
+            safe_desc = str(caption).encode('ascii', 'replace').decode('ascii')
+            exif[int(0x010E)] = safe_desc
+            
             exif[int(0x013B)] = "Gemini AI"
             exif[int(0x0131)] = "Cubie AI Assistant"
             exif[int(0x9003)] = str(timestamp_str)
