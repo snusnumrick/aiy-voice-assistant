@@ -59,12 +59,12 @@ class GeminiImageTool:
         try:
             logger.info(f"🔍 Discovering cubie-server at {server_url}...")
             # Using shorter timeout for discovery
-            response = requests.get(f'{server_url}/api/config', timeout=2)
+            response = requests.get(f'{server_url}/api/config/folders', timeout=2)
 
             if response.status_code == 200:
                 config = response.json()
                 # Look for pictures_folder or images_folder
-                pictures_folder = config.get('pictures_folder') or config.get('images_folder')
+                pictures_folder = config.get('pictures')
                 if pictures_folder and os.path.exists(pictures_folder):
                     logger.info(f"✅ Server discovered! Pictures folder: {pictures_folder}")
                     return Path(pictures_folder)
