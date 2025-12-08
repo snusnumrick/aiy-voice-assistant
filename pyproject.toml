@@ -36,6 +36,7 @@ websockets = "^13.1"
 zep-cloud = "^2.1.0"
 pydub = "^0.25.1"
 mutagen = "^1.47.0"
+Pillow = "^6.2.2"
 
 
 [build-system]

@@ -70,11 +70,11 @@ class MiniMaxMusicTool:
 
         try:
             logger.info(f"🔍 Discovering cubie-server at {server_url}...")
-            response = requests.get(f'{server_url}/api/config', timeout=5)
+            response = requests.get(f'{server_url}/api/config/folders', timeout=5)
 
             if response.status_code == 200:
                 config = response.json()
-                music_folder = config.get('music_folder')
+                music_folder = config.get('music')
                 if music_folder and os.path.exists(music_folder):
                     logger.info(f"✅ Server discovered! Music folder: {music_folder}")
                     return Path(music_folder)

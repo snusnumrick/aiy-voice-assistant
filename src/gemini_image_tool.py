@@ -117,9 +117,8 @@ class GeminiImageTool:
                 "russian": (
                     "Когда пользователь просит нарисовать, создать картинку, изображение, "
                     "сгенерировать фото или иллюстрацию, используй инструмент generate_image. "
-                    "Триггеры: 'нарисуй', 'создай картинку', 'сгенерируй изображение', 'сделай фото'. "
                     "Всегда уточни описание, стиль и детали перед генерацией, если они не указаны. "
-                    "Предложи добавить заголовок (title) и подпись (caption) для сохранения в метаданных файла. "
+                    "Создай заголовок (title) и подпись (caption) для сохранения в метаданных файла. "
                     "После получения ответа обязательно сохрани путь к файлу в память: "
                     "$remember: Сгенерировано изображение: <prompt>, файл: <путь>. Удали из памяти через 24 часа.$."
                 ),
@@ -128,7 +127,7 @@ class GeminiImageTool:
                     "use generate_image tool. "
                     "Triggers: 'draw', 'create picture', 'generate image', 'make photo'. "
                     "Always ask for description, style and details before generation if not specified. "
-                    "Suggest adding a title and caption to be saved in the file metadata. "
+                    "Create a title and caption to be saved in the file metadata. "
                     "After receiving response, save file path to memory: "
                     "$remember: Generated image: <prompt>, file: <path> Remove from memory in 24 hours$."
                 )
