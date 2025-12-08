@@ -7,6 +7,12 @@ import logging
 import io
 from pathlib import Path
 from typing import Dict, Optional
+
+if __name__ == "__main__":
+    # add the current directory to the python path
+    import sys
+    sys.path.append(os.getcwd())
+    
 from src.config import Config
 from src.ai_models_with_tools import Tool, ToolParameter
 
