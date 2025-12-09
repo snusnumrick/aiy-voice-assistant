@@ -301,13 +301,19 @@ class GeminiImageTool:
         try:
             exif = get_standard_exif()
             # XP tags (UCS-2/UTF-16LE encoding) with double-null terminator
+            logger.info(f"Adding XP tags: {title}, {caption}")
             if title:
                 exif[int(0x9c9b)] = str(title).encode("utf-16le") + b'\x00\x00'
+                logger.info(int(0x9c9b), exif[int(0x9c9b)])
             exif[int(0x9c9c)] = str(caption).encode("utf-16le") + b'\x00\x00'
             exif[int(0x9c9d)] = "Gemini AI".encode("utf-16le") + b'\x00\x00'
             
             image.save(file_path, "JPEG", quality=95, exif=exif.tobytes())
             logger.info(f"Saved JPEG with full metadata (Standard + XP): {file_path}")
+
+            img = Image.open(file_path)
+            raw_exif = img._getexif()
+            logger.info(int(0x9C9B), raw_exif[int(0x9C9B)])
             return file_path
         except Exception as e:
             logger.warning(f"Failed to save with full metadata: {e}")
