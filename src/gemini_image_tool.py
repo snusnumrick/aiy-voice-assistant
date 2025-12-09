@@ -368,6 +368,14 @@ class GeminiImageTool:
                     return raw_path
 
 async def main():
+    x = "Robot Artist"
+    y = x.encode("utf-16le")
+    z = str(x).encode("utf-16le") + b'\x00\x00'
+    print(x)
+    print(y)
+    print(z)
+    exit(0)
+
     """Test function to run GeminiImageTool directly"""
     logger.info("Starting GeminiImageTool test...")
 
