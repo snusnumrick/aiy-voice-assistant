@@ -90,7 +90,7 @@ def get_token_count(messages: List[Dict[str, Union[str, Dict]]]) -> int:
     return count
 
 
-def get_timezone() -> str:
+def get_timezone(set_system_tz: bool = True) -> str:
     """Resolve the current timezone string with graceful fallbacks.
 
     Resolution order:
@@ -98,6 +98,9 @@ def get_timezone() -> str:
     2) Cached value stored locally in project root (timezone.cache)
     3) Explicit setting via Config/env (APP_TIMEZONE or timezone in user/config JSON)
     4) Final fallback to 'UTC'
+
+    Args:
+        set_system_tz: If True, also sets the system timezone using timedatectl
 
     Returns a valid IANA timezone string and never raises on network/SDK errors.
     Also logs meaningful guidance on how to configure a fixed timezone if API access is denied.
@@ -116,6 +119,25 @@ def get_timezone() -> str:
             return True
         except Exception:
             return False
+
+    def _set_system_timezone(tz: str) -> None:
+        """Set system timezone using timedatectl."""
+        if not set_system_tz:
+            return
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["sudo", "timedatectl", "set-timezone", tz],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                logger.info(f"System timezone set to: {tz}")
+            else:
+                logger.warning(f"Failed to set system timezone: {result.stderr}")
+        except Exception as e:
+            logger.debug(f"Could not set system timezone (needs sudo): {e}")
 
     # 1) Try Google Maps Time Zone API first
     try:
@@ -137,12 +159,13 @@ def get_timezone() -> str:
         tz_resp = gmaps.timezone(latlng, _time.time())
         tzid = tz_resp.get("timeZoneId") if isinstance(tz_resp, dict) else None
         if _validate_tz(tzid):
-            # Cache and return
+            # Cache and set system timezone
             try:
                 with open("timezone.cache", "w", encoding="utf-8") as f:
                     f.write(tzid)
             except Exception:
                 pass
+            _set_system_timezone(tzid)
             logger.info(f"Resolved timezone via Google Maps: {tzid}")
             return tzid
         else:
@@ -164,6 +187,7 @@ def get_timezone() -> str:
             with open(cache_path, "r", encoding="utf-8") as f:
                 cached = f.read().strip()
                 if _validate_tz(cached):
+                    _set_system_timezone(cached)
                     logger.info(f"Using cached timezone: {cached}")
                     return cached
     except Exception as e:
@@ -186,6 +210,7 @@ def get_timezone() -> str:
                 f.write(tz_from_config)
         except Exception:
             pass
+        _set_system_timezone(tz_from_config)
         return tz_from_config  # type: ignore
 
     # 4) Final fallback
@@ -197,6 +222,7 @@ def get_timezone() -> str:
             f.write(fallback)
     except Exception:
         pass
+    _set_system_timezone(fallback)
     return fallback
 
 def time_string_ms(timezone_string: str) -> str:
