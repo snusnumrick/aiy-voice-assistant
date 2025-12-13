@@ -360,7 +360,7 @@ def get_location() -> str:
 def get_current_datetime_english(timezone_string: str = "") -> str:
     """Human-readable current date and time in English.
 
-    Example of output: 'Today is 13 July 2024. Now 12:20 PM PDT.'
+    Example of output: 'Today is 13 July 2024, Friday. Now 12:20 PM PDT.'
 
     :param timezone_string: The string representing the timezone in which the current datetime will be retrieved.
     :return: The formatted string representing the current datetime in English.
@@ -379,17 +379,8 @@ def get_current_datetime_english(timezone_string: str = "") -> str:
     # Get the current time in the timezone
     current_time = datetime.now(tz)
 
-    # Format the date
-    date_str = current_time.strftime("%d %B %Y")
-
-    # Format the time
-    time_str = current_time.strftime("%I:%M %p")
-
-    # Determine if it's PDT or PST
-    timezone_abbr = current_time.strftime("%Z")
-
-    # Create the formatted string
-    formatted_str = f"Today is {date_str}. Now {time_str} {timezone_abbr}."
+    # Format the date, day of week, time, and timezone in a single call
+    formatted_str = current_time.strftime("Today is %d %B %Y, %A. Now %I:%M %p %Z.")
 
     return formatted_str
 
