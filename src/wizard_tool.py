@@ -623,6 +623,7 @@ Depth: {depth}
             ], reasoning_effort=to_reasoning_effort(effort)):
                 result += response_chunk
 
+            logger.info(f"do_wizardry_async: wizard response\n{result}")
             filename = await self.save_report_async(question, result)
             logger.info(f"do_wizardry_async: {result} saved in {filename}")
 
@@ -660,6 +661,22 @@ Depth: {depth}
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_title = "".join(c if c.isalnum() or c.isspace() else "_" for c in question)
         safe_title = "_".join(safe_title.split())
+
+        # Truncate title to prevent filename too long errors
+        # Conservative limit for cross-platform compatibility (200 bytes total for filename)
+        # Reserve space for timestamp (~20 bytes) + extension (4 bytes) + separators
+        max_filename_bytes = 200  # Conservative limit for cross-platform compatibility
+        max_title_bytes = max_filename_bytes - len(timestamp.encode('utf-8')) - 9  # -9 for ".md" and separators
+
+        # Check byte length of title (important for UTF-8 Cyrillic characters)
+        title_bytes = safe_title.encode('utf-8')
+
+        if len(title_bytes) > max_title_bytes:
+            # Truncate the title to fit within the available bytes
+            # Timestamp already provides uniqueness, so no need for hash
+            while len(safe_title.encode('utf-8')) > max_title_bytes:
+                safe_title = safe_title[:-1]
+
         filename = f"{timestamp}_{safe_title}.md"
         filepath = reports_dir / filename
 
