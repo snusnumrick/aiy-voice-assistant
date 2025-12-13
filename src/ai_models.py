@@ -614,7 +614,9 @@ class OpenAIModel(AIModel):
                     output = None
                 if output:
                     for item in output:
-                        content = getattr(item, "content", None) or item.get("content")
+                        content = getattr(item, "content", None)
+                        if content is None and hasattr(item, "get"):
+                            content = item.get("content")
                         if content:
                             for c in content:
                                 text = getattr(c, "text", None) or c.get("text")
