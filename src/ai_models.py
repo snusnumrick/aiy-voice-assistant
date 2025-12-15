@@ -880,7 +880,7 @@ class ClaudeAIModel(AIModel):
             raise NonRetryableError(f"Claude count_tokens error: {msg}")
 
         response_dict = json.loads(response.content.decode("utf-8"))
-        return response_dict.get("tokens", 0)
+        return response_dict.get("input_tokens", 0)
 
 
 class OpenRouterModel(OpenAIModel):
@@ -1011,6 +1011,9 @@ with the answer. The reasoning process and answer are enclosed within <think> </
 <answer> answer here </answer>. User:{prompt}. Assistant:"""
 
     config = Config()
+    ai_model = ClaudeAIModel(config)
+    tnum = ai_model.get_tokens_number([{"role": "system", "content": claude_system_prompt},{"role": "user", "content": "a"}])
+    print(f"Tokens number: {tnum}")
     # Use OpenAI's high-reasoning model (GPT-5)
     ai_model = OpenAIModel(config)
     # ai_model = OpenAIModel(config, model_id="gpt-5", reasoning_effort=ReasoningEffort.COMPREHENSIVE)
