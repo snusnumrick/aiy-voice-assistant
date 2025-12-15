@@ -161,6 +161,21 @@ class AIModel(ABC):
         """
         pass
 
+    def get_tokens_number(self, messages: MessageList) -> int:
+        """
+        Count the number of tokens in the given messages.
+
+        Args:
+            messages (MessageList): A list of message models representing the conversation history.
+
+        Returns:
+            int: The number of tokens in the messages.
+
+        Raises:
+            NotImplementedError: If the model implementation doesn't support token counting.
+        """
+        raise NotImplementedError(f"Token counting is not supported by {self.__class__.__name__}")
+
 
 class GeminiAIModel(AIModel):
     """
@@ -827,6 +842,45 @@ class ClaudeAIModel(AIModel):
         for content in response_dict["content"]:
             if content["type"] == "text":
                 yield content["text"]
+
+    def get_tokens_number(self, messages: MessageList) -> int:
+        """
+        Count the number of tokens in the given messages using Anthropic's count_tokens API.
+
+        Args:
+            messages (MessageList): A list of message models representing the conversation history.
+
+        Returns:
+            int: The number of tokens in the messages.
+        """
+        messages = normalize_messages(messages)
+        system_message_combined = " ".join(
+            [m["content"] for m in messages if m["role"] == "system"]
+        )
+        non_system_message = [m for m in messages if m["role"] != "system"]
+
+        data = {
+            "model": self.model,
+            "messages": non_system_message,
+        }
+        if system_message_combined:
+            data["system"] = system_message_combined
+
+        count_tokens_url = "https://api.anthropic.com/v1/messages/count_tokens"
+        response = requests.post(count_tokens_url, headers=self.headers, json=data)
+
+        if response.status_code in (401, 403):
+            try:
+                body = response.json()
+                msg = body.get("error", {}).get("message") or response.text
+            except Exception:
+                msg = response.text
+            from src.tools import NonRetryableError
+
+            raise NonRetryableError(f"Claude count_tokens error: {msg}")
+
+        response_dict = json.loads(response.content.decode("utf-8"))
+        return response_dict.get("tokens", 0)
 
 
 class OpenRouterModel(OpenAIModel):
