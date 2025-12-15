@@ -404,8 +404,15 @@ class ConversationManager:
             logger.debug(f"facts modification time {mod_time} is too old to optimize")
             return
 
+        # remove facts with /tmp/
+        pre_optimized_facts = []
+        for line in self.facts:
+            if "/tmp/" in line:
+                continue
+            pre_optimized_facts.append(line)
+
         # Asynchronously optimize facts
-        optimized_facts = await optimize_facts(self.facts, self.config, self.timezone)
+        optimized_facts = await optimize_facts(pre_optimized_facts, self.config, self.timezone)
 
         if set(optimized_facts) != set(self.facts):
             self.facts = optimized_facts
@@ -449,33 +456,33 @@ class ConversationManager:
                 p.rename("rules_prev.json")
             self.save_rules(self.rules)
 
-    async def process_and_clean(self):
+    async def process_and_clean(self, force=False):
         # form new memories, clean message deque, process existing facts and rules
         # to be used at night time
 
         newline = "\n"
 
         # form new memories
-        if self.config.get("form_new_memories_at_night", True):
-            if len(self.message_history) > 2:
+        if self.config.get("form_new_memories_at_night", True) or force:
+            if len(self.message_history) > 2 or force:
                 prompt = self.config.get(
                     "form_new_memories_prompt",
                     "Это необязательно, но может хочешь еще что-нибудь запомнить "
                     "из нашего разговора перед тем как его удалю?",
                 )
                 logger.info(f"form new memory by asking {prompt}")
-                num_facts_begore = len(self.facts)
-                # async for ai_response in self.get_response(prompt):
-                #     logger.info("AI response: %s", ai_response)
+                num_facts_before = len(self.facts)
+                async for ai_response in self.get_response(prompt):
+                    logger.info("AI response: %s", ai_response)
                 num_facts_after_clean = len(self.facts)
-                if num_facts_after_clean == num_facts_begore:
+                if num_facts_after_clean == num_facts_before:
                     logger.info("no new memories formed")
                 else:
                     logger.info(
-                        f"{num_facts_after_clean - num_facts_begore} new facts remembered"
+                        f"{num_facts_after_clean - num_facts_before} new facts remembered"
                     )
 
-        if self.config.get("clean_message_history_at_night", True):
+        if self.config.get("clean_message_history_at_night", True) or force:
             # cleanup conversation
             self.message_history: Deque[dict] = deque(
                 [{"role": "system", "content": self.get_system_prompt()}]
@@ -557,8 +564,18 @@ class ConversationManager:
             json.dump(rules, f, ensure_ascii=False, indent=4)
 
 
-def test():
-    print(get_current_datetime_english(get_timezone()) + " " + get_location())
+async def test():
+    from src.config import Config
+    from src.ai_models_with_tools import ClaudeAIModelWithTools
+
+    config = Config()
+    timezone = get_timezone()
+    ai_model = ClaudeAIModelWithTools(config)
+    conversation_manager = ConversationManager(
+        config, ai_model, timezone
+    )
+    await conversation_manager.process_and_clean(force=True)
+
 
 
 if __name__ == "__main__":
@@ -568,4 +585,4 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     load_dotenv()
-    test()
+    asyncio.run(test())
