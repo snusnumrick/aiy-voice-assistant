@@ -530,6 +530,8 @@ async def main_loop_async(
         timezone (str): The timezone to use for the conversation loop.
         response_player (ResponsePlayer): The audio response player for playback.
     """
+    await conversation_manager.process_and_clean()
+
     dialog_manager = DialogManager(
         button,
         leds,
