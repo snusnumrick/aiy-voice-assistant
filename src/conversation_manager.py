@@ -241,7 +241,7 @@ class ConversationManager:
                 if rule_text:
                     rules.append(rule_text)
 
-        logger.info(f"Generated tool rules: {rules}")
+        logger.debug(f"Generated tool rules: {rules}")
 
         return "".join(rules)
 
