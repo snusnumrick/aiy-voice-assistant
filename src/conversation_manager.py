@@ -18,6 +18,10 @@ from collections import deque
 from pathlib import Path
 from typing import List, Tuple, AsyncGenerator, Deque, Dict, Optional
 
+if __name__ == "__main__":
+    # add current directory to python path
+    sys.path.append(os.getcwd())
+
 from src.llm_tools import optimize_rules, optimize_facts
 from src.responce_player import extract_emotions, extract_language
 from src.tools import (
@@ -25,10 +29,6 @@ from src.tools import (
     clean_response,
     fix_stress_marks_russian,
 )
-
-if __name__ == "__main__":
-    # add current directory to python path
-    sys.path.append(os.getcwd())
 
 from src.web_search import WebSearcher
 from src.llm_tools import summarize_and_compress_history
