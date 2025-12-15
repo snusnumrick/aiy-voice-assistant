@@ -260,6 +260,14 @@ class ConversationManager:
         if self.rules:
             prompt += " Ты уже помнишь правила:" + " ".join(self.rules)
 
+        # Log the generated system prompt and its token count
+        try:
+            token_count = self.ai_model.get_tokens_number([{"role": "system", "content": prompt}])
+            logger.info(f"Generated system prompt ({token_count} tokens):\n{prompt}")
+        except Exception as e:
+            logger.warning(f"Could not count tokens for system prompt: {e}")
+            logger.info(f"Generated system prompt:\n{prompt}")
+
         return prompt
 
     async def get_response(
