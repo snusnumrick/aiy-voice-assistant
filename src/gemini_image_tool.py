@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import os
 import time
 import aiohttp
@@ -19,11 +20,118 @@ from src.ai_models_with_tools import Tool, ToolParameter
 # Optional dependency for Image processing
 try:
     from PIL import Image
+    from PIL import ImageFile
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
 
+import piexif
+from iptcinfo3 import IPTCInfo
+
 logger = logging.getLogger(__name__)
+
+def write_metadata_compatible(
+    image_path, title, caption, date_taken, make="AI Camera", model="Gemini Flash"
+):
+    """
+    Writes metadata (including date_taken) into a JPEG so that it is
+    readable by the provided 'get_exif_data' function.
+
+    :param image_path: Path to the JPEG file.
+    :param title: The title/object name.
+    :param caption: The caption/abstract.
+    :param date_taken: Date/time string in the format 'YYYY:MM:DD HH:MM:SS'.
+    :param make: Camera make string.
+    :param model: Camera model string.
+    """
+
+    # --- 1. Handle IPTC (Title, Caption, and Date Created) ---
+    try:
+        info = IPTCInfo(image_path, force=True)
+
+        # Write Title and Caption (as before)
+        info["object name"] = title.encode("utf-8")  # (2, 5)
+        info["caption/abstract"] = caption.encode("utf-8")  # (2, 120)
+
+        # Write IPTC Date Created (2, 55)
+        # IPTC date is only YYYYMMDD (8 characters)
+        try:
+            date_only = datetime.strptime(date_taken, "%Y:%m:%d %H:%M:%S").strftime(
+                "%Y%m%d"
+            )
+            info["date created"] = date_only.encode("utf-8")
+        except ValueError:
+            print(
+                "Warning: Could not parse date for IPTC (requires 'YYYY:MM:DD HH:MM:SS' format). IPTC date skipped."
+            )
+
+        # Save IPTC data
+        info.save_as(image_path + ".tmp")
+        os.replace(image_path + ".tmp", image_path)
+    except Exception as e:
+        print(f"Error writing IPTC data: {e}")
+
+    # --- 2. Handle EXIF (Make, Model, XPTitle, XPComment, and DateTimeOriginal) ---
+    try:
+        # Load existing exif or start fresh
+        exif_dict = piexif.load(image_path)
+
+        # Set Make and Model (0th IFD)
+        exif_dict["0th"][piexif.ImageIFD.Make] = make.encode("utf-8")
+        exif_dict["0th"][piexif.ImageIFD.Model] = model.encode("utf-8")
+
+        # Set Windows-specific tags (XPTitle and XPComment)
+        exif_dict["0th"][piexif.ImageIFD.XPTitle] = title.encode("utf-16le")
+        exif_dict["0th"][piexif.ImageIFD.XPComment] = caption.encode("utf-16le")
+
+        # Set Primary Date Tag (Exif IFD)
+        # DateTimeOriginal is the key your function looks for first.
+        # It requires the exact format 'YYYY:MM:DD HH:MM:SS'
+        exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal] = date_taken.encode("utf-8")
+
+        # Convert dict back to bytes and insert into image
+        exif_bytes = piexif.dump(exif_dict)
+        piexif.insert(exif_bytes, image_path)
+
+        print(f"Successfully updated metadata for {image_path}")
+    except Exception as e:
+        print(f"Error writing EXIF data: {e}")
+
+
+def save_with_metadata(
+    image_data: bytes,
+    directory: Path,
+    filename_prefix: str,
+    title: str,
+    caption: str,
+) -> Path:
+    """
+    Save image as JPEG with EXIF metadata using Pillow.
+    """
+
+    ImageFile.MAXBLOCK = (
+        64 * 1024 * 1024
+    )  # Increase buffer size to prevent encoder errors
+
+    with Image.open(io.BytesIO(image_data)) as image:
+        logger.info(
+            f"Processing image: Format={image.format}, Mode={image.mode}, Size={image.size}"
+        )
+
+        # Unconditionally convert to RGB to ensure JPEG compatibility
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+
+        filename = f"{filename_prefix}.jpg"
+        file_path = directory / filename
+
+        image.save(file_path, "JPEG", quality=95)
+
+    write_metadata_compatible(file_path.as_posix(), title, caption,
+                              date_taken=datetime.now(timezone.utc).strftime('%Y:%m:%d %H:%M:%S'),
+                              model="Gemini AI", make="Cubie AI Assistant")
+    return file_path
+
 
 class GeminiImageTool:
     def __init__(self, config: Config):
@@ -220,14 +328,12 @@ class GeminiImageTool:
                     if HAS_PIL:
                         try:
                             # Pass mime_type for better image handling
-                            saved_path = self._save_with_metadata(
+                            saved_path = save_with_metadata(
                                 image_data, 
                                 self.pictures_dir, 
                                 filename_prefix=f"image_{timestamp}_{safe_prompt}",
-                                prompt=prompt,
                                 title=title,
                                 caption=caption,
-                                original_mime_type=mime_type
                             )
                         except Exception as e:
                             logger.error(f"Failed to process image with PIL: {e}", exc_info=True)
@@ -255,126 +361,8 @@ class GeminiImageTool:
             logger.error(f"Image generation failed: {e}", exc_info=True)
             return f"Error generating image: {str(e)}"
 
-    def _save_with_metadata(self, image_data: bytes, directory: Path, filename_prefix: str, prompt: str, title: str, caption: str, original_mime_type: str) -> Path:
-        """
-        Save image as JPEG with EXIF metadata using Pillow.
-        """
-        from PIL import ImageFile
-        ImageFile.MAXBLOCK = 64 * 1024 * 1024 # Increase buffer size to prevent encoder errors
-        
-        image = Image.open(io.BytesIO(image_data))
-        logger.info(f"Processing image: Format={image.format}, Mode={image.mode}, Size={image.size}")
-        
-        # Unconditionally convert to RGB to ensure JPEG compatibility
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-            
-        filename = f"{filename_prefix}.jpg"
-        file_path = directory / filename
-        
-        # Common standard tags
-        timestamp_str = time.strftime("%Y:%m:%d %H:%M:%S")
-        
-        def get_standard_exif():
-            exif = image.getexif() # For Pillow 6.2.2, get from image
-            
-            # ImageDescription (0x010E): Must be ASCII. 
-            # We force it to safe ASCII string to avoid Pillow crashing when it tries to encode bytes or non-ascii.
-            # Full unicode text is preserved in UserComment and XP tags.
-            safe_desc = str(caption).encode('ascii', 'replace').decode('ascii')
-            exif[int(0x010E)] = safe_desc
-            
-            exif[int(0x013B)] = "Gemini AI"
-            exif[int(0x0131)] = "Cubie AI Assistant"
-            exif[int(0x9003)] = str(timestamp_str)
-            
-            # UserComment (0x9286): UNICODE prefix + UTF-16 (with BOM)
-            # This is the standard EXIF way for non-ASCII comments
-            try:
-                exif[int(0x9286)] = b'UNICODE\x00' + str(caption).encode('utf-16')
-            except Exception:
-                pass # Skip if encoding fails
-                
-            return exif
-            
-        # Attempt 1: Full Metadata (Standard + XP)
-        try:
-            exif = get_standard_exif()
-            # XP tags (UCS-2/UTF-16LE encoding) with double-null terminator
-            logger.info(f"Adding XP tags: {title}, {caption}")
-            if title:
-                exif[int(0x9c9b)] = str(title).encode("utf-16le") + b'\x00\x00'
-                logger.info(int(0x9c9b), exif[int(0x9c9b)])
-            exif[int(0x9c9c)] = str(caption).encode("utf-16le") + b'\x00\x00'
-            exif[int(0x9c9d)] = "Gemini AI".encode("utf-16le") + b'\x00\x00'
-            
-            image.save(file_path, "JPEG", quality=95, exif=exif.tobytes())
-            logger.info(f"Saved JPEG with full metadata (Standard + XP): {file_path}")
-
-            img = Image.open(file_path)
-            raw_exif = img._getexif()
-            logger.info(int(0x9C9B), raw_exif[int(0x9C9B)])
-            return file_path
-        except Exception as e:
-            logger.warning(f"Failed to save with full metadata: {e}")
-
-        # Attempt 2: Standard Metadata Only
-        try:
-            exif = get_standard_exif()
-            image.save(file_path, "JPEG", quality=95, exif=exif.tobytes())
-            logger.info(f"Saved JPEG with standard metadata only: {file_path}")
-            return file_path
-        except Exception as e:
-            logger.warning(f"Failed to save with standard metadata: {e}")
-
-        # Attempt 3: No Metadata (Fallback)
-        try:
-            # Clear any potential internal state issues by reloading or just saving directly
-            image.save(file_path, "JPEG", quality=95)
-            logger.info(f"Saved JPEG without metadata (fallback): {file_path}")
-            return file_path
-        except Exception as e:
-            logger.error(f"Failed to save image as JPEG (High Quality): {type(e).__name__}: {e}")
-            
-            # Attempt 4: No Metadata, Default Quality (Lower fallback)
-            try:
-                image.save(file_path, "JPEG")
-                logger.info(f"Saved JPEG with default quality: {file_path}")
-                return file_path
-            except Exception as e2:
-                logger.error(f"Failed to save image as JPEG (Default): {type(e2).__name__}: {e2}")
-
-                # Attempt 5: Save as PNG (Pillow re-encode)
-                try:
-                    png_path = file_path.with_suffix(".png")
-                    image.save(png_path, "PNG")
-                    logger.info(f"Saved as PNG (re-encoded): {png_path}")
-                    return png_path
-                except Exception as png_e:
-                    logger.error(f"Failed to save as PNG re-encode: {type(png_e).__name__}: {png_e}")
-                    
-                    # Attempt 6: RAW WRITE (Ultimate Fallback)
-                    # We have the original bytes. Just write them.
-                    # Guess extension from original mime type or default to png
-                    ext = ".png"
-                    if original_mime_type:
-                        if "jpeg" in original_mime_type or "jpg" in original_mime_type: ext = ".jpg"
-                        elif "webp" in original_mime_type: ext = ".webp"
-                    
-                    raw_path = file_path.with_suffix(ext)
-                    with open(raw_path, "wb") as f:
-                        f.write(image_data)
-                    logger.info(f"Saved raw image bytes (ultimate fallback): {raw_path}")
-                    return raw_path
 
 async def main():
-    x = "Robot Artist"
-    y = x.encode("utf-16le")
-    z = str(x).encode("utf-16le") + b'\x00\x00'
-    print(x)
-    print(y)
-    print(z)
-    exit(0)
 
     """Test function to run GeminiImageTool directly"""
     logger.info("Starting GeminiImageTool test...")
