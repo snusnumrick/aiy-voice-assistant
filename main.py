@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from aiy.board import Board
 from aiy.leds import Color, Leds
 from src.ai_models_with_tools import ClaudeAIModelWithTools, OpenAIModelWithTools
+from src.gemini_image_tool import GeminiImageTool
 from src.responce_player import ResponsePlayer
 from src.code_interpreter_tool import InterpreterTool
 from src.config import Config
@@ -140,6 +141,7 @@ def main():
         volume_control_tool = VolumeControlTool(config)
         weather_tool = EnhancedWeatherTool(config)
         wizard_tool = WizardTool(config)
+        image_tool = GeminiImageTool(config)
 
         tools = [
             send_email_tool.tool_definition(),
@@ -147,6 +149,7 @@ def main():
             interpreter_tool.tool_definition(),
             volume_control_tool.tool_definition(),
             weather_tool.tool_definition(),
+            image_tool.tool_definition(),
         ] + wizard_tool.tool_definitions()
         if not use_builtin_search:
             tools.append(search_tool.tool_definition())
