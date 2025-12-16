@@ -148,68 +148,81 @@ async def optimize_rules(
 
 
 async def optimize_facts(facts: List[str], config: Config, timezone: str) -> List[str]:
-    prompt = f"""
-    Проанализируй данную последовательность известных фактов в JSON, учитывая system prompt.
-    Удали дублирующиеся, устаревшие, противоречивые факты, а также те общеизвестные события или новости, 
-    которые произошли более недели назад от текущей даты. Например, информация о политических событиях, 
-    результатах спортивных соревнований или других широко освещаемых новостях, которые старше недели, 
-    должна быть удалена. Сохрани только актуальную общедоступную информацию (не старше недели) 
-    и личные или уникальные для пользователя факты независимо от их давности. 
-    Объедини факты, содержащие схожую или дополняющую информацию, в один более полный факт, 
-    даже если они имеют разные даты. Устрани любые повторения информации, 
-    даже если она выражена разными словами в разных фактах. При объединении фактов используй самую позднюю дату. 
-    Представь результат в том же JSON формате в хронологическом порядке, 
-    сохраняя оригинальное форматирование каждого факта как одну строку: 
-    "(date) : fact". 
-    В финальном списке не должно быть никакой повторяющейся или избыточной информации, включая частичные повторения. 
-    Каждый уникальный факт должен быть представлен только один раз в наиболее полной форме. 
-    Перед отправкой ответа, тщательно перепроверь список на наличие любых повторений или избыточности и устрани их, 
-    уделяя особое внимание фактам, которые могут содержать частично повторяющуюся информацию. 
-    Верни только JSON без дополнительных пояснений. Если после проверки обнаружишь, 
-    что некоторые факты все еще содержат повторяющуюся информацию, 
-    переработай список еще раз для устранения всех повторений.
-
-    последовательность известных фактов в JSON:
-    '''
-    {json.dumps(facts, indent=2, ensure_ascii=False)}
-    '''
     """
+    Optimizes a list of facts by removing duplicates, summarizing, and keeping only
+    the most relevant and recent information. Limits output to prevent token overflow.
+
+    Args:
+        facts: List of fact strings with timestamps
+        config: Configuration object
+        timezone: Current timezone
+
+    Returns:
+        Optimized list of facts (max 15 facts, summarized and deduplicated)
+    """
+    max_facts = config.get("max_optimized_facts", 15)
+
+    prompt = f"""Твоя задача - оптимизировать список фактов для экономии токенов:
+
+ПРАВИЛА ОПТИМИЗАЦИИ:
+1. Максимум {max_facts} фактов в итоге
+2. СОКРАТИ timestamp: "(15 апр 2025) : " вместо "(15 апреля 2025, 03:00:05 AM, PDT) : " (экономия ~20 токенов)
+3. Удали дубликаты и противоречия
+4. ОБЪЕДИНИ схожие факты в один (например, несколько фактов об ударениях → один)
+5. СОКРАТИ каждый факт до сути (убери лишние детали)
+6. ПРИОРИТЕТ: недавние важные факты > старые важные > недавние неважные
+
+ПРИМЕР:
+Было: "(15 апреля 2025, 03:00:05 AM, PDT) : Пользователь интересовался историческими событиями, в частности резней в Маунтин Мидоуз (Mountain Meadows Massacre) 1857 года, включая вопрос о причастности лидера мормонов Бригама Янга к этой трагедии"
+Стало: "(15 апр 2025) : Интересовался историей: резня в Mountain Meadows 1857, причастность Янга"
+
+ФОРМАТ ВЫВОДА:
+- Только JSON массив строк
+- Краткие timestamp в формате "(дата) : "
+- Кратко и по сути
+- Сохранить хронологический порядок
+- Верни только JSON
+
+Список фактов:
+{json.dumps(facts, indent=2, ensure_ascii=False)}
+"""
+
     model = ClaudeAIModel(config)
-    prompt = get_current_datetime_english(timezone) + " " + prompt
-    messages = [{"role": "system", "content": ""}, {"role": "user", "content": prompt}]
-    logger.info(f"optimizing facts for:\n{format_message_history(messages)}")
+    current_time = get_current_datetime_english(timezone)
+    messages = [
+        {"role": "system", "content": f"Текущее время: {current_time}. Ты оптимизируешь факты для экономии токенов."},
+        {"role": "user", "content": prompt}
+    ]
+
+    logger.info(f"Optimizing {len(facts)} facts (max output: {max_facts})")
     responses = " ".join([r async for r in model.get_response_async(messages)])
 
+    # Verification prompt
     messages.append({"role": "assistant", "content": responses})
-    messages.append(
-        {
-            "role": "user",
-            "content": "Проверь результат еще раз и верни исправленный JSON. "
-            "Удостоверься что личные или уникальные для пользователя факты "
-            "не потеряны.",
-        }
-    )
+    messages.append({
+        "role": "user",
+        "content": f"Проверь: 1) Не больше {max_facts} фактов? 2) Сокращены timestamp? 3) Убраны дубликаты? Верни JSON."
+    })
     responses = " ".join([r async for r in model.get_response_async(messages)])
 
-    messages.append({"role": "assistant", "content": responses})
-    messages.append(
-        {
-            "role": "user",
-            "content": "ты уверен, что личные или уникальные для пользователя факты "
-            "не потеряны?",
-        }
-    )
-    responses = " ".join([r async for r in model.get_response_async(messages)])
-
-    # extract JSON from response
+    # Extract JSON
     match = re.search(r"\[[\s\S]*\]", responses)
     if match is None:
-        logger.warning(f"the input string does not have complete JSON: {responses}")
-    else:
-        responses = match.group(0)
-    logger.debug(f"optimize_facts responces: {responses}")
-    new_rules = extract_json(responses)
-    return new_rules
+        logger.warning(f"Could not extract JSON from response: {responses[:200]}")
+        return facts[:max_facts]  # Return truncated original if parsing fails
+
+    responses = match.group(0)
+    logger.debug(f"Optimization result: {responses}")
+
+    try:
+        optimized_facts = extract_json(responses)
+        if not isinstance(optimized_facts, list):
+            logger.warning(f"Expected list, got {type(optimized_facts)}")
+            return facts[:max_facts]
+        return optimized_facts[:max_facts]
+    except Exception as e:
+        logger.error(f"Failed to parse optimized facts: {e}")
+        return facts[:max_facts]
 
 
 async def test_optimize_facts(config, timezone: str):
