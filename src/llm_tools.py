@@ -241,29 +241,38 @@ async def optimize_facts(facts: List[str], config: Config, timezone: str) -> Lis
     older_facts = [f for f in parsed_facts if f['days_ago'] > recent_threshold_days]
 
     # Build prompt
-    prompt = f"""ЗАДАЧА: Оптимизировать список фактов.
+    prompt = f"""ЗАДАЧА: Сократить список фактов, сохранив важную информацию.
 
-ПРАВИЛА:
-1. Максимум {max_facts} фактов
-2. Сократить timestamp: "(15 апр 2025) : "
-3. Удалить дубликаты
-4. Объединить похожие факты
-5. Сократить каждый факт, убрав лишние детали
+Инструкции:
+1. Выбери МАКСИМУМ {max_facts} самых важных фактов
+2. Сократи timestamp: "(15 апр 2025) : " вместо полного
+3. Удали точные повторы
+4. Объедини похожие факты в один
+5. Сократи текст, сохранив суть
 
-ПРИОРИТЕТ (что оставить):
-1. Правила и предпочтения пользователя
-2. Персональная информация (семья, возраст)
-3. Недавние события (последние 30 дней)
-4. Интересы и хобби
+Что САМОЕ ВАЖНО (выбирай в первую очередь):
+- Правила общения и предпочтения пользователя
+- Персональная информация (имя, семья, возраст, контакты)
+- Недавние события (последние 1-2 месяца)
+- Интересы и хобби
 
-ПРИМЕР:
-Исходный: "(15 декабря 2025, 03:00:05 AM, PDT) : Пользователь интересовался историческими событиями, в частности резней в Маунтин Мидоуз (Mountain Meadows Massacre) 1857 года"
+Что МОЖНО СОКРАТИТЬ:
+- Длинные объяснения
+- Менее важные детали
+- Старые незначительные факты
 
-Результат: "(15 дек 2025) : Интересовался историей: резня в Mountain Meadows 1857"
+ВАЖНО:
+- НЕ УДАЛЯЙ ВСЕ ФАКТЫ! Нужно минимум 10-15 фактов
+- Сохрани разнообразие: личное + интересы + правила
+- Сокращай, но НЕ выдумывай новое
 
-Верни ТОЛЬКО JSON массив оптимизированных фактов.
+ПРИМЕР СОКРАЩЕНИЯ:
+ДО: "(15 декабря 2025, 03:00:05 AM, PDT) : Пользователь интересовался историческими событиями, в частности резней в Маунтин Мидоуз (Mountain Meadows Massacre) 1857 года, включая вопрос о причастности лидера мормонов Бригама Янга к этой трагедии"
+ПОСЛЕ: "(15 дек 2025) : Интересовался историей: резня в Mountain Meadows 1857, роль Янга"
 
-ИСХОДНЫЕ ФАКТЫ:
+Верни JSON массив фактов.
+
+ИСХОДНЫЙ СПИСОК ФАКТОВ:
 {json.dumps([f['text'] for f in parsed_facts], indent=2, ensure_ascii=False)}
 """
 
@@ -277,7 +286,15 @@ async def optimize_facts(facts: List[str], config: Config, timezone: str) -> Lis
         {"role": "user", "content": prompt}
     ]
 
-    logger.info(f"Optimizing {len(facts)} facts (max output: {max_facts})")
+    logger.info(f"Optimizing {len(facts)} facts (target: 10-15 facts)")
+    responses = " ".join([r async for r in model.get_response_async(messages)])
+
+    # Simple verification prompt
+    messages.append({"role": "assistant", "content": responses})
+    messages.append({
+        "role": "user",
+        "content": "Проверь результат: есть ли минимум 10 фактов? Все ли важные темы сохранены (личное, интересы, правила)? Убери лишнее, добавь пропущенное. Верни JSON."
+    })
     responses = " ".join([r async for r in model.get_response_async(messages)])
 
     # Extract JSON
@@ -295,6 +312,12 @@ async def optimize_facts(facts: List[str], config: Config, timezone: str) -> Lis
         if not isinstance(optimized_facts, list):
             logger.warning(f"Expected list, got {type(optimized_facts)}")
             return [f['text'] for f in parsed_facts[:max_facts]]
+
+        # Ensure we have a reasonable number of facts
+        if len(optimized_facts) < 5:
+            logger.warning(f"Too few facts ({len}), using fallback")
+            return [f['text'] for f in parsed_facts[:max_facts]]
+
         return optimized_facts[:max_facts]
     except Exception as e:
         logger.error(f"Failed to parse optimized facts: {e}")
