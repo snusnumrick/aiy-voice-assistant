@@ -149,10 +149,10 @@ async def optimize_rules(
 
 async def optimize_facts(facts: List[str], config: Config, timezone: str) -> List[str]:
     """
-    Optimizes facts using a hybrid approach:
-    - Recent facts (last 30 days): preserve detail
-    - Older facts: aggressive summarization
-    - Prioritize user preferences, behaviors, and relationships
+    Optimizes facts using LLM-only approach:
+    - Simpler and more accurate than keyword-based scoring
+    - LLM determines what to keep based on importance
+    - Reduces token count while preserving essential context
 
     Args:
         facts: List of fact strings with timestamps
@@ -160,168 +160,128 @@ async def optimize_facts(facts: List[str], config: Config, timezone: str) -> Lis
         timezone: Current timezone
 
     Returns:
-        Optimized list of facts with preserved context for recent ones
+        Optimized list of facts (max 20) sorted chronologically
     """
-    max_facts = config.get("max_optimized_facts", 20)
-    recent_threshold_days = config.get("recent_facts_threshold_days", 30)
-    max_recent_facts = config.get("max_recent_facts", 8)
-
-    # Parse dates and categorize facts
-    import datetime
     import re
+    from datetime import datetime
 
-    parsed_facts = []
-    current_date = datetime.datetime.now()
+    max_facts = config.get("max_optimized_facts", 20)
 
-    for fact in facts:
-        # Extract date from fact string
-        date_match = re.search(r'\((\d{1,2})\s+(\w+)\s+(\d{4})\)', fact)
-        if date_match:
-            day, month_name, year = date_match.groups()
-            try:
-                # Convert month name to number (basic mapping)
-                month_map = {
-                    'янв': 1, 'фев': 2, 'мар': 3, 'апр': 4, 'май': 5, 'июн': 6,
-                    'июл': 7, 'авг': 8, 'сен': 9, 'окт': 10, 'ноя': 11, 'дек': 12
-                }
-                month = month_map.get(month_name[:3], 1)
-                fact_date = datetime.datetime(int(year), month, int(day))
-                days_ago = (current_date - fact_date).days
+    current_time = get_current_datetime_english(timezone)
 
-                # Determine priority score (higher = more important)
-                priority_score = 0
+    # Simple, direct prompt
+    prompt = f"""TASK: Select and optimize existing facts. Return JSON array.
 
-                # Priority 1: User preferences, behaviors, communication style
-                if any(keyword in fact.lower() for keyword in [
-                    'предпочитает', 'любит', 'не любит', 'использовать', 'помнить',
-                    'правило', 'ударение', 'внимателен', 'поправил', 'ошибк'
-                ]):
-                    priority_score += 100
+CRITICAL: ONLY select from the input list below. DO NOT CREATE new facts.
 
-                # Priority 2: Personal info, family, relationships
-                if any(keyword in fact.lower() for keyword in [
-                    'антон', 'жена', 'сестра', 'друг', 'семья', 'email', 'возраст'
-                ]):
-                    priority_score += 80
+RESTRICTIONS - DO NOT ADD:
+- No facts about Claude API usage
+- No facts about ChatGPT or language models
+- No facts about preserving context or optimization
+- No facts about transformer attention mechanisms
+- No technical observations about AI systems
+- NO facts that are NOT in the input list below
 
-                # Priority 3: Recent important events
-                if days_ago <= 30:
-                    priority_score += 50
-                elif days_ago <= 90:
-                    priority_score += 30
-                else:
-                    priority_score += 10
+SELECTION RULES:
+1. Select top {max_facts} from input list only
+2. Shorten timestamps: "(15 Dec 2025) : "
+3. Remove duplicates
+4. Merge similar facts
+5. Condense text
 
-                # Priority 4: Interests and topics
-                if any(keyword in fact.lower() for keyword in [
-                    'интересуется', 'обсуждали', 'спрашивал', 'история', 'ботаник'
-                ]):
-                    priority_score += 40
+PRIORITY ORDER:
+1. User communication rules and preferences
+2. Personal information (family, health, location)
+3. Recent events
+4. Interests and topics discussed
 
-                parsed_facts.append({
-                    'text': fact,
-                    'date': fact_date,
-                    'days_ago': days_ago,
-                    'priority': priority_score
-                })
-            except:
-                # If date parsing fails, treat as low priority
-                parsed_facts.append({
-                    'text': fact,
-                    'date': current_date,
-                    'days_ago': 999,
-                    'priority': 0
-                })
+FACTS TO SELECT FROM (MUST choose from this list only):
+{json.dumps(facts, indent=2, ensure_ascii=False)}
 
-    # Sort by priority (descending)
-    parsed_facts.sort(key=lambda x: x['priority'], reverse=True)
+OUTPUT FORMAT (JSON array only):
+[
+  "(10 Jan 2025) : Use masculine gender",
+  "(18 Jun 2025) : Anton - 61 years old, Santa Clara..."
+]
 
-    # Categorize by recency
-    recent_facts = [f for f in parsed_facts if f['days_ago'] <= recent_threshold_days]
-    older_facts = [f for f in parsed_facts if f['days_ago'] > recent_threshold_days]
-
-    # Build prompt
-    prompt = f"""ЗАДАЧА: Сократить список фактов, сохранив важную информацию.
-
-Инструкции:
-1. Выбери МАКСИМУМ {max_facts} самых важных фактов
-2. Сократи timestamp: "(15 апр 2025) : " вместо полного
-3. Удали точные повторы
-4. Объедини похожие факты в один
-5. Сократи текст, сохранив суть
-
-Что САМОЕ ВАЖНО (выбирай в первую очередь):
-- Правила общения и предпочтения пользователя
-- Персональная информация (имя, семья, возраст, контакты)
-- Недавние события (последние 1-2 месяца)
-- Интересы и хобби
-
-Что МОЖНО СОКРАТИТЬ:
-- Длинные объяснения
-- Менее важные детали
-- Старые незначительные факты
-
-ВАЖНО:
-- НЕ УДАЛЯЙ ВСЕ ФАКТЫ! Нужно минимум 10-15 фактов
-- Сохрани разнообразие: личное + интересы + правила
-- Сокращай, но НЕ выдумывай новое
-
-ПРИМЕР СОКРАЩЕНИЯ:
-ДО: "(15 декабря 2025, 03:00:05 AM, PDT) : Пользователь интересовался историческими событиями, в частности резней в Маунтин Мидоуз (Mountain Meadows Massacre) 1857 года, включая вопрос о причастности лидера мормонов Бригама Янга к этой трагедии"
-ПОСЛЕ: "(15 дек 2025) : Интересовался историей: резня в Mountain Meadows 1857, роль Янга"
-
-Верни JSON массив фактов.
-
-ИСХОДНЫЙ СПИСОК ФАКТОВ:
-{json.dumps([f['text'] for f in parsed_facts], indent=2, ensure_ascii=False)}
+Return ONLY JSON array from facts list above. No other text.
 """
 
     model = ClaudeAIModel(config)
-    current_time = get_current_datetime_english(timezone)
     messages = [
-        {
-            "role": "system",
-            "content": f"Текущее время: {current_time}. Гибридная оптимизация: недавние детально, старые кратко."
-        },
+        {"role": "system", "content": f"Current time: {current_time}. Optimize facts for AI assistant."},
         {"role": "user", "content": prompt}
     ]
 
-    logger.info(f"Optimizing {len(facts)} facts (target: 10-15 facts)")
-    responses = " ".join([r async for r in model.get_response_async(messages)])
-
-    # Simple verification prompt
-    messages.append({"role": "assistant", "content": responses})
-    messages.append({
-        "role": "user",
-        "content": "Проверь результат: есть ли минимум 10 фактов? Все ли важные темы сохранены (личное, интересы, правила)? Убери лишнее, добавь пропущенное. Верни JSON."
-    })
+    logger.info(f"LLM optimizing {len(facts)} facts (target: 10-20)")
     responses = " ".join([r async for r in model.get_response_async(messages)])
 
     # Extract JSON
     match = re.search(r"\[[\s\S]*\]", responses)
     if match is None:
         logger.warning(f"Could not extract JSON from response: {responses[:200]}")
-        # Fallback: return top priority facts
-        return [f['text'] for f in parsed_facts[:max_facts]]
+        # Fallback: return first N facts
+        return facts[:max_facts]
 
     responses = match.group(0)
-    logger.debug(f"Optimization result: {responses}")
+    logger.debug(f"Optimization result: {responses[:500]}...")
 
     try:
         optimized_facts = extract_json(responses)
         if not isinstance(optimized_facts, list):
             logger.warning(f"Expected list, got {type(optimized_facts)}")
-            return [f['text'] for f in parsed_facts[:max_facts]]
+            return facts[:max_facts]
 
-        # Ensure we have a reasonable number of facts
+        # Ensure minimum number of facts
         if len(optimized_facts) < 5:
-            logger.warning(f"Too few facts ({len}), using fallback")
-            return [f['text'] for f in parsed_facts[:max_facts]]
+            logger.warning(f"Too few facts ({len(optimized_facts)}), using fallback")
+            return facts[:max_facts]
 
+        def extract_date_from_fact(fact):
+            """Extract date from fact string for sorting"""
+            # Try to extract date from the fact (handles both Russian and English months)
+            match = re.search(r'\((\d{1,2})\s+([а-яёА-ЯЁ\w]+)\.?\s+(\d{4})[,)]', fact)
+            if match:
+                day, month_name, year = match.groups()
+                try:
+                    # Support both Russian and English month formats
+                    month_map = {
+                        # Russian
+                        'янв': 1, 'январь': 1, 'января': 1,
+                        'фев': 2, 'февраль': 2, 'февраля': 2,
+                        'мар': 3, 'март': 3, 'марта': 3,
+                        'апр': 4, 'апрель': 4, 'апреля': 4,
+                        'май': 5, 'мая': 5,
+                        'июн': 6, 'июнь': 6, 'июня': 6,
+                        'июл': 7, 'июль': 7, 'июля': 7,
+                        'авг': 8, 'август': 8, 'августа': 8,
+                        'сен': 9, 'сентябрь': 9, 'сентября': 9,
+                        'окт': 10, 'октябрь': 10, 'октября': 10,
+                        'ноя': 11, 'ноябрь': 11, 'ноября': 11,
+                        'дек': 12, 'декабрь': 12, 'декабря': 12,
+                        # English abbreviations
+                        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4,
+                        'may': 5, 'jun': 6, 'jul': 7, 'aug': 8,
+                        'sep': 9, 'sept': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+                        # English full names
+                        'january': 1, 'february': 2, 'march': 3, 'april': 4,
+                        'may': 5, 'june': 6, 'july': 7, 'august': 8,
+                        'september': 9, 'october': 10, 'november': 11, 'december': 12
+                    }
+                    month = month_map.get(month_name.lower(), 1)
+                    return datetime(int(year), month, int(day))
+                except:
+                    return datetime(1900, 1, 1)  # Oldest date if parsing fails
+            return datetime(1900, 1, 1)
+
+        # Sort by date (oldest first)
+        optimized_facts.sort(key=lambda x: extract_date_from_fact(x))
+
+        logger.info(f"Successfully optimized to {len(optimized_facts)} facts (chronologically sorted)")
         return optimized_facts[:max_facts]
     except Exception as e:
         logger.error(f"Failed to parse optimized facts: {e}")
-        return [f['text'] for f in parsed_facts[:max_facts]]
+        return facts[:max_facts]
 
 
 async def test_optimize_facts(config, timezone: str):
