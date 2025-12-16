@@ -12,5 +12,8 @@
   "openai_transcription_model": "gpt-4o-transcribe",
   "sample_rate_hertz":24000,
   "language_code": "ru",
-  "wizard_model_id": "gpt-5.2"
+  "wizard_model_id": "gpt-5.2",
+  "max_optimized_facts": 20,
+  "recent_facts_threshold_days": 30,
+  "max_recent_facts": 8
 }
