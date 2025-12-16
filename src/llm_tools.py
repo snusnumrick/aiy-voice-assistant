@@ -241,33 +241,29 @@ async def optimize_facts(facts: List[str], config: Config, timezone: str) -> Lis
     older_facts = [f for f in parsed_facts if f['days_ago'] > recent_threshold_days]
 
     # Build prompt
-    prompt = f"""ЗАДАЧА: Гибридная оптимизация фактов - сохранить детальность для недавних, сжать старые.
+    prompt = f"""ЗАДАЧА: Оптимизировать список фактов.
 
-СТРУТЕГИЯ:
-1. Недавние факты (≤ {recent_threshold_days} дней): сохранить больше деталей
-2. Старые факты (> {recent_threshold_days} дней): агрессивное сжатие
-3. ПРИОРИТЕТ: предпочтения пользователя > отношения > события > детали
-4. Максимум {max_facts} фактов в итоге (из них max {max_recent_facts} недавних)
-5. Сократить timestamp: "(15 апр 2025) : " (экономия токенов)
+ПРАВИЛА:
+1. Максимум {max_facts} фактов
+2. Сократить timestamp: "(15 апр 2025) : "
+3. Удалить дубликаты
+4. Объединить похожие факты
+5. Сократить каждый факт, убрав лишние детали
 
-ПРИОРИТЕТЫ (в порядке важности):
-- Правила коммуникации и предпочтения (ударения, стиль общения)
-- Персональная информация (семья, возраст, контакты)
-- Недавние важные события (последние 30 дней)
-- Интересы и темы разговоров
-- Конкретные детали и примеры
+ПРИОРИТЕТ (что оставить):
+1. Правила и предпочтения пользователя
+2. Персональная информация (семья, возраст)
+3. Недавние события (последние 30 дней)
+4. Интересы и хобби
 
-ПРИМЕРЫ ТРАНСФОРМАЦИИ:
+ПРИМЕР:
+Исходный: "(15 декабря 2025, 03:00:05 AM, PDT) : Пользователь интересовался историческими событиями, в частности резней в Маунтин Мидоуз (Mountain Meadows Massacre) 1857 года"
 
-Недавний факт (сохранить детали):
-"(15 дек 2025) : Поправил ошибку про болезнь Лайма - это бактерия Borrelia burgdorferi, не вирус. У друга диагноз Лайм объясняет воспаление суставов. Доксициклин 28 дней"
+Результат: "(15 дек 2025) : Интересовался историей: резня в Mountain Meadows 1857"
 
-Старый факт (сжать):
-"(03 ноя 2025) : Интересуется ботаникой. Обсуждали батат vs ямс, папайя ≠ питайя. Мане умер от сифилиса"
+Верни ТОЛЬКО JSON массив оптимизированных фактов.
 
-ФОРМАТ: JSON массив строк, хронологический порядок.
-
-ИСХОДНЫЙ СПИСОК ФАКТОВ:
+ИСХОДНЫЕ ФАКТЫ:
 {json.dumps([f['text'] for f in parsed_facts], indent=2, ensure_ascii=False)}
 """
 
@@ -281,15 +277,7 @@ async def optimize_facts(facts: List[str], config: Config, timezone: str) -> Lis
         {"role": "user", "content": prompt}
     ]
 
-    logger.info(f"Optimizing {len(facts)} facts: {len(recent_facts)} recent, {len(older_facts)} old (max output: {max_facts})")
-    responses = " ".join([r async for r in model.get_response_async(messages)])
-
-    # Verification
-    messages.append({"role": "assistant", "content": responses})
-    messages.append({
-        "role": "user",
-        "content": f"Проверь: 1) Не больше {max_facts} фактов? 2) Сокращены timestamp? 3) Недавние сохранены детально? Верни JSON."
-    })
+    logger.info(f"Optimizing {len(facts)} facts (max output: {max_facts})")
     responses = " ".join([r async for r in model.get_response_async(messages)])
 
     # Extract JSON
@@ -300,7 +288,7 @@ async def optimize_facts(facts: List[str], config: Config, timezone: str) -> Lis
         return [f['text'] for f in parsed_facts[:max_facts]]
 
     responses = match.group(0)
-    logger.debug(f"Hybrid optimization result: {responses}")
+    logger.debug(f"Optimization result: {responses}")
 
     try:
         optimized_facts = extract_json(responses)
