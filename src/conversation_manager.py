@@ -100,7 +100,7 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
 
     # Process each match
     for match in matches:
-        logger.info(f"Extracted rule: {match}")
+        logger.debug(f"Extracted rule: {match}")
         # rule = get_current_date_time_for_facts(current_timezone) + " : " + match
         rule = match
         extracted_rules.append(rule)
@@ -261,18 +261,18 @@ class ConversationManager:
             prompt += " Ты уже помнишь правила:" + " ".join(self.rules)
 
         # Log the generated system prompt and its token count
-        try:
-            token_count = self.ai_model.get_tokens_number(
-                [
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": "a"},
-                ]
-            )
-
-            logger.info(f"Generated system prompt ({token_count} tokens):\n{prompt}")
-        except Exception as e:
-            logger.warning(f"Could not count tokens for system prompt: {e}")
-            logger.info(f"Generated system prompt:\n{prompt}")
+        # try:
+        #     token_count = self.ai_model.get_tokens_number(
+        #         [
+        #             {"role": "system", "content": prompt},
+        #             {"role": "user", "content": "a"},
+        #         ]
+        #     )
+        #
+        #     logger.info(f"Generated system prompt ({token_count} tokens):\n{prompt}")
+        # except Exception as e:
+        #     logger.warning(f"Could not count tokens for system prompt: {e}")
+        #     logger.info(f"Generated system prompt:\n{prompt}")
 
         return prompt
 
@@ -339,18 +339,18 @@ class ConversationManager:
             self.save_facts(self.facts)
 
             if facts:
-                logger.info(f"Extracted facts: {facts}")
+                logger.debug(f"Extracted facts: {facts}")
 
             response_text, rules = extract_rules(response_text)
             self.rules += rules
             self.save_rules(self.rules)
 
             if rules:
-                logger.info(f"Extracted rules: {rules}")
+                logger.debug(f"Extracted rules: {rules}")
 
             result = []
             for emo, t in extract_emotions(response_text):
-                logger.info(f"Emotion: {emo} -> {t}")
+                logger.debug(f"Emotion: {emo} -> {t}")
                 for lang, clean_text in extract_language(
                     t, default_lang=self.current_language_code
                 ):
