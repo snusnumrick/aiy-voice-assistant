@@ -59,6 +59,7 @@ def check_tech_support_mode():
             # Set up blinking yellow LED pattern
             leds.pattern = Pattern.blink(500)  # Blink every 500ms
             leds.update(Leds.rgb_pattern(Color.YELLOW))
+            logger.info("yellow 500")
 
             logger.info("Monitoring button for 5 seconds...")
 
@@ -81,6 +82,7 @@ def check_tech_support_mode():
                     # Switch to fast blinking to indicate hold period
                     leds.pattern = Pattern.blink(200)  # Fast blink every 200ms
                     leds.update(Leds.rgb_pattern(Color.YELLOW))
+                    logger.info("yellow 200")
 
                     hold_start_time = time.time()
                     button_released = False
@@ -94,6 +96,7 @@ def check_tech_support_mode():
                             # Switch back to slow blinking
                             leds.pattern = Pattern.blink(500)
                             leds.update(Leds.rgb_pattern(Color.YELLOW))
+                            logger.info("yellow 500")
                             break
                         time.sleep(check_interval)
 
@@ -118,6 +121,7 @@ def check_tech_support_mode():
                 # Don't set pattern to None, as it causes an error when LED system tries to access period_ms
                 # Instead, just update the LED channels to solid yellow
                 leds.update(Leds.rgb_on(Color.YELLOW))
+                logger.info("yellow solid")
 
                 # Wait for button to be released
                 logger.info("Waiting for button release...")
@@ -178,6 +182,7 @@ def check_tech_support_mode():
                 # Normal startup - turn off LEDs
                 logger.info("Tech support mode not activated - continuing with normal startup")
                 leds.update(Leds.rgb_off())
+                logger.info("LED turned OFF")
 
                 # Brief pause for visual feedback
                 time.sleep(0.5)
@@ -200,6 +205,7 @@ def check_tech_support_mode():
         try:
             with Leds() as leds:
                 leds.update(Leds.rgb_off())
+                logger.info("LED turned OFF")
         except:
             pass
         # On error, exit normally and let startup continue
