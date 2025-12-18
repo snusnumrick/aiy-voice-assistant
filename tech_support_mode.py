@@ -9,22 +9,27 @@ Usage:
     python tech_support_mode.py
 
 Functionality:
-- Blinks yellow LED for 5 seconds (breathe pattern)
-- If button is pressed: starts 5-second hold timer
-  - If button released within 5 seconds: accidental press, ignore
-  - If button held for full 5 seconds: intentional, enables Tailscale and runs indefinitely
-- If not pressed: exits normally with code 0 to continue startup
+
+Activation (during initial monitoring):
+- LED: Slow yellow breathing (breathe pattern)
+- Monitor for button press for up to 5 seconds
+- If button pressed: start 5-second hold verification
+  - If released within 5 seconds: accidental press, continue monitoring
+  - If held for full 5 seconds: activate tech support mode
 
 Tech Support Mode (VPN Active):
 - LED: Solid yellow (indicates VPN is active)
+- Tailscale VPN enabled
 - Monitors for button press to allow cancellation
-- Press button again to cancel and return to normal startup
+- Press and HOLD button for 5 seconds to confirm cancellation
+  - If released within 5 seconds: deactivation canceled, VPN remains active
+  - If held for full 5 seconds: deactivate VPN and exit normally
 - Or press Ctrl+C to disable VPN and exit
 
 Behavior:
-- Normal mode: Script exits, LEDs turned off, startup continues
+- Normal mode: Script exits with code 0, LEDs turned off, startup continues
 - Tech support mode: Script enables Tailscale, keeps LED on, runs indefinitely
-- Cancel: Press button again to disable VPN and exit normally
+- Deactivation: Press and hold button for 5 seconds to disable VPN and exit normally
 """
 
 import logging
@@ -165,35 +170,72 @@ def check_tech_support_mode():
                 logger.info("Tailscale VPN is now active.")
                 logger.info("Device is accessible via VPN for remote support.")
                 logger.info("LED will remain SOLID YELLOW to indicate VPN is active.")
-                logger.info("Press the button again to cancel and return to normal startup.")
+                logger.info("Press and HOLD the button for 5 seconds to cancel and return to normal startup.")
                 logger.info("Or press Ctrl+C to disable VPN and exit.")
                 logger.info("█" * 60)
 
                 # Run indefinitely - keep LED on and process alive
                 # This ensures the LED stays yellow and the script doesn't exit
+                vpn_active = True
+                deactivation_in_progress = False
+
                 try:
-                    while True:
+                    while vpn_active:
                         time.sleep(1)  # Check every second for button press or timeout
 
-                        # Check if button is pressed during VPN active state (cancel option)
-                        if board.button.state == ButtonState.PRESSED:
+                        # Check if button is pressed during VPN active state (start deactivation)
+                        if board.button.state == ButtonState.PRESSED and not deactivation_in_progress:
                             logger.info("")
-                            logger.info("Button pressed - canceling tech support mode")
-                            logger.info("Disabling Tailscale VPN...")
-                            try:
-                                subprocess.run(["sudo", "tailscale", "down"], check=False)
-                            except:
-                                pass
-                            logger.info("Tailscale VPN disabled.")
+                            logger.info("Button pressed - starting deactivation")
+                            logger.info("Hold button for 5 seconds to confirm cancellation...")
 
-                            logger.info("Cleaning up resources...")
-                            board.close()
-                            leds.reset()
+                            # Switch to fast blinking during deactivation hold
+                            leds.pattern = Pattern.blink(200)
+                            leds.update(Leds.rgb_pattern(Color.YELLOW))
 
-                            logger.info("Returning to normal startup...")
-                            logger.info("Exiting...")
-                            # Exit normally to allow startup to continue
-                            sys.exit(0)
+                            deactivation_in_progress = True
+                            hold_start_time = time.time()
+                            deactivation_confirmed = False
+
+                            # Monitor for button release during the 5-second deactivation hold
+                            while deactivation_in_progress:
+                                elapsed = time.time() - hold_start_time
+
+                                if elapsed >= 5.0:
+                                    # Button held for full 5 seconds - confirmed deactivation
+                                    deactivation_confirmed = True
+                                    break
+
+                                if board.button.state == ButtonState.DEPRESSED:
+                                    # Button released early - cancel deactivation
+                                    logger.info("Button released - deactivation canceled")
+                                    logger.info("Resuming VPN active state")
+
+                                    # Switch back to solid yellow
+                                    leds.update(Leds.rgb_on(Color.YELLOW))
+                                    deactivation_in_progress = False
+                                    break
+
+                                time.sleep(0.1)
+
+                            # Check if deactivation was confirmed
+                            if deactivation_confirmed:
+                                logger.info("Button held for 5 seconds - deactivation confirmed")
+                                logger.info("Disabling Tailscale VPN...")
+                                try:
+                                    subprocess.run(["sudo", "tailscale", "down"], check=False)
+                                except:
+                                    pass
+                                logger.info("Tailscale VPN disabled.")
+
+                                logger.info("Cleaning up resources...")
+                                board.close()
+                                leds.reset()
+
+                                logger.info("Returning to normal startup...")
+                                logger.info("Exiting...")
+                                # Exit normally to allow startup to continue
+                                sys.exit(0)
 
                         # Log status every 60 seconds to show we're still running
                         if int(time.time()) % 60 == 0:
