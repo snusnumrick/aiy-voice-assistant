@@ -12,13 +12,12 @@ Functionality:
 - Blinks yellow LED for 5 seconds
 - If button is pressed: starts 5-second hold timer
   - If button released within 5 seconds: accidental press, ignore
-  - If button held for full 5 seconds: intentional, exits with code 100
+  - If button held for full 5 seconds: intentional, enables Tailscale and runs indefinitely
 - If not pressed: exits normally with code 0 to continue startup
-- Run.sh checks the exit code and enables Tailscale immediately
 
-Exit Codes:
-    0 - Normal startup should continue
-    100 - Tech support mode activated, run.sh should enable VPN
+Behavior:
+- Normal mode: Script exits, LEDs turned off, startup continues
+- Tech support mode: Script enables Tailscale, keeps LED on, runs indefinitely
 """
 
 import logging
@@ -128,14 +127,53 @@ def check_tech_support_mode():
                     logger.warning(f"Timeout waiting for button release: {e}")
 
                 logger.info("")
-                logger.info("run.sh will now enable Tailscale VPN.")
-                logger.info("Device will be accessible via VPN for remote support.")
+                logger.info("Enabling Tailscale VPN...")
                 logger.info("█" * 60)
 
-                # LED stays on (solid yellow) - do NOT cleanup
-                # Exit with code 100 to indicate tech support mode was activated
-                # run.sh will check this and enable Tailscale immediately
-                sys.exit(100)
+                # Enable Tailscale VPN
+                try:
+                    import subprocess
+                    logger.info("Executing: sudo tailscale up")
+                    result = subprocess.run(
+                        ["sudo", "tailscale", "up"],
+                        check=True,
+                        capture_output=True,
+                        text=True
+                    )
+                    logger.info("Tailscale VPN enabled successfully!")
+                    if result.stdout:
+                        logger.info(f"Output: {result.stdout}")
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"Failed to enable Tailscale: {e}")
+                    if e.stderr:
+                        logger.error(f"Error output: {e.stderr}")
+                except Exception as e:
+                    logger.error(f"Unexpected error: {e}")
+
+                logger.info("")
+                logger.info("Tailscale VPN is now active.")
+                logger.info("Device is accessible via VPN for remote support.")
+                logger.info("LED will remain SOLID YELLOW to indicate VPN is active.")
+                logger.info("Press Ctrl+C to disable VPN and exit.")
+                logger.info("█" * 60)
+
+                # Run indefinitely - keep LED on and process alive
+                # This ensures the LED stays yellow and the script doesn't exit
+                try:
+                    while True:
+                        time.sleep(10)  # Sleep for 10 seconds, repeat forever
+                        # Log status every minute to show we're still running
+                        logger.info(f"Tailscale VPN active - {time.ctime()}")
+                except KeyboardInterrupt:
+                    logger.info("")
+                    logger.info("Shutting down Tailscale VPN...")
+                    try:
+                        subprocess.run(["sudo", "tailscale", "down"], check=False)
+                    except:
+                        pass
+                    logger.info("Tailscale VPN disabled.")
+                    logger.info("Exiting...")
+                    sys.exit(0)
             else:
                 # Normal startup - turn off LEDs
                 logger.info("Tech support mode not activated - continuing with normal startup")
