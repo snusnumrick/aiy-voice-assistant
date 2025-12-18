@@ -52,7 +52,11 @@ def check_tech_support_mode():
     logger.info("=" * 60)
 
     try:
-        with Board() as board, Leds() as leds:
+        # Initialize Board and LEDs
+        board = Board()
+        leds = Leds()
+
+        try:
             # Set up blinking yellow LED pattern
             leds.pattern = Pattern.blink(500)  # Blink every 500ms
             leds.update(Leds.rgb_pattern(Color.YELLOW))
@@ -128,19 +132,29 @@ def check_tech_support_mode():
                 logger.info("Device will be accessible via VPN for remote support.")
                 logger.info("█" * 60)
 
+                # LED stays on (solid yellow) - do NOT cleanup
                 # Exit with code 100 to indicate tech support mode was activated
                 # run.sh will check this and enable Tailscale immediately
                 sys.exit(100)
             else:
-                # Normal startup - turn off LEDs and return False
+                # Normal startup - turn off LEDs
                 logger.info("Tech support mode not activated - continuing with normal startup")
                 leds.update(Leds.rgb_off())
 
                 # Brief pause for visual feedback
                 time.sleep(0.5)
 
+                # Cleanup resources
+                board.close()
+                leds.reset()
+
                 # Exit normally - startup should continue
                 sys.exit(0)
+        except Exception as inner_e:
+            # Cleanup on error
+            board.close()
+            leds.reset()
+            raise inner_e
 
     except Exception as e:
         logger.error(f"Error in tech support mode check: {e}")
