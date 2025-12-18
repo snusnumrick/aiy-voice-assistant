@@ -9,15 +9,22 @@ Usage:
     python tech_support_mode.py
 
 Functionality:
-- Blinks yellow LED for 5 seconds
+- Blinks yellow LED for 5 seconds (breathe pattern)
 - If button is pressed: starts 5-second hold timer
   - If button released within 5 seconds: accidental press, ignore
   - If button held for full 5 seconds: intentional, enables Tailscale and runs indefinitely
 - If not pressed: exits normally with code 0 to continue startup
 
+Tech Support Mode (VPN Active):
+- LED: Solid yellow (indicates VPN is active)
+- Monitors for button press to allow cancellation
+- Press button again to cancel and return to normal startup
+- Or press Ctrl+C to disable VPN and exit
+
 Behavior:
 - Normal mode: Script exits, LEDs turned off, startup continues
 - Tech support mode: Script enables Tailscale, keeps LED on, runs indefinitely
+- Cancel: Press button again to disable VPN and exit normally
 """
 
 import logging
@@ -158,16 +165,40 @@ def check_tech_support_mode():
                 logger.info("Tailscale VPN is now active.")
                 logger.info("Device is accessible via VPN for remote support.")
                 logger.info("LED will remain SOLID YELLOW to indicate VPN is active.")
-                logger.info("Press Ctrl+C to disable VPN and exit.")
+                logger.info("Press the button again to cancel and return to normal startup.")
+                logger.info("Or press Ctrl+C to disable VPN and exit.")
                 logger.info("█" * 60)
 
                 # Run indefinitely - keep LED on and process alive
                 # This ensures the LED stays yellow and the script doesn't exit
                 try:
                     while True:
-                        time.sleep(10)  # Sleep for 10 seconds, repeat forever
-                        # Log status every minute to show we're still running
-                        logger.info(f"Tailscale VPN active - {time.ctime()}")
+                        time.sleep(1)  # Check every second for button press or timeout
+
+                        # Check if button is pressed during VPN active state (cancel option)
+                        if board.button.state == ButtonState.PRESSED:
+                            logger.info("")
+                            logger.info("Button pressed - canceling tech support mode")
+                            logger.info("Disabling Tailscale VPN...")
+                            try:
+                                subprocess.run(["sudo", "tailscale", "down"], check=False)
+                            except:
+                                pass
+                            logger.info("Tailscale VPN disabled.")
+
+                            logger.info("Cleaning up resources...")
+                            board.close()
+                            leds.reset()
+
+                            logger.info("Returning to normal startup...")
+                            logger.info("Exiting...")
+                            # Exit normally to allow startup to continue
+                            sys.exit(0)
+
+                        # Log status every 60 seconds to show we're still running
+                        if int(time.time()) % 60 == 0:
+                            logger.info(f"Tailscale VPN active - {time.ctime()}")
+
                 except KeyboardInterrupt:
                     logger.info("")
                     logger.info("Shutting down Tailscale VPN...")
@@ -176,8 +207,14 @@ def check_tech_support_mode():
                     except:
                         pass
                     logger.info("Tailscale VPN disabled.")
+                    logger.info("Cleaning up resources...")
+                    # Properly close Board and LEDs before exit
+                    board.close()
+                    leds.reset()
                     logger.info("Exiting...")
-                    sys.exit(0)
+                    # Use os._exit to force immediate exit and avoid threading cleanup issues
+                    import os
+                    os._exit(0)
             else:
                 # Normal startup - turn off LEDs
                 logger.info("Tech support mode not activated - continuing with normal startup")
