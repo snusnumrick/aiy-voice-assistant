@@ -57,9 +57,9 @@ def check_tech_support_mode():
 
         try:
             # Set up blinking yellow LED pattern
-            leds.pattern = Pattern.blink(500)  # Blink every 500ms
+            leds.pattern = Pattern.breathe(500)
             leds.update(Leds.rgb_pattern(Color.YELLOW))
-            logger.info("yellow 500")
+            logger.info("yellow 500 breath")
 
             logger.info("Monitoring button for 5 seconds...")
 
@@ -80,9 +80,9 @@ def check_tech_support_mode():
                     logger.info("Hold button for 5 seconds to activate tech support mode...")
 
                     # Switch to fast blinking to indicate hold period
-                    leds.pattern = Pattern.blink(200)  # Fast blink every 200ms
+                    leds.pattern = Pattern.blink(500)
                     leds.update(Leds.rgb_pattern(Color.YELLOW))
-                    logger.info("yellow 200")
+                    logger.info("yellow 500 blink")
 
                     hold_start_time = time.time()
                     button_released = False
@@ -94,9 +94,9 @@ def check_tech_support_mode():
                             logger.info("Button released - accidental press detected")
 
                             # Switch back to slow blinking
-                            leds.pattern = Pattern.blink(500)
+                            leds.pattern = Pattern.breathe(500)
                             leds.update(Leds.rgb_pattern(Color.YELLOW))
-                            logger.info("yellow 500")
+                            logger.info("yellow 500 breath")
                             break
                         time.sleep(check_interval)
 
