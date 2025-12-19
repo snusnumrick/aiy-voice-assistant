@@ -336,6 +336,9 @@ def check_tech_support_mode():
                 # Show LED pattern based on diagnostic results
                 show_diagnostic_led_pattern(leds, network_ok, vpn_ok, ssh_ok)
 
+                # Pause to show diagnostic results before switching to VPN yellow
+                time.sleep(3)
+
                 # Switch back to solid yellow for VPN active state
                 leds.update(Leds.rgb_on(Color.YELLOW))
                 logger.info("")
