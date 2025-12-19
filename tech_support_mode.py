@@ -12,6 +12,8 @@ Functionality:
 
 Activation (during initial monitoring):
 - LED: Slow yellow breathing (breathe pattern)
+- Runs system diagnostics in background (network, VPN, SSH)
+- If issues detected: shows LED diagnostic pattern
 - Monitor for button press for up to 5 seconds
 - If button pressed: start 5-second hold verification
   - If released within 5 seconds: accidental press, continue monitoring
@@ -36,18 +38,21 @@ Tech Support Mode (VPN Active):
 - Or press Ctrl+C to disable VPN and exit
 
 Behavior:
-- Normal mode: Script exits with code 0, LEDs turned off, startup continues
+- Normal mode: Runs diagnostics, shows LED pattern if issues found, exits with code 0, LEDs turned off, startup continues
 - Tech support mode: Script enables Tailscale, runs diagnostics, shows LED pattern, runs indefinitely
 - Deactivation: Press and hold button for 5 seconds to disable VPN and exit normally
 """
 
 import logging
+import math
+import struct
 import subprocess
 import sys
 import time
 
 from aiy.board import Board, ButtonState
 from aiy.leds import Leds, Color, Pattern
+from aiy.voice.audio import play_wav_async, AudioFormat
 
 # Set up basic logging
 logging.basicConfig(
@@ -55,6 +60,90 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def generate_beep_tone(frequency=800, duration_ms=200, sample_rate=44100, volume=0.5):
+    """
+    Generate a simple beep tone as WAV bytes.
+
+    Args:
+        frequency: Frequency in Hz (default: 800)
+        duration_ms: Duration in milliseconds (default: 200)
+        sample_rate: Sample rate in Hz (default: 44100)
+        volume: Volume level 0.0-1.0 (default: 0.5)
+
+    Returns:
+        bytes: WAV audio data
+    """
+    # Calculate number of samples
+    num_samples = int(sample_rate * duration_ms / 1000.0)
+
+    # Generate sine wave samples
+    samples = []
+    for i in range(num_samples):
+        # Generate sine wave
+        sample_value = int(volume * 32767 * math.sin(2 * math.pi * frequency * i / sample_rate))
+        # Convert to 16-bit signed integer (little endian)
+        samples.append(struct.pack('<h', sample_value))
+
+    # Create WAV data
+    wav_data = b''.join(samples)
+
+    # Add WAV header
+    fmt = AudioFormat(sample_rate_hz=sample_rate, num_channels=1, bytes_per_sample=2)
+    num_bytes = len(wav_data)
+
+    header = struct.pack('<4sI4s4sIHHIIHH4sI',
+                        b'RIFF',           # ChunkID
+                        36 + num_bytes,    # ChunkSize
+                        b'WAVE',           # Format
+                        b'fmt ',           # Subchunk1ID
+                        16,                # Subchunk1Size (PCM)
+                        1,                 # AudioFormat (PCM)
+                        fmt.num_channels,  # NumChannels
+                        fmt.sample_rate_hz, # SampleRate
+                        fmt.bytes_per_second, # ByteRate
+                        fmt.bytes_per_sample, # BlockAlign
+                        16,                # BitsPerSample
+                        b'data',           # Subchunk2ID
+                        num_bytes)         # Subchunk2Size
+
+    return header + wav_data
+
+
+def play_audio_cue(cue_type):
+    """
+    Play audio cue based on type.
+
+    Args:
+        cue_type: Type of cue ('start', 'pressed', 'confirmed', 'success', 'error')
+    """
+    try:
+        if cue_type == 'start':
+            # Attention-getting sound: 3 short beeps
+            for _ in range(3):
+                play_wav_async(generate_beep_tone(frequency=1000, duration_ms=100))
+                time.sleep(0.1)
+        elif cue_type == 'pressed':
+            # Single beep when button is detected as pressed
+            play_wav_async(generate_beep_tone(frequency=800, duration_ms=150))
+        elif cue_type == 'confirmed':
+            # Confirmation sound: rising tone
+            for freq in [600, 800, 1000]:
+                play_wav_async(generate_beep_tone(frequency=freq, duration_ms=100))
+                time.sleep(0.05)
+        elif cue_type == 'success':
+            # Success sound: two ascending beeps
+            play_wav_async(generate_beep_tone(frequency=800, duration_ms=150))
+            time.sleep(0.1)
+            play_wav_async(generate_beep_tone(frequency=1000, duration_ms=150))
+        elif cue_type == 'error':
+            # Error sound: descending tone
+            for freq in [800, 600, 400]:
+                play_wav_async(generate_beep_tone(frequency=freq, duration_ms=150))
+                time.sleep(0.05)
+    except Exception as e:
+        logger.warning(f"Audio cue playback failed: {e}")
 
 
 def check_ssh_barriers():
@@ -228,12 +317,36 @@ def check_tech_support_mode():
         leds = Leds()
 
         try:
+            # Play audio cue to alert user that monitoring is starting
+            play_audio_cue('start')
+            logger.info("Audio cue played - start monitoring")
+
             # Set up blinking yellow LED pattern
             leds.pattern = Pattern.breathe(500)
             leds.update(Leds.rgb_pattern(Color.YELLOW))
             logger.info("yellow 500 breath")
 
             logger.info("Monitoring button for 5 seconds...")
+            logger.info("Running system diagnostics in background...")
+
+            # Run diagnostics during monitoring to check system health
+            network_ok, vpn_ok, ssh_ok = check_ssh_barriers()
+
+            # Show LED pattern for any issues found
+            if not (network_ok and vpn_ok and ssh_ok):
+                logger.info("Issues detected - showing LED diagnostic pattern...")
+                show_diagnostic_led_pattern(leds, network_ok, vpn_ok, ssh_ok)
+                play_audio_cue('error')
+                time.sleep(3)
+            else:
+                play_audio_cue('success')
+
+            # Switch back to breathing pattern for monitoring
+            leds.pattern = Pattern.breathe(500)
+            leds.update(Leds.rgb_pattern(Color.YELLOW))
+            logger.info("yellow 500 breath")
+
+            logger.info("Press and HOLD button to activate tech support mode...")
 
             # Monitor button state during blinking period
             tech_support_activated = False
@@ -246,6 +359,7 @@ def check_tech_support_mode():
                 if board.button.state == ButtonState.PRESSED:
                     button_held = True
                     logger.info("Button detected as PRESSED")
+                    play_audio_cue('pressed')
 
                     # Start 5-second timer to verify intentional press
                     # If button is NOT released within 5 seconds, it's intentional
@@ -275,6 +389,7 @@ def check_tech_support_mode():
                     # Check if button was held for full 5 seconds (intentional)
                     if not button_released and (time.time() - hold_start_time) >= 5.0:
                         logger.info("Button held for 5 seconds - intentional press detected")
+                        play_audio_cue('confirmed')
                         tech_support_activated = True
 
                     # Exit the main monitoring loop
@@ -336,6 +451,12 @@ def check_tech_support_mode():
                 # Show LED pattern based on diagnostic results
                 show_diagnostic_led_pattern(leds, network_ok, vpn_ok, ssh_ok)
 
+                # Play audio cue based on diagnostic results
+                if network_ok and vpn_ok and ssh_ok:
+                    play_audio_cue('success')
+                else:
+                    play_audio_cue('error')
+
                 # Pause to show diagnostic results before switching to VPN yellow
                 time.sleep(3)
 
@@ -394,6 +515,7 @@ def check_tech_support_mode():
                             # Check if deactivation was confirmed
                             if deactivation_confirmed:
                                 logger.info("Button held for 5 seconds - deactivation confirmed")
+                                play_audio_cue('confirmed')
                                 logger.info("Disabling Tailscale VPN...")
                                 try:
                                     subprocess.run(["sudo", "tailscale", "down"], check=False)
