@@ -14,6 +14,28 @@ cd "${PROJECT_ROOT}" || exit
 # Create logs directory if it doesn't exist
 mkdir -p "${PROJECT_ROOT}/logs"
 
+# ==== Tech Support Mode Check ====
+# This allows remote users to enable VPN for troubleshooting
+# Runs at the very beginning
+echo "Checking for tech support mode..."
+
+if [ -f "${PROJECT_ROOT}/tech_support_mode.py" ]; then
+    # Run tech support mode check
+    # If button is held for 5 seconds, it will enable Tailscale and run indefinitely
+    # If not, it will return with code 0
+    poetry run python tech_support_mode.py
+    EXIT_CODE=$?
+
+    if [ $EXIT_CODE -eq 0 ]; then
+        echo "Tech support mode not activated - continuing with normal startup"
+    else
+        echo "Tech support mode exited with code: $EXIT_CODE"
+    fi
+else
+    echo "WARNING: tech_support_mode.py not found, skipping tech support mode check"
+fi
+# ==== End Tech Support Mode Check ====
+
 # wait for the network
 max_attempts=60
 attempt=1
