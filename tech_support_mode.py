@@ -44,18 +44,21 @@ Behavior:
 """
 
 import logging
+# Set up basic logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+logger.info("start")
+
 import math
 import struct
 import subprocess
 import sys
 import time
 
-# Set up basic logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger.info("import done")
 
 
 def generate_beep_tone(frequency=800, duration_ms=200, sample_rate=44100, volume=0.5):
