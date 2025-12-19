@@ -146,9 +146,12 @@ def play_audio_cue(cue_type):
         logger.warning(f"Audio cue playback failed: {e}")
 
 
-def check_ssh_barriers():
+def check_ssh_barriers(check_vpn=True):
     """
     Check the 3 critical barriers to SSH connectivity.
+
+    Args:
+        check_vpn: If True, check VPN status. If False, skip VPN check (for normal startup).
 
     Returns:
         tuple: (network_ok, vpn_ok, ssh_ok)
@@ -179,37 +182,41 @@ def check_ssh_barriers():
         logger.info(f"  ✗ Network: ERROR - {e}")
 
     # Check 2: VPN (Tailscale) status
-    logger.info("Checking VPN (Tailscale) status...")
-    try:
-        result = subprocess.run(
-            ["tailscale", "status"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        output = result.stdout.strip()
+    if check_vpn:
+        logger.info("Checking VPN (Tailscale) status...")
+        try:
+            result = subprocess.run(
+                ["tailscale", "status"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            output = result.stdout.strip()
 
-        # Check if VPN is connected (status shows nodes)
-        if result.returncode == 0 and output and "Tailscale is stopped" not in output:
-            vpn_ok = True
-            logger.info("  ✓ VPN: Connected")
-            # Count nodes (each line is a node)
-            node_count = len([line for line in output.split('\n') if line.strip()])
-            logger.info(f"    Nodes on network: {node_count}")
-        else:
-            vpn_ok = False
-            if "Tailscale is stopped" in output:
-                logger.info("  ✗ VPN: Tailscale is stopped")
-                logger.info("    Run 'sudo tailscale up' to enable")
-            elif not output:
-                logger.info("  ✗ VPN: Not connected")
-                logger.info("    No nodes found - Tailscale may not be authenticated")
+            # Check if VPN is connected (status shows nodes)
+            if result.returncode == 0 and output and "Tailscale is stopped" not in output:
+                vpn_ok = True
+                logger.info("  ✓ VPN: Connected")
+                # Count nodes (each line is a node)
+                node_count = len([line for line in output.split('\n') if line.strip()])
+                logger.info(f"    Nodes on network: {node_count}")
             else:
-                logger.info("  ✗ VPN: Not connected")
-            if result.stderr:
-                logger.info(f"    {result.stderr.strip()}")
-    except Exception as e:
-        logger.info(f"  ✗ VPN: ERROR - {e}")
+                vpn_ok = False
+                if "Tailscale is stopped" in output:
+                    logger.info("  ✗ VPN: Tailscale is stopped")
+                    logger.info("    Run 'sudo tailscale up' to enable")
+                elif not output:
+                    logger.info("  ✗ VPN: Not connected")
+                    logger.info("    No nodes found - Tailscale may not be authenticated")
+                else:
+                    logger.info("  ✗ VPN: Not connected")
+                if result.stderr:
+                    logger.info(f"    {result.stderr.strip()}")
+        except Exception as e:
+            logger.info(f"  ✗ VPN: ERROR - {e}")
+    else:
+        logger.info("Skipping VPN check (not in tech support mode)")
+        vpn_ok = False  # Don't count as failure when not checking
 
     # Check 3: SSH service status
     logger.info("Checking SSH service status...")
@@ -235,10 +242,12 @@ def check_ssh_barriers():
         logger.info("SSH READY: All barriers passed - SSH connection possible!")
     elif not network_ok:
         logger.info("SSH BLOCKED: Network connectivity issue - fix network first")
-    elif not vpn_ok:
+    elif not vpn_ok and check_vpn:
         logger.info("SSH BLOCKED: VPN not connected - check Tailscale")
     elif not ssh_ok:
         logger.info("SSH ISSUE: SSH service not running - start with: sudo systemctl start ssh")
+    else:
+        logger.info("SSH READY: Core barriers passed")
 
     logger.info("=" * 60)
     logger.info("")
@@ -329,11 +338,11 @@ def check_tech_support_mode():
             logger.info("Monitoring button for 5 seconds...")
             logger.info("Running system diagnostics in background...")
 
-            # Run diagnostics during monitoring to check system health
-            network_ok, vpn_ok, ssh_ok = check_ssh_barriers()
+            # Run diagnostics during monitoring (without VPN check)
+            network_ok, vpn_ok, ssh_ok = check_ssh_barriers(check_vpn=False)
 
-            # Show LED pattern for any issues found
-            if not (network_ok and vpn_ok and ssh_ok):
+            # Show LED pattern for any issues found (excluding VPN)
+            if not (network_ok and ssh_ok):
                 logger.info("Issues detected - showing LED diagnostic pattern...")
                 show_diagnostic_led_pattern(leds, network_ok, vpn_ok, ssh_ok)
                 play_audio_cue('error')
@@ -445,8 +454,8 @@ def check_tech_support_mode():
                 logger.info("Running SSH readiness diagnostics...")
                 logger.info("█" * 60)
 
-                # Run diagnostics to check SSH barriers
-                network_ok, vpn_ok, ssh_ok = check_ssh_barriers()
+                # Run diagnostics to check SSH barriers (with VPN check enabled)
+                network_ok, vpn_ok, ssh_ok = check_ssh_barriers(check_vpn=True)
 
                 # Show LED pattern based on diagnostic results
                 show_diagnostic_led_pattern(leds, network_ok, vpn_ok, ssh_ok)
