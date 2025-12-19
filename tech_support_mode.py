@@ -50,10 +50,6 @@ import subprocess
 import sys
 import time
 
-from aiy.board import Board, ButtonState
-from aiy.leds import Leds, Color, Pattern
-from aiy.voice.audio import play_wav_async, AudioFormat
-
 # Set up basic logging
 logging.basicConfig(
     level=logging.INFO,
@@ -90,28 +86,30 @@ def generate_beep_tone(frequency=800, duration_ms=200, sample_rate=44100, volume
     wav_data = b''.join(samples)
 
     # Add WAV header
-    fmt = AudioFormat(sample_rate_hz=sample_rate, num_channels=1, bytes_per_sample=2)
     # Use simple header construction to avoid AudioFormat import
     num_bytes = len(wav_data)
 
-    header = struct.pack('<4sI4s4sIHHIIHH4sI',
-                        b'RIFF',           # ChunkID
-                        36 + num_bytes,    # ChunkSize
-                        b'WAVE',           # Format
-                        b'fmt ',           # Subchunk1ID
-                        16,                # Subchunk1Size (PCM)
-                        1,                 # AudioFormat (PCM)
-                        fmt.num_channels,  # NumChannels
-                        fmt.sample_rate_hz, # SampleRate
-                        fmt.bytes_per_second, # ByteRate
-                        fmt.bytes_per_sample, # BlockAlign
-                        1,                 # NumChannels (mono)
-                        sample_rate,       # SampleRate
-                        sample_rate * 2,   # ByteRate (sample_rate * num_channels * bytes_per_sample)
-                        2,                 # BlockAlign (num_channels * bytes_per_sample)
-                        16,                # BitsPerSample
-                        b'data',           # Subchunk2ID
-                        num_bytes)         # Subchunk2Size
+    # Calculate byte rate: sample_rate * num_channels * bytes_per_sample
+    # bytes_per_sample = 2 (16-bit = 2 bytes)
+    byte_rate = sample_rate * 1 * 2
+    block_align = 1 * 2
+
+    header = struct.pack(
+        '<4sI4s4sIHHIIHH4sI',    # Format string (13 codes)
+        b'RIFF',                 # ChunkID
+        36 + num_bytes,          # ChunkSize
+        b'WAVE',                 # Format
+        b'fmt ',                 # Subchunk1ID
+        16,                      # Subchunk1Size (PCM)
+        1,                       # AudioFormat (PCM)
+        1,                       # NumChannels (mono)
+        sample_rate,             # SampleRate
+        byte_rate,               # ByteRate
+        block_align,             # BlockAlign
+        16,                      # BitsPerSample
+        b'data',                 # Subchunk2ID
+        num_bytes                # Subchunk2Size
+    )
 
     return header + wav_data
 
@@ -124,6 +122,7 @@ def play_audio_cue(cue_type):
         cue_type: Type of cue ('start', 'pressed', 'confirmed', 'success', 'error')
     """
     # Import audio module only when needed (lazy loading for faster startup)
+    from aiy.voice.audio import play_wav_async
 
     try:
         if cue_type == 'start':
@@ -320,7 +319,8 @@ def check_tech_support_mode():
         bool: True if tech support mode is activated, False otherwise
     """
     # Import hardware modules only when needed (lazy loading for faster startup)
-    from aiy.leds import Leds, Color
+    from aiy.board import Board, ButtonState
+    from aiy.leds import Leds, Color, Pattern
 
     logger.info("=" * 60)
     logger.info("TECH SUPPORT MODE CHECK")
