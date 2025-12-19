@@ -98,12 +98,25 @@ def check_ssh_barriers():
             text=True,
             timeout=5
         )
-        # Check if VPN is connected
-        if result.returncode == 0 and "Logged in" in result.stdout:
+        output = result.stdout.strip()
+
+        # Check if VPN is connected (status shows nodes)
+        if result.returncode == 0 and output and "Tailscale is stopped" not in output:
             vpn_ok = True
             logger.info("  ✓ VPN: Connected")
+            # Count nodes (each line is a node)
+            node_count = len([line for line in output.split('\n') if line.strip()])
+            logger.info(f"    Nodes on network: {node_count}")
         else:
-            logger.info("  ✗ VPN: Not connected")
+            vpn_ok = False
+            if "Tailscale is stopped" in output:
+                logger.info("  ✗ VPN: Tailscale is stopped")
+                logger.info("    Run 'sudo tailscale up' to enable")
+            elif not output:
+                logger.info("  ✗ VPN: Not connected")
+                logger.info("    No nodes found - Tailscale may not be authenticated")
+            else:
+                logger.info("  ✗ VPN: Not connected")
             if result.stderr:
                 logger.info(f"    {result.stderr.strip()}")
     except Exception as e:
@@ -313,7 +326,6 @@ def check_tech_support_mode():
                 except Exception as e:
                     logger.error(f"Unexpected error: {e}")
 
-                logger.info("")
                 logger.info("Tailscale VPN is now active.")
                 logger.info("Running SSH readiness diagnostics...")
                 logger.info("█" * 60)
