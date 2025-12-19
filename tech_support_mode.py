@@ -20,6 +20,15 @@ Activation (during initial monitoring):
 Tech Support Mode (VPN Active):
 - LED: Solid yellow (indicates VPN is active)
 - Tailscale VPN enabled
+- SSH Readiness Diagnostics: Automatically checks 3 barriers to SSH:
+  1. Network connectivity (ping test)
+  2. VPN (Tailscale) connection status
+  3. SSH service status (systemctl check)
+- LED Diagnostic Patterns:
+  * GREEN solid = All 3 barriers OK (SSH ready!)
+  * RED 1 blink = Network problem
+  * RED 2 blinks = VPN problem
+  * RED 3 blinks = SSH service problem
 - Monitors for button press to allow cancellation
 - Press and HOLD button for 5 seconds to confirm cancellation
   - If released within 5 seconds: deactivation canceled, VPN remains active
@@ -28,7 +37,7 @@ Tech Support Mode (VPN Active):
 
 Behavior:
 - Normal mode: Script exits with code 0, LEDs turned off, startup continues
-- Tech support mode: Script enables Tailscale, keeps LED on, runs indefinitely
+- Tech support mode: Script enables Tailscale, runs diagnostics, shows LED pattern, runs indefinitely
 - Deactivation: Press and hold button for 5 seconds to disable VPN and exit normally
 """
 
@@ -45,6 +54,143 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def check_ssh_barriers():
+    """
+    Check the 3 critical barriers to SSH connectivity.
+
+    Returns:
+        tuple: (network_ok, vpn_ok, ssh_ok)
+    """
+    network_ok = False
+    vpn_ok = False
+    ssh_ok = False
+
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("SSH READINESS DIAGNOSTICS")
+    logger.info("=" * 60)
+
+    # Check 1: Network connectivity
+    logger.info("Checking network connectivity...")
+    try:
+        result = subprocess.run(
+            ["ping", "-c", "1", "-W", "2", "8.8.8.8"],
+            capture_output=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            network_ok = True
+            logger.info("  ✓ Network: OK")
+        else:
+            logger.info("  ✗ Network: FAILED")
+    except Exception as e:
+        logger.info(f"  ✗ Network: ERROR - {e}")
+
+    # Check 2: VPN (Tailscale) status
+    logger.info("Checking VPN (Tailscale) status...")
+    try:
+        result = subprocess.run(
+            ["tailscale", "status"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        # Check if VPN is connected
+        if result.returncode == 0 and "Logged in" in result.stdout:
+            vpn_ok = True
+            logger.info("  ✓ VPN: Connected")
+        else:
+            logger.info("  ✗ VPN: Not connected")
+            if result.stderr:
+                logger.info(f"    {result.stderr.strip()}")
+    except Exception as e:
+        logger.info(f"  ✗ VPN: ERROR - {e}")
+
+    # Check 3: SSH service status
+    logger.info("Checking SSH service status...")
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", "ssh"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.stdout.strip() == "active":
+            ssh_ok = True
+            logger.info("  ✓ SSH Service: Running")
+        else:
+            logger.info("  ✗ SSH Service: Not running")
+    except Exception as e:
+        logger.info(f"  ✗ SSH Service: ERROR - {e}")
+
+    logger.info("=" * 60)
+
+    # Determine overall status
+    if network_ok and vpn_ok and ssh_ok:
+        logger.info("SSH READY: All barriers passed - SSH connection possible!")
+    elif not network_ok:
+        logger.info("SSH BLOCKED: Network connectivity issue - fix network first")
+    elif not vpn_ok:
+        logger.info("SSH BLOCKED: VPN not connected - check Tailscale")
+    elif not ssh_ok:
+        logger.info("SSH ISSUE: SSH service not running - start with: sudo systemctl start ssh")
+
+    logger.info("=" * 60)
+    logger.info("")
+
+    return network_ok, vpn_ok, ssh_ok
+
+
+def show_diagnostic_led_pattern(leds, network_ok, vpn_ok, ssh_ok):
+    """
+    Show LED pattern based on diagnostic results.
+
+    Patterns:
+    - 1 red blink = Network problem
+    - 2 red blinks = VPN problem
+    - 3 red blinks = SSH service problem
+    - Green solid = All good
+
+    Args:
+        leds: Leds object
+        network_ok: Network connectivity status
+        vpn_ok: VPN connection status
+        ssh_ok: SSH service status
+    """
+    if network_ok and vpn_ok and ssh_ok:
+        # All good - Green solid
+        logger.info("LED: GREEN solid (All systems ready)")
+        leds.update(Leds.rgb_on(Color.GREEN))
+    elif not network_ok:
+        # 1 blink - Network problem
+        logger.info("LED: RED 1 blink (Network problem)")
+        for _ in range(15):  # Show for 15 seconds
+            leds.update(Leds.rgb_on(Color.RED))
+            time.sleep(0.2)
+            leds.update(Leds.rgb_off())
+            time.sleep(1.0)
+    elif not vpn_ok:
+        # 2 blinks - VPN problem
+        logger.info("LED: RED 2 blinks (VPN problem)")
+        for _ in range(15):
+            for _ in range(2):
+                leds.update(Leds.rgb_on(Color.RED))
+                time.sleep(0.2)
+                leds.update(Leds.rgb_off())
+                time.sleep(0.3)
+            time.sleep(0.7)
+    elif not ssh_ok:
+        # 3 blinks - SSH service problem
+        logger.info("LED: RED 3 blinks (SSH service problem)")
+        for _ in range(15):
+            for _ in range(3):
+                leds.update(Leds.rgb_on(Color.RED))
+                time.sleep(0.2)
+                leds.update(Leds.rgb_off())
+                time.sleep(0.3)
+            time.sleep(0.4)
 
 
 def check_tech_support_mode():
@@ -168,7 +314,18 @@ def check_tech_support_mode():
 
                 logger.info("")
                 logger.info("Tailscale VPN is now active.")
-                logger.info("Device is accessible via VPN for remote support.")
+                logger.info("Running SSH readiness diagnostics...")
+                logger.info("█" * 60)
+
+                # Run diagnostics to check SSH barriers
+                network_ok, vpn_ok, ssh_ok = check_ssh_barriers()
+
+                # Show LED pattern based on diagnostic results
+                show_diagnostic_led_pattern(leds, network_ok, vpn_ok, ssh_ok)
+
+                # Switch back to solid yellow for VPN active state
+                leds.update(Leds.rgb_on(Color.YELLOW))
+                logger.info("")
                 logger.info("LED will remain SOLID YELLOW to indicate VPN is active.")
                 logger.info("Press and HOLD the button for 5 seconds to cancel and return to normal startup.")
                 logger.info("Or press Ctrl+C to disable VPN and exit.")
