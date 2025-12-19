@@ -44,21 +44,22 @@ Behavior:
 """
 
 import logging
-# Set up basic logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
-
-logger.info("start")
-
 import math
 import struct
 import subprocess
 import sys
 import time
 
-logger.info("import done")
+from aiy.board import Board, ButtonState
+from aiy.leds import Leds, Color, Pattern
+from aiy.voice.audio import play_wav_async, AudioFormat
+
+# Set up basic logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def generate_beep_tone(frequency=800, duration_ms=200, sample_rate=44100, volume=0.5):
@@ -89,6 +90,7 @@ def generate_beep_tone(frequency=800, duration_ms=200, sample_rate=44100, volume
     wav_data = b''.join(samples)
 
     # Add WAV header
+    fmt = AudioFormat(sample_rate_hz=sample_rate, num_channels=1, bytes_per_sample=2)
     # Use simple header construction to avoid AudioFormat import
     num_bytes = len(wav_data)
 
@@ -99,6 +101,10 @@ def generate_beep_tone(frequency=800, duration_ms=200, sample_rate=44100, volume
                         b'fmt ',           # Subchunk1ID
                         16,                # Subchunk1Size (PCM)
                         1,                 # AudioFormat (PCM)
+                        fmt.num_channels,  # NumChannels
+                        fmt.sample_rate_hz, # SampleRate
+                        fmt.bytes_per_second, # ByteRate
+                        fmt.bytes_per_sample, # BlockAlign
                         1,                 # NumChannels (mono)
                         sample_rate,       # SampleRate
                         sample_rate * 2,   # ByteRate (sample_rate * num_channels * bytes_per_sample)
@@ -118,7 +124,6 @@ def play_audio_cue(cue_type):
         cue_type: Type of cue ('start', 'pressed', 'confirmed', 'success', 'error')
     """
     # Import audio module only when needed (lazy loading for faster startup)
-    from aiy.voice.audio import play_wav_async
 
     try:
         if cue_type == 'start':
@@ -315,8 +320,7 @@ def check_tech_support_mode():
         bool: True if tech support mode is activated, False otherwise
     """
     # Import hardware modules only when needed (lazy loading for faster startup)
-    from aiy.board import Board, ButtonState
-    from aiy.leds import Leds, Color, Pattern
+    from aiy.leds import Leds, Color
 
     logger.info("=" * 60)
     logger.info("TECH SUPPORT MODE CHECK")
@@ -342,6 +346,24 @@ def check_tech_support_mode():
             logger.info("yellow 500 breath")
 
             logger.info("Monitoring button for 5 seconds...")
+            logger.info("Running system diagnostics in background...")
+
+            # Run diagnostics during monitoring (without VPN check)
+            network_ok, vpn_ok, ssh_ok = check_ssh_barriers(check_vpn=False)
+
+            # Show LED pattern for any issues found (excluding VPN)
+            if not (network_ok and ssh_ok):
+                logger.info("Issues detected - showing LED diagnostic pattern...")
+                show_diagnostic_led_pattern(leds, network_ok, vpn_ok, ssh_ok)
+                play_audio_cue('error')
+                time.sleep(3)
+            else:
+                play_audio_cue('success')
+
+            # Switch back to breathing pattern for monitoring
+            leds.pattern = Pattern.breathe(500)
+            leds.update(Leds.rgb_pattern(Color.YELLOW))
+            logger.info("yellow 500 breath")
             logger.info("Waiting for button press (hold for 5 seconds to activate tech support mode)...")
             logger.info("Note: System diagnostics will run AFTER tech support mode is activated")
 
@@ -596,3 +618,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
