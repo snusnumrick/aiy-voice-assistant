@@ -38,8 +38,14 @@ activate_poetry_venv() {
     # If we found a venv and it's executable, use it
     if [ -n "$VENV_PATH" ] && [ -f "$VENV_PATH" ] && [ -x "$VENV_PATH" ]; then
         VENV_DIR=$(dirname "$VENV_PATH")
-        source "$VENV_DIR/bin/activate"
-        return 0
+        # VENV_DIR now points to .../bin, we need the parent directory
+        VENV_ROOT=$(dirname "$VENV_DIR")
+
+        # Verify the activate script exists
+        if [ -f "$VENV_ROOT/bin/activate" ]; then
+            source "$VENV_ROOT/bin/activate"
+            return 0
+        fi
     fi
 
     return 1
