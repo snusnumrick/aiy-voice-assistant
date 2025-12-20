@@ -51,48 +51,60 @@ activate_poetry_venv() {
     return 1
 }
 
+wait_for_network() {
+  max_attempts=60
+  attempt=1
+  while ! ping -c 1 github.com >/dev/null 2>&1; do
+      if [ $attempt -ge $max_attempts ]; then
+          echo "Network not available after $max_attempts attempts"
+          return 1
+      fi
+      echo "Waiting for network... attempt $attempt"
+      sleep 5
+      attempt=$((attempt + 1))
+  done
+  return 0
+}
+
+wait_for_network;
+
 # ==== Tech Support Mode Check ====
 # This allows remote users to enable VPN for troubleshooting
 # Runs at the very beginning
 echo "Checking for tech support mode..."
 
 if [ -f "${PROJECT_ROOT}/tech_support_mode.py" ]; then
+    echo "TECH SUPPORT: Script found, running..."
     # Run tech support mode check
     # If button is held for 5 seconds, it will enable Tailscale and run indefinitely
     # If not, it will return with code 0
 
     # Try fast venv activation first, fall back to poetry run if it fails
     if activate_poetry_venv; then
+        echo "TECH SUPPORT: Using fast venv activation"
         python tech_support_mode.py
     else
-        echo "Fast venv lookup failed, falling back to 'poetry run'..."
+        echo "TECH SUPPORT: Fast venv lookup failed, falling back to 'poetry run'..."
         poetry run python tech_support_mode.py
     fi
 
     EXIT_CODE=$?
 
     if [ $EXIT_CODE -eq 0 ]; then
-        echo "Tech support mode not activated - continuing with normal startup"
+        echo "TECH SUPPORT: Not activated, continuing with normal startup"
     else
-        echo "Tech support mode exited with code: $EXIT_CODE"
+        echo "TECH SUPPORT: Exited with code: $EXIT_CODE"
     fi
 else
-    echo "WARNING: tech_support_mode.py not found, skipping tech support mode check"
+    echo "TECH SUPPORT: WARNING - tech_support_mode.py not found, skipping check"
 fi
 # ==== End Tech Support Mode Check ====
 
 # wait for the network
-max_attempts=60
-attempt=1
-while ! ping -c 1 github.com >/dev/null 2>&1; do
-    if [ $attempt -ge $max_attempts ]; then
-        echo "Network not available after $max_attempts attempts, exiting"
-        exit 1
-    fi
-    echo "Waiting for network... attempt $attempt"
-    sleep 5
-    attempt=$((attempt + 1))
-done
+if wait_for_network; then
+  echo "exiting"
+  exit 1
+fi
 
 # Pull the latest changes from the repository
 git pull
