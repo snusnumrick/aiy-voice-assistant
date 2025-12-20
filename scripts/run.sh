@@ -16,17 +16,39 @@ mkdir -p "${PROJECT_ROOT}/logs"
 
 # Helper function to find and activate Poetry virtualenv for faster startup
 # This avoids the overhead of 'poetry run' which is slow on Pi Zero
+# Finds venvs that match this project name
+# Handles both user and root execution contexts
 activate_poetry_venv() {
-    # Find the most recent Poetry virtualenv
-    VENV_PATH=$(ls -td ~/.cache/pypoetry/virtualenvs/*/bin/python 2>/dev/null | head -1)
-
-    if [ -n "$VENV_PATH" ] && [ -f "$VENV_PATH" ]; then
-        VENV_DIR=$(dirname "$VENV_PATH")
-        source "$VENV_DIR/bin/activate"
-        return 0
+    # If running as root, we need to find the user's venv
+    # Get the actual user's home directory
+    if [ "$EUID" -eq 0 ]; then
+        # Running as root - look for anton's venv
+        VENV_PATH=$(ls -td /home/anton/.cache/pypoetry/virtualenvs/cubie-*/bin/python 2>/dev/null | head -1)
     else
-        return 1
+        # Running as normal user
+        PROJECT_NAME=$(basename "$PROJECT_ROOT")
+        VENV_PATH=$(ls -td ~/.cache/pypoetry/virtualenvs/${PROJECT_NAME}-*/bin/python 2>/dev/null | head -1)
+
+        # If no match, try with just the first part of the name
+        if [ -z "$VENV_PATH" ]; then
+            VENV_PATH=$(ls -td ~/.cache/pypoetry/virtualenvs/cubie-*/bin/python 2>/dev/null | head -1)
+        fi
     fi
+
+    # If we found a venv and it's executable, verify it has installed packages
+    if [ -n "$VENV_PATH" ] && [ -f "$VENV_PATH" ] && [ -x "$VENV_PATH" ]; then
+        VENV_DIR=$(dirname "$VENV_PATH")
+
+        # Check if the venv has site-packages and some packages installed
+        # This is a basic sanity check to avoid using empty/broken venvs
+        if [ -d "$VENV_DIR/lib/python"*"/site-packages" ] && \
+           [ "$(ls -A "$VENV_DIR/lib/python"*"/site-packages" 2>/dev/null | wc -l)" -gt 10 ]; then
+            source "$VENV_DIR/bin/activate"
+            return 0
+        fi
+    fi
+
+    return 1
 }
 
 # ==== Tech Support Mode Check ====
@@ -266,9 +288,20 @@ echo "Timezone setup completed. See $TIMEZONE_LOG for details."
 amixer sset 'Master' 90% || amixer sset 'Speaker' 55% || echo "Failed to set volume"
 
 # Run the Python script with new logging flags
-# Try fast venv activation first
+# Try fast venv activation first, with fallback
 if activate_poetry_venv 2>/dev/null; then
     python main.py --log-dir "${PROJECT_ROOT}/logs" --log-level INFO
+    MAIN_EXIT_CODE=$?
+
+    # If main.py failed with import errors, retry with poetry run
+    if [ $MAIN_EXIT_CODE -ne 0 ]; then
+        echo "Main app failed with fast venv, retrying with 'poetry run'..."
+        # Deactivate current venv if activated
+        if [ -n "$VIRTUAL_ENV" ]; then
+            deactivate 2>/dev/null || true
+        fi
+        poetry run python main.py --log-dir "${PROJECT_ROOT}/logs" --log-level INFO
+    fi
 else
     poetry run python main.py --log-dir "${PROJECT_ROOT}/logs" --log-level INFO
 fi
