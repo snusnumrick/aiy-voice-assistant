@@ -14,6 +14,21 @@ cd "${PROJECT_ROOT}" || exit
 # Create logs directory if it doesn't exist
 mkdir -p "${PROJECT_ROOT}/logs"
 
+# Helper function to find and activate Poetry virtualenv for faster startup
+# This avoids the overhead of 'poetry run' which is slow on Pi Zero
+activate_poetry_venv() {
+    # Find the most recent Poetry virtualenv
+    VENV_PATH=$(ls -td ~/.cache/pypoetry/virtualenvs/*/bin/python 2>/dev/null | head -1)
+
+    if [ -n "$VENV_PATH" ] && [ -f "$VENV_PATH" ]; then
+        VENV_DIR=$(dirname "$VENV_PATH")
+        source "$VENV_DIR/bin/activate"
+        return 0
+    else
+        return 1
+    fi
+}
+
 # ==== Tech Support Mode Check ====
 # This allows remote users to enable VPN for troubleshooting
 # Runs at the very beginning
@@ -23,7 +38,15 @@ if [ -f "${PROJECT_ROOT}/tech_support_mode.py" ]; then
     # Run tech support mode check
     # If button is held for 5 seconds, it will enable Tailscale and run indefinitely
     # If not, it will return with code 0
-    poetry run python tech_support_mode.py
+
+    # Try fast venv activation first, fall back to poetry run if it fails
+    if activate_poetry_venv; then
+        python tech_support_mode.py
+    else
+        echo "Fast venv lookup failed, falling back to 'poetry run'..."
+        poetry run python tech_support_mode.py
+    fi
+
     EXIT_CODE=$?
 
     if [ $EXIT_CODE -eq 0 ]; then
@@ -202,7 +225,13 @@ echo "$(date): Starting timezone setup" > $TIMEZONE_LOG
 if [ -f "${PROJECT_ROOT}/.env" ]; then
     source "${PROJECT_ROOT}/.env"
 fi
-TIMEZONE=$(poetry run python -c "from src.tools import get_timezone; print(get_timezone())" 2>> $TIMEZONE_LOG)
+
+# Try fast venv activation for timezone lookup
+if activate_poetry_venv 2>/dev/null; then
+    TIMEZONE=$(python -c "from src.tools import get_timezone; print(get_timezone())" 2>> $TIMEZONE_LOG)
+else
+    TIMEZONE=$(poetry run python -c "from src.tools import get_timezone; print(get_timezone())" 2>> $TIMEZONE_LOG)
+fi
 
 if [ -z "$TIMEZONE" ]; then
     echo "$(date): ERROR: Failed to get timezone." >> $TIMEZONE_LOG
@@ -237,4 +266,9 @@ echo "Timezone setup completed. See $TIMEZONE_LOG for details."
 amixer sset 'Master' 90% || amixer sset 'Speaker' 55% || echo "Failed to set volume"
 
 # Run the Python script with new logging flags
-poetry run python main.py --log-dir "${PROJECT_ROOT}/logs" --log-level INFO
+# Try fast venv activation first
+if activate_poetry_venv 2>/dev/null; then
+    python main.py --log-dir "${PROJECT_ROOT}/logs" --log-level INFO
+else
+    poetry run python main.py --log-dir "${PROJECT_ROOT}/logs" --log-level INFO
+fi

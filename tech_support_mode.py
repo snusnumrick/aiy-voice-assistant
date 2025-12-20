@@ -367,7 +367,6 @@ def check_tech_support_mode():
             leds.update(Leds.rgb_pattern(Color.YELLOW))
             logger.info("yellow 500 breath")
             logger.info("Waiting for button press (hold for 5 seconds to activate tech support mode)...")
-            logger.info("Note: System diagnostics will run AFTER tech support mode is activated")
 
             logger.info("Press and HOLD button to activate tech support mode...")
 
