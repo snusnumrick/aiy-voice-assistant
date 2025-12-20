@@ -130,19 +130,19 @@ def play_audio_cue(cue_type):
             for _ in range(3):
                 play_wav_async(generate_beep_tone(frequency=1000, duration_ms=100))
                 time.sleep(0.1)
-        elif cue_type == 'pressed':
-            # Single beep when button is detected as pressed
-            play_wav_async(generate_beep_tone(frequency=800, duration_ms=150))
-        elif cue_type == 'confirmed':
-            # Confirmation sound: rising tone
-            for freq in [600, 800, 1000]:
-                play_wav_async(generate_beep_tone(frequency=freq, duration_ms=100))
-                time.sleep(0.05)
-        elif cue_type == 'success':
-            # Success sound: two ascending beeps
-            play_wav_async(generate_beep_tone(frequency=800, duration_ms=150))
-            time.sleep(0.1)
-            play_wav_async(generate_beep_tone(frequency=1000, duration_ms=150))
+        # elif cue_type == 'pressed':
+        #     # Single beep when button is detected as pressed
+        #     play_wav_async(generate_beep_tone(frequency=800, duration_ms=150))
+        # elif cue_type == 'confirmed':
+        #     # Confirmation sound: rising tone
+        #     for freq in [600, 800, 1000]:
+        #         play_wav_async(generate_beep_tone(frequency=freq, duration_ms=100))
+        #         time.sleep(0.05)
+        # elif cue_type == 'success':
+        #     # Success sound: two ascending beeps
+        #     play_wav_async(generate_beep_tone(frequency=800, duration_ms=150))
+        #     time.sleep(0.1)
+        #     play_wav_async(generate_beep_tone(frequency=1000, duration_ms=150))
         elif cue_type == 'error':
             # Error sound: descending tone
             for freq in [800, 600, 400]:
@@ -277,6 +277,8 @@ def show_diagnostic_led_pattern(leds, network_ok, vpn_ok, ssh_ok):
         vpn_ok: VPN connection status
         ssh_ok: SSH service status
     """
+    from aiy.leds import Leds, Color
+
     if network_ok and vpn_ok and ssh_ok:
         # All good - Green solid
         logger.info("LED: GREEN solid (All systems ready)")
