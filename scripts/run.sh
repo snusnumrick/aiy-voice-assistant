@@ -52,21 +52,27 @@ activate_poetry_venv() {
 }
 
 wait_for_network() {
-  max_attempts=60
-  attempt=1
-  while ! ping -c 1 github.com >/dev/null 2>&1; do
-      if [ $attempt -ge $max_attempts ]; then
-          echo "Network not available after $max_attempts attempts"
-          return 1
-      fi
-      echo "Waiting for network... attempt $attempt"
-      sleep 5
-      attempt=$((attempt + 1))
+  local host="${1:-github.com}"   # allow override: wait_for_network example.com
+  local max_attempts=60
+  local attempt=1
+  local delay=5                   # seconds between attempts
+  local ping_timeout=3            # seconds per ping attempt
+
+  while ! ping -c 1 -W "$ping_timeout" "$host" >/dev/null 2>&1; do
+    if [[ "$attempt" -ge "$max_attempts" ]]; then
+      echo "Network not available after $max_attempts attempts (host=$host)"
+      return 1
+    fi
+    echo "Waiting for network... attempt $attempt (host=$host)"
+    sleep "$delay"
+    attempt=$((attempt + 1))
   done
+
+  echo "Network available (host=$host)"
   return 0
 }
 
-wait_for_network;
+wait_for_network "8.8.8.8"
 
 # ==== Tech Support Mode Check ====
 # This allows remote users to enable VPN for troubleshooting
@@ -101,8 +107,8 @@ fi
 # ==== End Tech Support Mode Check ====
 
 # wait for the network
-if wait_for_network; then
-  echo "exiting"
+if ! wait_for_network "github.com"; then
+  echo "Network not available, exiting"
   exit 1
 fi
 
