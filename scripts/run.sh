@@ -35,17 +35,11 @@ activate_poetry_venv() {
         fi
     fi
 
-    # If we found a venv and it's executable, verify it has installed packages
+    # If we found a venv and it's executable, use it
     if [ -n "$VENV_PATH" ] && [ -f "$VENV_PATH" ] && [ -x "$VENV_PATH" ]; then
         VENV_DIR=$(dirname "$VENV_PATH")
-
-        # Check if the venv has site-packages and some packages installed
-        # This is a basic sanity check to avoid using empty/broken venvs
-        if [ -d "$VENV_DIR/lib/python"*"/site-packages" ] && \
-           [ "$(ls -A "$VENV_DIR/lib/python"*"/site-packages" 2>/dev/null | wc -l)" -gt 10 ]; then
-            source "$VENV_DIR/bin/activate"
-            return 0
-        fi
+        source "$VENV_DIR/bin/activate"
+        return 0
     fi
 
     return 1
