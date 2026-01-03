@@ -17,5 +17,9 @@
   "recent_facts_threshold_days": 30,
   "max_recent_facts": 8,
   "gemini_image_model": "gemini-3-pro-image-preview",
-  "yandex_tts_api_version": "v1"
+  "yandex_tts_api_version": "v3",
+  "tts_buffer_enabled": true,
+  "tts_buffer_timeout": 1.5,
+  "tts_buffer_max_length": 200,
+  "tts_buffer_min_sentences": 1
 }

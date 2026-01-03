@@ -44,6 +44,13 @@ from src.tools import retry_async
 # Set up logging
 logger = logging.getLogger(__name__)
 
+# Import TTSBuffer
+try:
+    from tts_buffer import TTSBuffer
+except ImportError:
+    # tts_buffer is optional - if not available, no buffering
+    TTSBuffer = None
+
 # Set up TTS usage logger
 TTS_USAGE_LOG = os.environ.get('APP_LOG_DIR', 'logs') + '/tts_usage.log'
 os.makedirs(os.path.dirname(TTS_USAGE_LOG), exist_ok=True)
@@ -456,6 +463,37 @@ class YandexTTSEngine(TTSEngine):
 
         logger.info(f"Using Yandex TTS API version {self.api_version}")
 
+        # v1 has different requirements than v3
+        if self.api_version == "v1":
+            logger.warning(
+                "v1 API requires IAM token (not API key) and folderId parameter. "
+                "You may need to update your authentication setup."
+            )
+
+        # Initialize TTS buffer for sentence batching
+        self.tts_buffer = None
+        if TTSBuffer is not None:
+            buffer_enabled = config.get("tts_buffer_enabled", True)
+            if buffer_enabled:
+                timeout = config.get("tts_buffer_timeout", 1.5)
+                max_length = config.get("tts_buffer_max_length", 200)
+                min_sentences = config.get("tts_buffer_min_sentences", 1)
+
+                self.tts_buffer = TTSBuffer(
+                    timeout=timeout,
+                    max_length=max_length,
+                    min_sentences=min_sentences
+                )
+
+                logger.info(
+                    f"TTS Buffer ENABLED: timeout={timeout}s, max_length={max_length} chars, "
+                    f"min_sentences={min_sentences}"
+                )
+            else:
+                logger.info("TTS Buffer is DISABLED")
+        else:
+            logger.debug("TTSBuffer not available (tts_buffer.py not found)")
+
         # For v3, configure SDK credentials
         if self.api_version == "v3":
             configure_credentials(
@@ -522,29 +560,32 @@ class YandexTTSEngine(TTSEngine):
             return
 
         # API v1 endpoint
-        url = "https://tts.api.cloud.yandex.net/v1/synthesize"
+        url = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
 
-        # Prepare request data
+        # v1 uses standard text parameter (not SSML)
+        voice_name = self.lang_voices[lang]
+        lang_code = self.langs[lang]
+
+        # Prepare form data
         data = {
             "text": text,
-            "lang": self.langs[lang],
-            "voice": self.lang_voices[lang],
-            "speed": self.speed,
-            "format": "wav",
+            "lang": lang_code,
+            "voice": voice_name,
+            # Note: v1 may require folderId parameter
         }
 
-        # Add role if specified (for Russian)
+        # Add emotion if available
         if lang == Language.RUSSIAN and tone in self.roles:
-            data["role"] = self.roles[tone]
+            data["emotion"] = self.roles[tone]
 
-        # Make request with JSON payload
+        # v1 uses Bearer token (not Api-Key!)
+        # Note: You need to get IAM token from Yandex Cloud
         headers = {
-            "Authorization": f"Api-Key {self.api_key}",
-            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
         }
 
         try:
-            response = requests.post(url, headers=headers, json=data)
+            response = requests.post(url, headers=headers, data=data)
             response.raise_for_status()
 
             with open(filename, "wb") as f:
@@ -581,29 +622,30 @@ class YandexTTSEngine(TTSEngine):
             return True
 
         # API v1 endpoint
-        url = "https://tts.api.cloud.yandex.net/v1/synthesize"
+        url = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
 
-        # Prepare request data
+        # v1 uses standard text parameter
+        voice_name = self.lang_voices[lang]
+        lang_code = self.langs[lang]
+
+        # Prepare form data
         data = {
             "text": text,
-            "lang": self.langs[lang],
-            "voice": self.lang_voices[lang],
-            "speed": self.speed,
-            "format": "wav",
+            "lang": lang_code,
+            "voice": voice_name,
         }
 
-        # Add role if specified (for Russian)
+        # Add emotion if available
         if lang == Language.RUSSIAN and tone in self.roles:
-            data["role"] = self.roles[tone]
+            data["emotion"] = self.roles[tone]
 
-        # Make request with JSON payload
+        # v1 uses Bearer token (not Api-Key!)
         headers = {
-            "Authorization": f"Api-Key {self.api_key}",
-            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
         }
 
         try:
-            async with session.post(url, headers=headers, json=data) as response:
+            async with session.post(url, headers=headers, data=data) as response:
                 if response.status == 200:
                     async with aiofiles.open(filename, "wb") as f:
                         await f.write(await response.read())
@@ -702,6 +744,33 @@ class YandexTTSEngine(TTSEngine):
         except Exception as e:
             logger.warning(f"Failed to log TTS usage: {str(e)}")
 
+        # Use TTS buffer if enabled
+        if self.tts_buffer is not None:
+            logger.debug(f"Adding to TTS buffer: {text[:50]}...")
+            await self.tts_buffer.add_sentence(
+                text,
+                self._do_synthesize_async,
+                session,
+                filename,
+                tone,
+                lang
+            )
+            return True
+
+        # No buffering - synthesize immediately
+        return await self._do_synthesize_async(session, text, filename, tone, lang)
+
+    async def _do_synthesize_async(
+        self,
+        session: aiohttp.ClientSession,
+        text: str,
+        filename: str,
+        tone: Tone,
+        lang: Language
+    ) -> bool:
+        """
+        Internal method that actually performs synthesis (used by buffer).
+        """
         # Route to v1 or v3 based on config
         if self.api_version == "v1":
             # v1 has native async support
