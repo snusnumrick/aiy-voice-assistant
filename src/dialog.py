@@ -27,7 +27,8 @@ import logging
 import os
 import time
 import traceback
-from typing import Dict, List, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Tuple, Optional
 
 import aiohttp
 import tempfile
@@ -42,6 +43,132 @@ from .tools import time_string_ms, save_to_conversation
 from .tts_engine import TTSEngine, Tone, Language
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class BufferedSentence:
+    """A sentence waiting in the buffer."""
+    text: str
+    emotion: Optional[dict]
+    language: str
+
+
+class SentenceBuffer:
+    """
+    Buffers sentences before sending to TTS to reduce costs.
+
+    Combines sentences based on:
+    - timeout: Wait this long for more sentences (default: 1.5 seconds)
+    - max_length: Send immediately if buffer exceeds this length (default: 200 chars)
+    """
+
+    def __init__(self, timeout: float = 1.5, max_length: int = 200, enabled: bool = True):
+        self.timeout = timeout
+        self.max_length = max_length
+        self.enabled = enabled
+        self.buffer: List[BufferedSentence] = []
+        self.buffer_chars = 0
+        self._flush_task: Optional[asyncio.Task] = None
+        self._flush_callback = None
+
+        if enabled:
+            logger.info(
+                f"Sentence buffer ENABLED: timeout={timeout}s, max_length={max_length} chars"
+            )
+        else:
+            logger.info("Sentence buffer DISABLED")
+
+    def set_flush_callback(self, callback):
+        """Set the callback to call when buffer should be flushed."""
+        self._flush_callback = callback
+
+    async def add(self, sentence: BufferedSentence) -> Optional[List[BufferedSentence]]:
+        """
+        Add a sentence to the buffer.
+
+        Returns:
+            List of sentences to process if buffer should be flushed, None otherwise.
+        """
+        if not self.enabled:
+            # Buffering disabled, return immediately
+            return [sentence]
+
+        # Cancel existing flush task
+        if self._flush_task and not self._flush_task.done():
+            self._flush_task.cancel()
+            try:
+                await self._flush_task
+            except asyncio.CancelledError:
+                pass
+
+        # Add to buffer
+        self.buffer.append(sentence)
+        self.buffer_chars += len(sentence.text)
+
+        logger.debug(
+            f"Sentence buffer: Added ({len(sentence.text)} chars, "
+            f"total: {self.buffer_chars} chars, {len(self.buffer)} sentences)"
+        )
+
+        # Check if we should flush immediately (max_length exceeded)
+        if self.buffer_chars >= self.max_length:
+            logger.info(
+                f"Sentence buffer: Max length reached ({self.buffer_chars}/{self.max_length}), "
+                f"flushing {len(self.buffer)} sentences"
+            )
+            return self._take_buffer()
+
+        # Start timeout task
+        self._flush_task = asyncio.create_task(self._timeout_flush())
+        return None
+
+    async def _timeout_flush(self):
+        """Wait for timeout, then trigger flush callback."""
+        try:
+            await asyncio.sleep(self.timeout)
+            if self.buffer and self._flush_callback:
+                sentences = self._take_buffer()
+                if sentences:
+                    logger.info(
+                        f"Sentence buffer: Timeout, flushing {len(sentences)} sentences "
+                        f"({sum(len(s.text) for s in sentences)} chars)"
+                    )
+                    await self._flush_callback(sentences)
+        except asyncio.CancelledError:
+            pass
+
+    def _take_buffer(self) -> List[BufferedSentence]:
+        """Take all sentences from buffer and reset."""
+        sentences = self.buffer
+        self.buffer = []
+        self.buffer_chars = 0
+        self._flush_task = None
+        return sentences
+
+    async def flush(self) -> Optional[List[BufferedSentence]]:
+        """Force flush any remaining sentences."""
+        if self._flush_task and not self._flush_task.done():
+            self._flush_task.cancel()
+            try:
+                await self._flush_task
+            except asyncio.CancelledError:
+                pass
+
+        if self.buffer:
+            logger.info(
+                f"Sentence buffer: Force flushing {len(self.buffer)} sentences "
+                f"({self.buffer_chars} chars)"
+            )
+            return self._take_buffer()
+        return None
+
+    def reset(self):
+        """Clear the buffer without processing."""
+        if self._flush_task and not self._flush_task.done():
+            self._flush_task.cancel()
+        self.buffer = []
+        self.buffer_chars = 0
+        self._flush_task = None
 
 
 def error_visual(leds: Leds) -> None:
@@ -179,6 +306,17 @@ class DialogManager:
         self.config = config
         self.timezone = timezone
         self.response_player = response_player
+
+        # Initialize sentence buffer for TTS cost optimization
+        buffer_enabled = config.get("sentence_buffer_enabled", True)
+        buffer_timeout = config.get("sentence_buffer_timeout", 1.5)
+        buffer_max_length = config.get("sentence_buffer_max_length", 200)
+        self.sentence_buffer = SentenceBuffer(
+            timeout=buffer_timeout,
+            max_length=buffer_max_length,
+            enabled=buffer_enabled
+        )
+
         self.transcriber = SpeechTranscriber(
             button, leds, config, cleaning=self.cleaning_routine, timezone=timezone
         )
@@ -316,6 +454,38 @@ class DialogManager:
 
         async def _process_ai_responses():
             nonlocal response_count, ai_message, synthesis_tasks, save_conversation_task
+
+            def _create_combined_response(sentences: List[BufferedSentence]) -> dict:
+                """Combine buffered sentences into a single response."""
+                combined_text = " ".join(s.text for s in sentences)
+                # Use the first sentence's emotion and language
+                return {
+                    "text": combined_text,
+                    "emotion": sentences[0].emotion,
+                    "language": sentences[0].language
+                }
+
+            async def _process_buffered_sentences(sentences: List[BufferedSentence]):
+                """Process a batch of buffered sentences as one TTS request."""
+                nonlocal response_count, synthesis_tasks
+                if not sentences or button_pressed:
+                    return
+
+                response_count += 1
+                combined = _create_combined_response(sentences)
+                logger.info(
+                    f"Sentence buffer: Processing {len(sentences)} sentences as 1 TTS request "
+                    f"({len(combined['text'])} chars)"
+                )
+
+                synthesis_task = self.create_synthesis_task(
+                    session, combined, response_count
+                )
+                synthesis_tasks.append(synthesis_task)
+
+            # Set callback for timeout-triggered flushes
+            self.sentence_buffer.set_flush_callback(_process_buffered_sentences)
+
             try:
                 logger.debug("Starting AI response processing loop")
                 async for ai_response in conversation_response_generator:
@@ -328,24 +498,31 @@ class DialogManager:
                         f"Received AI response chunk with {len(ai_response)} responses"
                     )
                     for response in ai_response:
-                        response_count += 1
                         logger.debug(
-                            f'({time_string_ms(self.timezone)}) Processing AI response {response_count}: {response["text"][:50]}...'
+                            f'({time_string_ms(self.timezone)}) Processing AI response: {response["text"][:50]}...'
                         )
 
-                        # Accumulate AI message
+                        # Accumulate AI message for conversation history
                         if ai_message:
                             ai_message += " "
                         ai_message += response["text"]
 
-                        # Create and add synthesis task
-                        synthesis_task = self.create_synthesis_task(
-                            session, response, response_count
+                        # Add to buffer
+                        buffered = BufferedSentence(
+                            text=response["text"],
+                            emotion=response["emotion"],
+                            language=response["language"]
                         )
-                        synthesis_tasks.append(synthesis_task)
-                        logger.debug(
-                            f"Created synthesis task {response_count}, total tasks now: {len(synthesis_tasks)}"
-                        )
+                        sentences_to_process = await self.sentence_buffer.add(buffered)
+
+                        # If buffer returned sentences (max_length exceeded), process them
+                        if sentences_to_process:
+                            await _process_buffered_sentences(sentences_to_process)
+
+                # Flush any remaining buffered sentences
+                remaining = await self.sentence_buffer.flush()
+                if remaining:
+                    await _process_buffered_sentences(remaining)
 
                 logger.debug("AI response generation completed normally")
             except Exception as e:
@@ -353,6 +530,7 @@ class DialogManager:
                 logger.error(traceback.format_exc())
                 error_visual(self.leds)
             finally:
+                self.sentence_buffer.reset()  # Clean up
                 _set_ai_responses_complete()  # Mark AI responses as complete
                 logger.debug("AI response processing loop exited")
 

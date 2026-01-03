@@ -471,9 +471,13 @@ class YandexTTSEngine(TTSEngine):
             )
 
         # Initialize TTS buffer for sentence batching
+        # NOTE: Buffer is DISABLED by default because ResponsePlayer expects one file per sentence.
+        # The buffer creates ONE combined file but ResponsePlayer.add() expects separate files.
+        # To enable buffering, it needs to be integrated at the dialog/conversation level,
+        # BEFORE filenames are assigned to sentences.
         self.tts_buffer = None
         if TTSBuffer is not None:
-            buffer_enabled = config.get("tts_buffer_enabled", True)
+            buffer_enabled = config.get("tts_buffer_enabled", False)
             if buffer_enabled:
                 timeout = config.get("tts_buffer_timeout", 1.5)
                 max_length = config.get("tts_buffer_max_length", 200)
