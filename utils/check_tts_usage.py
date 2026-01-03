@@ -74,6 +74,18 @@ def check_usage(days: int = 30):
     print(f"Average daily cost: ${total_cost / days:.6f} USD")
     print()
 
+    # Show API versions used
+    api_versions = defaultdict(int)
+    for record in filtered:
+        version = record.get('api_version', 'unknown')
+        api_versions[version] += 1
+
+    print("By API Version:")
+    for version, count in sorted(api_versions.items(), key=lambda x: x[1], reverse=True):
+        percentage = (count / total_requests) * 100
+        print(f"  {version}: {count} requests ({percentage:.1f}%)")
+    print()
+
     # Show daily breakdown
     print("Daily Breakdown:")
     print("-" * 70)
