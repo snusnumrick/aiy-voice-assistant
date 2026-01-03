@@ -412,11 +412,13 @@ class WizardTool:
                 processor=self.do_wizardry_async,
                 rule_instructions={
                     "russian": (
+                        "О сложных вещах ты можешь спросить мудреца. "
                         "Ответ может занять очень много времени; используйте с осторожностью. "
                         "Перед тем, как задать вопрос, проверьте существующие отчеты, "
                         "используя инструмент list_wizard_reports, возможно, он уже был задан ранее."
                     ),
                     "english": (
+                        "For complex questions, you can ask the wise wizard. "
                         "Response may take a very long time; use sparingly. "
                         "Check existing reports, "
                         "using list_wizard_reports tool, before asking wizard, "

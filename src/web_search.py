@@ -305,7 +305,7 @@ class WebSearcher:
         logger.info(f"Searching for {query}")
         start_time = time.time()
 
-        providers = ["google", "google", "tavily", "perplexity"]
+        providers = ["tavily", "perplexity"]
 
         try:
             combined_result = await self.search_providers_async(query, providers)
