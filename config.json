@@ -19,5 +19,5 @@
   "gemini_image_model": "gemini-3-pro-image-preview",
   "sentence_buffer_enabled": true,
   "sentence_buffer_timeout": 1.5,
-  "sentence_buffer_max_length": 200
+  "sentence_buffer_max_length": 240
 }
