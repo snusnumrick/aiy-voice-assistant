@@ -26,9 +26,11 @@ import logging
 import os
 import random
 import time
+import json
 from abc import ABC, abstractmethod
 from enum import Enum, IntEnum
 from typing import Optional, List, Dict, Any
+from datetime import datetime
 
 import aiofiles
 import aiohttp
@@ -41,6 +43,42 @@ from src.tools import retry_async
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+# Set up TTS usage logger
+TTS_USAGE_LOG = os.environ.get('APP_LOG_DIR', 'logs') + '/tts_usage.log'
+os.makedirs(os.path.dirname(TTS_USAGE_LOG), exist_ok=True)
+
+def log_tts_usage(text: str, engine: str, lang: str, tone: str, filename: str):
+    """
+    Log TTS usage with cost calculation (API v3 pricing)
+
+    API v3: $0.001333 per 250-character billing unit
+    """
+    char_count = len(text)
+    billing_units = (char_count + 249) // 250  # Ceiling division
+    cost_usd = billing_units * 0.001333
+
+    usage_record = {
+        'timestamp': datetime.now().isoformat(),
+        'engine': engine,
+        'text_length': char_count,
+        'billing_units': billing_units,
+        'cost_usd': round(cost_usd, 6),
+        'language': lang,
+        'tone': tone,
+        'filename': filename,
+        'text_preview': text[:100] + '...' if len(text) > 100 else text
+    }
+
+    # Log to file (JSONL format)
+    with open(TTS_USAGE_LOG, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(usage_record, ensure_ascii=False) + '\n')
+
+    # Also log to application log
+    logger.info(
+        f"TTS Usage | {engine} | {char_count} chars | "
+        f"{billing_units} units | ${cost_usd:.6f} | {lang}/{tone}"
+    )
 
 
 class Tone(Enum):
@@ -183,6 +221,19 @@ class OpenAITTSEngine(TTSEngine):
         if not text:
             logger.warning("Empty text to synthesize, skipping")
             return
+
+        # Log TTS usage
+        try:
+            log_tts_usage(
+                text=text,
+                engine="OpenAITTSEngine",
+                lang=lang.name,
+                tone=tone.name,
+                filename=filename
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log TTS usage: {str(e)}")
+
         response = self.client.with_streaming_response.audio.speech.create(
             model=self.model, voice=self.voice, response_format="wav", input=text
         )
@@ -215,6 +266,18 @@ class OpenAITTSEngine(TTSEngine):
         if not text:
             logger.warning("Empty text to synthesize, skipping")
             return True
+
+        # Log TTS usage
+        try:
+            log_tts_usage(
+                text=text,
+                engine="OpenAITTSEngine",
+                lang=lang.name,
+                tone=tone.name,
+                filename=filename
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log TTS usage: {str(e)}")
 
         url = "https://api.openai.com/v1/audio/speech"
         headers = {
@@ -429,6 +492,18 @@ class YandexTTSEngine(TTSEngine):
             logger.warning("Empty text to synthesize, skipping")
             return
 
+        # Log TTS usage
+        try:
+            log_tts_usage(
+                text=text,
+                engine="YandexTTSEngine",
+                lang=lang.name,
+                tone=tone.name,
+                filename=filename
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log TTS usage: {str(e)}")
+
         model = self.voice_model(tone=tone, lang=lang)
         try:
             logger.debug(f"Synthesizing text: {text[:50]}...")
@@ -456,6 +531,18 @@ class YandexTTSEngine(TTSEngine):
         if not text:
             logger.warning("Empty text to synthesize, skipping")
             return True
+
+        # Log TTS usage
+        try:
+            log_tts_usage(
+                text=text,
+                engine="YandexTTSEngine",
+                lang=lang.name,
+                tone=tone.name,
+                filename=filename
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log TTS usage: {str(e)}")
 
         def synthesize_wrapper(par: dict) -> bytes:
             """Wrapper method to call synthesize with the correct parameters."""
