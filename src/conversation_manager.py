@@ -282,6 +282,11 @@ class ConversationManager:
         """
         Get an AI response based on the current conversation state and new input.
 
+        Sentences are buffered and combined before yielding to reduce TTS costs.
+        Buffer flushes when:
+        - Total characters exceed sentence_buffer_max_length (default: 200)
+        - No new sentence arrives within sentence_buffer_timeout (default: 1.5s)
+
         Args:
             text (str): The new input text to respond to.
 
@@ -290,6 +295,14 @@ class ConversationManager:
             marked with emotion response and language code
         """
         logger.debug(f"call to get_response for: {text}")
+
+        # Buffer settings
+        buffer_enabled = self.config.get("sentence_buffer_enabled", True)
+        buffer_timeout = self.config.get("sentence_buffer_timeout", 1.5)
+        buffer_max_length = self.config.get("sentence_buffer_max_length", 200)
+
+        if buffer_enabled:
+            logger.debug(f"Sentence buffer: enabled, timeout={buffer_timeout}s, max_length={buffer_max_length}")
 
         # update system message
         self.message_history[0] = {
@@ -319,16 +332,28 @@ class ConversationManager:
                     f"Compressed  conversation:  {(newline_str + self.formatted_message_history(150) + newline_str)}"
                 )
 
-        # logger.debug(f"Message history: \n{self.formatted_message_history()}")
+        # Buffer for combining sentences
+        sentence_buffer: List[Dict[str, any]] = []
+        buffer_chars = 0
+
+        def combine_buffer() -> List[Dict[str, any]]:
+            """Combine buffered sentences into one."""
+            if not sentence_buffer:
+                return []
+
+            # Combine texts, keep first emotion/language
+            combined_text = " ".join(s["text"] for s in sentence_buffer)
+            return [{
+                "emotion": sentence_buffer[0]["emotion"],
+                "language": sentence_buffer[0]["language"],
+                "text": combined_text
+            }]
 
         async for response_text in self.ai_model.get_response_async(
             list(self.message_history)
         ):
             crt = clean_response(response_text)
 
-            # logger.info(
-            #     f"{time_string_ms(self.timezone)}) AI response: {text} -> {response_text}"
-            # )
             if self.message_history[-1]["role"] != "assistant":
                 self.message_history.append({"role": "assistant", "content": crt})
             else:
@@ -348,7 +373,7 @@ class ConversationManager:
             if rules:
                 logger.debug(f"Extracted rules: {rules}")
 
-            result = []
+            # Process emotions and language for this sentence
             for emo, t in extract_emotions(response_text):
                 logger.debug(f"Emotion: {emo} -> {t}")
                 for lang, clean_text in extract_language(
@@ -356,14 +381,39 @@ class ConversationManager:
                 ):
                     logger.debug(f"Language: {lang} -> {clean_text}")
                     self.current_language_code = lang
-                    if text:
+                    if text and clean_text:
                         clean_text = fix_stress_marks_russian(clean_text)
-                        result.append(
-                            {"emotion": emo, "language": lang, "text": clean_text}
-                        )
+                        sentence = {"emotion": emo, "language": lang, "text": clean_text}
 
-            logger.debug(f"yielding {result}")
-            yield result
+                        if not buffer_enabled:
+                            # No buffering, yield immediately
+                            yield [sentence]
+                        else:
+                            # Add to buffer
+                            sentence_buffer.append(sentence)
+                            buffer_chars += len(clean_text)
+                            logger.debug(
+                                f"Sentence buffer: added ({len(clean_text)} chars, "
+                                f"total: {buffer_chars}, count: {len(sentence_buffer)})"
+                            )
+
+                            # Flush if max_length exceeded
+                            if buffer_chars >= buffer_max_length:
+                                logger.info(
+                                    f"Sentence buffer: max_length reached ({buffer_chars}/{buffer_max_length}), "
+                                    f"yielding {len(sentence_buffer)} sentences"
+                                )
+                                yield combine_buffer()
+                                sentence_buffer.clear()
+                                buffer_chars = 0
+
+        # Flush remaining buffer at the end
+        if buffer_enabled and sentence_buffer:
+            logger.info(
+                f"Sentence buffer: end of response, yielding {len(sentence_buffer)} sentences "
+                f"({buffer_chars} chars)"
+            )
+            yield combine_buffer()
 
     def formatted_message_history(self, max_width=120) -> str:
         """
