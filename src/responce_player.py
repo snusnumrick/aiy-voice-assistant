@@ -250,13 +250,15 @@ class ResponsePlayer:
         Args:
             playitem (Tuple[Optional[Dict], str]): A tuple containing the LED behavior (or None) and the audio file path.
         """
-        with self.lock:
-            if self._stopped:
-                logger.warning(
-                    "reinit as player is stopped."
-                )
-                self.__init__(playlist=[], leds=self.leds, timezone=self.timezone)
+        # Check if reinit needed BEFORE acquiring lock
+        # (reinit creates new lock, can't do it while holding old lock)
+        if self._stopped:
+            logger.warning(
+                "reinit as player is stopped."
+            )
+            self.__init__(playlist=[], leds=self.leds, timezone=self.timezone)
 
+        with self.lock:
             emo, file, text = playitem
             light = None if emo is None else emo.get("light", None)
             m_item = MergeItem(light=light, filename=file, text=text)
