@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 # Import TTSBuffer
 try:
-    from tts_buffer import TTSBuffer
+    from src.tts_buffer import TTSBuffer
 except ImportError:
     # tts_buffer is optional - if not available, no buffering
     TTSBuffer = None
@@ -492,7 +492,7 @@ class YandexTTSEngine(TTSEngine):
             else:
                 logger.info("TTS Buffer is DISABLED")
         else:
-            logger.debug("TTSBuffer not available (tts_buffer.py not found)")
+            logger.info("TTSBuffer not available (tts_buffer.py not found)")
 
         # For v3, configure SDK credentials
         if self.api_version == "v3":
