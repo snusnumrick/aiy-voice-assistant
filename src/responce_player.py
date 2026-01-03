@@ -257,13 +257,14 @@ class ResponsePlayer:
                 "reinit as player is stopped."
             )
             self.__init__(playlist=[], leds=self.leds, timezone=self.timezone)
+            logger.info(f"Player reinitialized, _stopped={self._stopped}, _should_play={self._should_play}")
 
         with self.lock:
             emo, file, text = playitem
             light = None if emo is None else emo.get("light", None)
             m_item = MergeItem(light=light, filename=file, text=text)
-            logger.debug(
-                f"({time_string_ms(self.timezone)}) Adding {m_item} to merge queue."
+            logger.info(
+                f"({time_string_ms(self.timezone)}) Adding to queue: {file}"
             )
             self.merge_queue.put(m_item)
 
@@ -271,9 +272,11 @@ class ResponsePlayer:
             self.condition.notify()
 
         if self.merge_thread is None or not self.merge_thread.is_alive():
+            logger.info("Starting merge thread")
             self.merge_thread = threading.Thread(target=self._merge_audio_files)
             self.merge_thread.start()
         if not self._should_play:
+            logger.info("Calling play()")
             self.play()
 
     def change_light_behavior(self, behaviour: dict) -> None:
@@ -393,12 +396,13 @@ class ResponsePlayer:
 
         This method initiates the playback thread if it's not already running and resets the stopped state.
         """
-        logger.debug("Starting playback")
+        logger.info("play() called")
         with self.condition:
             if not self._should_play:
                 self._should_play = True
                 self._stopped = False
                 self._playback_completed.clear()
+                logger.info("Starting play thread")
                 self.play_thread = threading.Thread(target=self._play_sequence)
                 self.play_thread.start()
 
@@ -410,7 +414,7 @@ class ResponsePlayer:
         It handles playing audio files and controlling LED behavior. It uses a condition variable
         to efficiently wait for new items to be added to the playlist or for a stop signal.
         """
-        logger.debug("_play_sequence started")
+        logger.info("_play_sequence thread started")
         while True:
             with self.condition:
                 while (
@@ -423,15 +427,16 @@ class ResponsePlayer:
                     )
                     self.condition.wait()
                 if not self._should_play:
-                    logger.info("should_play: False")
+                    logger.info("_play_sequence: should_play=False, exiting")
                     break
                 try:
                     light, audio_file = self.playlist.get_nowait()
-                    logger.debug(
-                        f"({time_string_ms(self.timezone)}) got from playlist {light}, {audio_file}"
+                    logger.info(
+                        f"({time_string_ms(self.timezone)}) Playing: {audio_file}"
                     )
                 except queue.Empty:
                     # If playlist is empty, process wav_list and continue
+                    logger.debug("Playlist empty, processing wav_list")
                     self._process_wav_list()
                     continue
 
@@ -444,7 +449,7 @@ class ResponsePlayer:
             self.current_process.wait()
             self.current_process = None
 
-            logger.debug(f"Finished playing {audio_file}")
+            logger.info(f"Finished playing {audio_file}")
 
         logger.debug("_play_sequence ended")
         self.current_process = None
