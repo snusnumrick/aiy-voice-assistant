@@ -389,23 +389,33 @@ class ConversationManager:
                             # No buffering, yield immediately
                             yield [sentence]
                         else:
-                            # Add to buffer
-                            sentence_buffer.append(sentence)
-                            buffer_chars += len(clean_text)
-                            logger.debug(
-                                f"Sentence buffer: added ({len(clean_text)} chars, "
-                                f"total: {buffer_chars}, count: {len(sentence_buffer)})"
-                            )
+                            sentence_len = len(clean_text)
 
-                            # Flush if max_length exceeded
-                            if buffer_chars >= buffer_max_length:
+                            # Check if adding this sentence would cross a billing unit boundary
+                            # (Yandex v3 charges per 250-char unit)
+                            would_cross_unit = buffer_chars > 0 and buffer_chars + sentence_len > 250
+
+                            # Also flush if max_length exceeded (safety check)
+                            would_exceed_max = buffer_chars + sentence_len > buffer_max_length
+
+                            # Flush if we should cross a unit boundary or exceed max_length
+                            if (would_cross_unit or would_exceed_max) and buffer_chars > 0:
                                 logger.info(
-                                    f"Sentence buffer: max_length reached ({buffer_chars}/{buffer_max_length}), "
+                                    f"Sentence buffer: optimizing for billing units "
+                                    f"({buffer_chars}/{sentence_len}={buffer_chars + sentence_len} chars), "
                                     f"yielding {len(sentence_buffer)} sentences"
                                 )
                                 yield combine_buffer()
                                 sentence_buffer.clear()
                                 buffer_chars = 0
+
+                            # Add sentence to buffer
+                            sentence_buffer.append(sentence)
+                            buffer_chars += sentence_len
+                            logger.debug(
+                                f"Sentence buffer: added ({sentence_len} chars, "
+                                f"total: {buffer_chars}, count: {len(sentence_buffer)})"
+                            )
 
         # Flush remaining buffer at the end
         if buffer_enabled and sentence_buffer:

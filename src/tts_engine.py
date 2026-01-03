@@ -44,22 +44,14 @@ from src.tools import retry_async
 # Set up logging
 logger = logging.getLogger(__name__)
 
-# Import TTSBuffer
-try:
-    from src.tts_buffer import TTSBuffer
-except ImportError:
-    # tts_buffer is optional - if not available, no buffering
-    TTSBuffer = None
-
 # Set up TTS usage logger
 TTS_USAGE_LOG = os.environ.get('APP_LOG_DIR', 'logs') + '/tts_usage.log'
 os.makedirs(os.path.dirname(TTS_USAGE_LOG), exist_ok=True)
 
 # API Pricing constants
-V1_RATE_PER_CHAR = 0.000011  # USD per character
 V3_RATE_PER_UNIT = 0.001333  # USD per 250-character billing unit
 
-def log_tts_usage(text: str, engine: str, lang: str, tone: str, filename: str, api_version: str = 'v3'):
+def log_tts_usage(text: str, engine: str, lang: str, tone: str, filename: str):
     """
     Log TTS usage with cost calculation
 
@@ -69,24 +61,17 @@ def log_tts_usage(text: str, engine: str, lang: str, tone: str, filename: str, a
         lang: Language
         tone: Tone
         filename: Output filename
-        api_version: 'v1' or 'v3' (affects pricing calculation)
     """
     char_count = len(text)
 
-    if api_version == 'v3':
-        # v3 charges per 250-character billing unit
-        billing_units = (char_count + 249) // 250  # Ceiling division
-        cost_usd = billing_units * V3_RATE_PER_UNIT
-        cost_detail = f"{billing_units} units @ ${V3_RATE_PER_UNIT:.6f}"
-    else:  # v1
-        # v1 charges per character
-        cost_usd = char_count * V1_RATE_PER_CHAR
-        cost_detail = f"{char_count} chars @ ${V1_RATE_PER_CHAR:.6f}/char"
+    # v3 charges per 250-character billing unit
+    billing_units = (char_count + 249) // 250  # Ceiling division
+    cost_usd = billing_units * V3_RATE_PER_UNIT
+    cost_detail = f"{billing_units} units @ ${V3_RATE_PER_UNIT:.6f}"
 
     usage_record = {
         'timestamp': datetime.now().isoformat(),
         'engine': engine,
-        'api_version': api_version,
         'text_length': char_count,
         'cost_usd': round(cost_usd, 6),
         'language': lang,
@@ -101,7 +86,7 @@ def log_tts_usage(text: str, engine: str, lang: str, tone: str, filename: str, a
 
     # Also log to application log
     logger.info(
-        f"TTS Usage ({api_version}) | {engine} | {char_count} chars | "
+        f"TTS Usage (v3) | {engine} | {char_count} chars | "
         f"{cost_detail} | ${cost_usd:.6f} | {lang}/{tone}"
     )
 
@@ -455,54 +440,10 @@ class YandexTTSEngine(TTSEngine):
                 "Yandex API key is not provided in environment variables or configuration"
             )
 
-        # Configure API version (v1 or v3)
-        self.api_version = config.get("yandex_tts_api_version", "v3").lower()
-        if self.api_version not in ["v1", "v3"]:
-            logger.warning(f"Invalid API version '{self.api_version}', defaulting to v3")
-            self.api_version = "v3"
-
-        logger.info(f"Using Yandex TTS API version {self.api_version}")
-
-        # v1 has different requirements than v3
-        if self.api_version == "v1":
-            logger.warning(
-                "v1 API requires IAM token (not API key) and folderId parameter. "
-                "You may need to update your authentication setup."
-            )
-
-        # Initialize TTS buffer for sentence batching
-        # NOTE: Buffer is DISABLED by default because ResponsePlayer expects one file per sentence.
-        # The buffer creates ONE combined file but ResponsePlayer.add() expects separate files.
-        # To enable buffering, it needs to be integrated at the dialog/conversation level,
-        # BEFORE filenames are assigned to sentences.
-        self.tts_buffer = None
-        if TTSBuffer is not None:
-            buffer_enabled = config.get("tts_buffer_enabled", False)
-            if buffer_enabled:
-                timeout = config.get("tts_buffer_timeout", 1.5)
-                max_length = config.get("tts_buffer_max_length", 200)
-                min_sentences = config.get("tts_buffer_min_sentences", 1)
-
-                self.tts_buffer = TTSBuffer(
-                    timeout=timeout,
-                    max_length=max_length,
-                    min_sentences=min_sentences
-                )
-
-                logger.info(
-                    f"TTS Buffer ENABLED: timeout={timeout}s, max_length={max_length} chars, "
-                    f"min_sentences={min_sentences}"
-                )
-            else:
-                logger.info("TTS Buffer is DISABLED")
-        else:
-            logger.info("TTSBuffer not available (tts_buffer.py not found)")
-
-        # For v3, configure SDK credentials
-        if self.api_version == "v3":
-            configure_credentials(
-                yandex_credentials=creds.YandexCredentials(api_key=self.api_key)
-            )
+        # Configure SDK credentials
+        configure_credentials(
+            yandex_credentials=creds.YandexCredentials(api_key=self.api_key)
+        )
 
         # Language and voice settings
         self.langs = {
@@ -524,13 +465,12 @@ class YandexTTSEngine(TTSEngine):
         self.speed = config.get("yandex_tts_speed", 1.0)
         self.timezone = timezone
 
-        # Cache for v3 SDK (not used for v1)
+        # Cache for SDK
         self.voice_models: Dict[
             Language : Dict[Tone, model_repository.SynthesisModel]
         ] = {}
-        if self.api_version == "v3":
-            self.voice_model(tone=Tone.PLAIN, lang=Language.RUSSIAN)
-            self.voice_model(tone=Tone.HAPPY, lang=Language.RUSSIAN)
+        self.voice_model(tone=Tone.PLAIN, lang=Language.RUSSIAN)
+        self.voice_model(tone=Tone.HAPPY, lang=Language.RUSSIAN)
 
     def voice_model(self, tone=Tone.PLAIN, lang=Language.RUSSIAN):
         if lang in self.voice_models and tone in self.voice_models[lang]:
@@ -546,121 +486,6 @@ class YandexTTSEngine(TTSEngine):
         else:
             self.voice_models[lang] = {tone: model}
         return model
-
-    def _synthesize_v1(
-        self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN
-    ) -> None:
-        """
-        Synthesize speech using Yandex TTS API v1 (per-character pricing).
-
-        Args:
-            text (str): The text to synthesize into speech.
-            filename (str): The path to save the synthesized audio file.
-            tone (tone): The tone to use.
-            lang (Language): The language to use.
-        """
-        if not text:
-            logger.warning("Empty text to synthesize, skipping")
-            return
-
-        # API v1 endpoint
-        url = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
-
-        # v1 uses standard text parameter (not SSML)
-        voice_name = self.lang_voices[lang]
-        lang_code = self.langs[lang]
-
-        # Prepare form data
-        data = {
-            "text": text,
-            "lang": lang_code,
-            "voice": voice_name,
-            # Note: v1 may require folderId parameter
-        }
-
-        # Add emotion if available
-        if lang == Language.RUSSIAN and tone in self.roles:
-            data["emotion"] = self.roles[tone]
-
-        # v1 uses Bearer token (not Api-Key!)
-        # Note: You need to get IAM token from Yandex Cloud
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-        }
-
-        try:
-            response = requests.post(url, headers=headers, data=data)
-            response.raise_for_status()
-
-            with open(filename, "wb") as f:
-                f.write(response.content)
-
-            logger.debug(f"Audio content written to file {filename}")
-        except Exception as e:
-            logger.error(f"Error during v1 speech synthesis: {str(e)}")
-            raise
-
-    async def _synthesize_v1_async(
-        self,
-        session: aiohttp.ClientSession,
-        text: str,
-        filename: str,
-        tone: Tone = Tone.PLAIN,
-        lang=Language.RUSSIAN,
-    ) -> bool:
-        """
-        Asynchronously synthesize speech using Yandex TTS API v1.
-
-        Args:
-            session (aiohttp.ClientSession): An aiohttp client session.
-            text (str): The text to synthesize into speech.
-            filename (str): The path to save the synthesized audio file.
-            tone (tone): The tone to use.
-            lang (Language): The language to use.
-
-        Returns:
-            bool: True if synthesis was successful, False otherwise.
-        """
-        if not text:
-            logger.warning("Empty text to synthesize, skipping")
-            return True
-
-        # API v1 endpoint
-        url = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
-
-        # v1 uses standard text parameter
-        voice_name = self.lang_voices[lang]
-        lang_code = self.langs[lang]
-
-        # Prepare form data
-        data = {
-            "text": text,
-            "lang": lang_code,
-            "voice": voice_name,
-        }
-
-        # Add emotion if available
-        if lang == Language.RUSSIAN and tone in self.roles:
-            data["emotion"] = self.roles[tone]
-
-        # v1 uses Bearer token (not Api-Key!)
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-        }
-
-        try:
-            async with session.post(url, headers=headers, data=data) as response:
-                if response.status == 200:
-                    async with aiofiles.open(filename, "wb") as f:
-                        await f.write(await response.read())
-                    logger.debug(f"Audio content written to file {filename}")
-                    return True
-                else:
-                    logger.error(f"v1 API request failed with status {response.status}")
-                    return False
-        except Exception as e:
-            logger.error(f"Error during v1 speech synthesis: {str(e)}")
-            return False
 
     def synthesize(
         self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN
@@ -678,33 +503,28 @@ class YandexTTSEngine(TTSEngine):
             logger.warning("Empty text to synthesize, skipping")
             return
 
-        # Log TTS usage with correct API version
+        # Log TTS usage
         try:
             log_tts_usage(
                 text=text,
                 engine="YandexTTSEngine",
                 lang=lang.name,
                 tone=tone.name,
-                filename=filename,
-                api_version=self.api_version
+                filename=filename
             )
         except Exception as e:
             logger.warning(f"Failed to log TTS usage: {str(e)}")
 
-        # Route to v1 or v3 based on config
-        if self.api_version == "v1":
-            logger.debug(f"Synthesizing with v1 API: {text[:50]}...")
-            self._synthesize_v1(text, filename, tone, lang)
-        else:  # v3
-            model = self.voice_model(tone=tone, lang=lang)
-            try:
-                logger.debug(f"Synthesizing with v3 SDK: {text[:50]}...")
-                result = model.synthesize(text, raw_format=False)
-                result.export(filename, "wav")
-                logger.debug(f"Audio content written to file {filename}")
-            except Exception as e:
-                logger.error(f"Error during speech synthesis: {str(e)}")
-                raise
+        # Synthesize using v3 SDK
+        model = self.voice_model(tone=tone, lang=lang)
+        try:
+            logger.debug(f"Synthesizing with v3 SDK: {text[:50]}...")
+            result = model.synthesize(text, raw_format=False)
+            result.export(filename, "wav")
+            logger.debug(f"Audio content written to file {filename}")
+        except Exception as e:
+            logger.error(f"Error during speech synthesis: {str(e)}")
+            raise
 
     def max_text_length(self) -> int:
         return -1
@@ -719,7 +539,7 @@ class YandexTTSEngine(TTSEngine):
         lang=Language.RUSSIAN,
     ) -> bool:
         """
-        Asynchronously synthesize speech using Yandex TTS (v1 or v3 based on config).
+        Asynchronously synthesize speech using Yandex TTS (v3 SDK).
 
         Args:
             session (aiohttp.ClientSession): An aiohttp client session.
@@ -735,33 +555,19 @@ class YandexTTSEngine(TTSEngine):
             logger.warning("Empty text to synthesize, skipping")
             return True
 
-        # Log TTS usage with correct API version
+        # Log TTS usage
         try:
             log_tts_usage(
                 text=text,
                 engine="YandexTTSEngine",
                 lang=lang.name,
                 tone=tone.name,
-                filename=filename,
-                api_version=self.api_version
+                filename=filename
             )
         except Exception as e:
             logger.warning(f"Failed to log TTS usage: {str(e)}")
 
-        # Use TTS buffer if enabled
-        if self.tts_buffer is not None:
-            logger.debug(f"Adding to TTS buffer: {text[:50]}...")
-            await self.tts_buffer.add_sentence(
-                text,
-                self._do_synthesize_async,
-                session,
-                filename,
-                tone,
-                lang
-            )
-            return True
-
-        # No buffering - synthesize immediately
+        # Synthesize using v3 SDK
         return await self._do_synthesize_async(session, text, filename, tone, lang)
 
     async def _do_synthesize_async(
@@ -773,29 +579,23 @@ class YandexTTSEngine(TTSEngine):
         lang: Language
     ) -> bool:
         """
-        Internal method that actually performs synthesis (used by buffer).
+        Internal method that actually performs synthesis.
         """
-        # Route to v1 or v3 based on config
-        if self.api_version == "v1":
-            # v1 has native async support
-            logger.debug(f"Synthesizing with v1 API (async): {text[:50]}...")
-            return await self._synthesize_v1_async(session, text, filename, tone, lang)
-        else:
-            # v3 SDK doesn't have async API, use executor
-            logger.debug(f"Synthesizing with v3 SDK (executor): {text[:50]}...")
+        # v3 SDK doesn't have async API, use executor
+        logger.debug(f"Synthesizing with v3 SDK (executor): {text[:50]}...")
 
-            def synthesize_wrapper(par: dict) -> bytes:
-                """Wrapper method to call synthesize with the correct parameters."""
-                return par["model"].synthesize(par["text"], raw_format=True)
+        def synthesize_wrapper(par: dict) -> bytes:
+            """Wrapper method to call synthesize with the correct parameters."""
+            return par["model"].synthesize(par["text"], raw_format=True)
 
-            loop = asyncio.get_event_loop()
-            args = {"model": self.voice_model(tone=tone, lang=lang), "text": text}
-            result = await loop.run_in_executor(None, synthesize_wrapper, args)
+        loop = asyncio.get_event_loop()
+        args = {"model": self.voice_model(tone=tone, lang=lang), "text": text}
+        result = await loop.run_in_executor(None, synthesize_wrapper, args)
 
-            async with aiofiles.open(filename, "wb") as out:
-                await out.write(result)
+        async with aiofiles.open(filename, "wb") as out:
+            await out.write(result)
 
-            return True
+        return True
 
 
 class ElevenLabsAPIError(Exception):
