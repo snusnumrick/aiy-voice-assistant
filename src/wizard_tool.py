@@ -688,8 +688,21 @@ Depth: {depth}
 
         # save to doc folder
         doc_folder = _discover_doc_folder()
-        doc_filename = f"{title}.md"
         if doc_folder and title and content:
+            # Apply same filename length limits to doc folder save
+            doc_filename = f"{timestamp}_{safe_title}.md"
+            # Ensure it doesn't exceed filesystem limits (typically 255 bytes)
+            max_doc_filename_bytes = 250  # Conservative limit
+            doc_filename_bytes = doc_filename.encode('utf-8')
+
+            if len(doc_filename_bytes) > max_doc_filename_bytes:
+                # Truncate to fit
+                while len(doc_filename.encode('utf-8')) > max_doc_filename_bytes:
+                    doc_filename = doc_filename[:-1]
+                # Ensure it still has .md extension
+                if not doc_filename.endswith('.md'):
+                    doc_filename = doc_filename[:-3] + '.md'
+
             doc_path = doc_folder / doc_filename
             with open(doc_path, "w") as f:
                 f.write(content)
@@ -703,9 +716,11 @@ Depth: {depth}
 
         Returns comma-separated list of filenames
         """
+        logger.info("Listing saved wizard reports...")
         reports_dir = Path(self.config.get("wizard_reports_dir", "wizard_reports"))
 
         if not reports_dir.exists():
+            logger.warning(f"Reports directory {reports_dir} does not exist")
             return ""
 
         reports = [filepath.name for filepath in reports_dir.glob("*.md")]
