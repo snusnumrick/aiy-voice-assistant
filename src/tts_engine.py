@@ -537,14 +537,14 @@ class YandexTTSEngine(TTSEngine):
         if lang == Language.RUSSIAN and tone in self.roles:
             data["role"] = self.roles[tone]
 
-        # Make request
+        # Make request with JSON payload
         headers = {
             "Authorization": f"Api-Key {self.api_key}",
-            "Content-Type": "application/x-www-form-urlencoded",
+            "Content-Type": "application/json",
         }
 
         try:
-            response = requests.post(url, headers=headers, data=data)
+            response = requests.post(url, headers=headers, json=data)
             response.raise_for_status()
 
             with open(filename, "wb") as f:
@@ -596,14 +596,14 @@ class YandexTTSEngine(TTSEngine):
         if lang == Language.RUSSIAN and tone in self.roles:
             data["role"] = self.roles[tone]
 
-        # Make request
+        # Make request with JSON payload
         headers = {
             "Authorization": f"Api-Key {self.api_key}",
-            "Content-Type": "application/x-www-form-urlencoded",
+            "Content-Type": "application/json",
         }
 
         try:
-            async with session.post(url, headers=headers, data=data) as response:
+            async with session.post(url, headers=headers, json=data) as response:
                 if response.status == 200:
                     async with aiofiles.open(filename, "wb") as f:
                         await f.write(await response.read())
