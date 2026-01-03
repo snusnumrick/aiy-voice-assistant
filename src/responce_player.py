@@ -328,15 +328,17 @@ class ResponsePlayer:
         This method runs in a separate thread and continuously processes items from the merge queue.
         It groups audio files with the same LED behavior and calls _process_wav_list to merge them.
         """
-        logger.debug("Starting merge process")
+        logger.info("Merge thread started")
         while True:
             with self.lock:
-                if not self._should_play and self.merge_queue.empty():
+                # Only exit if should_play is False AND queue is empty AND wav_list is processed
+                if not self._should_play and self.merge_queue.empty() and not self.wav_list:
+                    logger.info("Merge thread: exiting (should_play=False, queues empty)")
                     break
                 try:
                     mi: MergeItem = self.merge_queue.get_nowait()
-                    logger.debug(
-                        f"({time_string_ms(self.timezone)}) merging {mi.light} {mi.filename} {self.wav_list_light} {self.wav_list}"
+                    logger.info(
+                        f"Merge thread: got item {mi.filename}"
                     )
                     if not self.wav_list:
                         self.wav_list_light = mi.light
@@ -349,11 +351,12 @@ class ResponsePlayer:
                         self.wav_list = [(mi.filename, mi.text)]
                 except queue.Empty:
                     if self.wav_list:
+                        logger.info(f"Merge thread: processing {len(self.wav_list)} files")
                         self._process_wav_list()
             with self.condition:
                 if self.merge_queue.empty() and self._should_play:
                     self.condition.wait(timeout=1.0)
-        logger.debug("Merge process ended")
+        logger.info("Merge thread ended")
 
     def _process_wav_list(self):
         """
@@ -363,13 +366,11 @@ class ResponsePlayer:
         into a single file, or add a single WAV file directly to the playlist.
         """
         with self.lock:
-            logger.debug(f"process wav list {self.wav_list}")
-
             if not self.wav_list:
                 return
 
-            logger.debug(
-                f"({time_string_ms(self.timezone)}) merging {self.wav_list_light} {self.wav_list} {self.playlist}"
+            logger.info(
+                f"_process_wav_list: {len(self.wav_list)} files -> playlist"
             )
 
             light = self.wav_list_light
