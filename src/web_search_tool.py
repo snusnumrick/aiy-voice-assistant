@@ -49,6 +49,14 @@ class WebSearchTool:
             ],
             required=["query"],
             processor=self.do_search_async,
+            rule_instructions={
+                "russian": (
+                    "Перед поиском в интернете скажи что собираешься поискать. "
+                ),
+                "english": (
+                    "Before searching the internet, say that you are going to search. "
+                )
+            },
         )
 
     def __init__(self, config: Config):
