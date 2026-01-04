@@ -637,7 +637,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
             ]
         }
 
-    def get_response(self, messages: MessageList) -> str:
+    def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
         """
         Generate a response using Google Gemini model.
 
@@ -1179,14 +1179,14 @@ async def main_async():
     # model = ClaudeAIModel(config)
     messages = [
         {"role": "system", "content": system},
-        {"role": "user", "content": (
-                "Как связаны время и сознание с точки зрения современной науки? "
-                "Какие существуют теории о природе этой связи и "
-                "что говорят последние исследования в нейронауке и философии сознания?"
-            )},
+        # {"role": "user", "content": (
+        #         "Как связаны время и сознание с точки зрения современной науки? "
+        #         "Какие существуют теории о природе этой связи и "
+        #         "что говорят последние исследования в нейронауке и философии сознания?"
+        #     )},
         # {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4. Use code interpreter tool"},
         # {"role": "user", "content": "how many r in word strawberry? think it through"},
-        # {"role": "user", "content": "в каком клубе снйчас играет Месси"},
+        {"role": "user", "content": "в каком клубе снйчас играет Месси"},
         # {"role": "user", "content": "где именно встретятся трамп с путиным, проверь свежие новости"},
         # {"role": "user", "content": "Что такое бегство декурионов в Поздней Римской империи?"},
     ]

@@ -153,6 +153,33 @@ class Perplexity(SearchProvider):
         return response
 
 
+class GeminiSearch(SearchProvider):
+    """
+    Google search provider without AI processing to reduce costs.
+    Returns raw search results directly from Google's Custom Search API.
+    """
+
+    def __init__(self, config: Config):
+        from google import genai
+        from google.genai import types
+
+        # self.model = GeminiAIModeWithTools(config, builtin_tools=[BuiltinTools.SEARCH], model_id = "gemini-flash-lite-latest")
+        self.client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+        self.config = types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
+
+    async def search(self, query: str) -> str:
+        start_time = time.time()
+        response = await self.client.aio.models.generate_content(
+            model="gemini-flash-lite-latest",
+            contents=query,
+            config=self.config,
+        )
+
+        duration = time.time() - start_time
+        logger.debug(f"Gemini search (raw) took {duration:.2f} seconds")
+        return response.text
+
+
 class Tavily(SearchProvider):
     def __init__(self, config: Config):
         self.api_key = os.environ.get("TAVILY_API_KEY")
@@ -279,6 +306,7 @@ class WebSearcher:
         self.google_cs = GoogleCustomSearch(config)
         self.ai_model = OpenRouterModel(config, use_simple_model=True)
         self.perplexity = Perplexity(config)
+        self.gemini = GeminiSearch(config)
         self.ddgs = DuckDuckGoSearch(config)
         self.config = config
 
@@ -305,7 +333,7 @@ class WebSearcher:
         logger.info(f"Searching for {query}")
         start_time = time.time()
 
-        providers = ["tavily", "perplexity"]
+        providers = ["gemini", "tavily", "perplexity"]
 
         try:
             combined_result = await self.search_providers_async(query, providers)
@@ -331,16 +359,9 @@ class WebSearcher:
 async def loop():
     config = Config()
     web_searcher = WebSearcher(config)
-    ai_model = OpenRouterModel(config, use_simple_model=True)
     while True:
         query = input(">")
-        result = await web_searcher.search_async(query)
-
-        prompt = (
-            f"Answer short. Based on result from internet search below, what is the answer to the question: "
-            f"{query}\n\n{result}"
-        )
-        result = ai_model.get_response([{"role": "user", "content": prompt}])
+        result = await web_searcher.search_providers_async(query, ["gemini"])
         print(result)
 
 
