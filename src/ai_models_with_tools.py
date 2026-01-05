@@ -282,7 +282,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         try:
             if streaming:
                 async for response in self._get_response_async_streaming(messages):
-                    logger.debug(f"{self._time_str()}AI response: {response}")
+                    logger.info(f"{self._time_str()}Claude: AI response: {response}")
                     yield response
             else:
                 async for response in self._get_response_async_plain(messages):
@@ -503,7 +503,10 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                             yield sentence
 
                 elif event_type == "content_block_start":
-                    current_tool_use = process_content_block_start(event)
+                    content = event.get("content_block", {})
+                    if content.get("type") == "tool_use":
+                        logger.info(f"{self._time_str()}Processing tool use: {event['content_block']['name']}")
+                        current_tool_use = process_content_block_start(event)
 
                 elif event_type == "content_block_stop":
                     async for sentence in process_content_block_stop(
@@ -519,12 +522,15 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                         message_list, assistant_message
                     ):
                         if sentence:
+                            logger.info(
+                                f"{self._time_str()}Yielding on message stop: {sentence}"
+                            )
                             yield sentence
                     current_text = ""
                     assistant_message = ""
 
             if current_text:
-                logger.debug(
+                logger.info(
                     f"{self._time_str()}Yielding remaining text: {current_text}"
                 )
                 yield current_text
