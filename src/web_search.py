@@ -318,7 +318,7 @@ class WebSearcher:
         self.config = config
 
     async def search_providers_async(self, query: str, enabled_providers):
-        logger.info(f"Searching for {query} with providers: {enabled_providers}")
+        logger.debug(f"Searching for {query} with providers: {enabled_providers}")
 
         # Run search in a thread pool to avoid HTTP event loop saturation
         # This prevents search from competing with TTS HTTP requests
@@ -334,7 +334,7 @@ class WebSearcher:
                     f"Error while searching with provider {provider}: {str(result)}"
                 )
             else:
-                logger.info(f"\n---------\n{provider} result: {result}")
+                logger.debug(f"\n---------\n{provider} result: {result}")
                 combined_result += f"Result from {provider}: \n{result}\n"
 
         return combined_result
@@ -378,7 +378,7 @@ class WebSearcher:
         return asyncio.run(provider.search(query))
 
     async def search_async(self, query: str) -> str:
-        logger.info(f"Searching for {query}")
+        logger.debug(f"Searching for {query}")
         start_time = time.time()
 
         providers = ["gemini", "tavily", "perplexity"]
@@ -394,7 +394,7 @@ class WebSearcher:
             result = combined_result
 
             duration = time.time() - start_time
-            logger.info(
+            logger.debug(
                 f"Final search took {duration:.2f} seconds; result for query '{query}' is: {result}"
             )
             return result

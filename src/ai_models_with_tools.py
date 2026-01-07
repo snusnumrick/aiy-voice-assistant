@@ -282,7 +282,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         try:
             if streaming:
                 async for response in self._get_response_async_streaming(messages):
-                    logger.info(f"{self._time_str()}Claude: AI response: {response}")
+                    logger.debug(f"{self._time_str()}Claude: AI response: {response}")
                     yield response
             else:
                 async for response in self._get_response_async_plain(messages):
@@ -524,7 +524,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                         message_list, assistant_message
                     ):
                         if sentence:
-                            logger.info(
+                            logger.debug(
                                 f"{self._time_str()}Yielding on message stop: {sentence}"
                             )
                             yield sentence
@@ -532,7 +532,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     assistant_message = ""
 
             if current_text:
-                logger.info(
+                logger.debug(
                     f"{self._time_str()}Yielding remaining text: {current_text}"
                 )
                 yield current_text

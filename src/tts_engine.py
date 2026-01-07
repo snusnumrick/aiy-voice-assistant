@@ -42,18 +42,16 @@ from pydub import AudioSegment
 # Set up logging
 logger = logging.getLogger(__name__)
 
-# Try to import grpc.aio for true async TTS
+# Check for HTTP client availability for async TTS
+# HTTP REST API works with standard aiohttp, no special imports needed
 try:
-    import grpc.aio
-    from grpc.aio import secure_channel  # This specifically checks for grpc.aio
-    import yandex.cloud.ai.tts.v3.tts_pb2 as tts_pb2
-    import yandex.cloud.ai.tts.v3.tts_service_pb2_grpc as tts_svc
-    GRPC_AIO_AVAILABLE = True
-    logger.info("gRPC aio available - using async TTS")
+    import aiohttp
+    HTTP_CLIENT_AVAILABLE = True
+    logger.info("aiohttp available - can use async HTTP TTS")
 except (ImportError, ModuleNotFoundError):
-    GRPC_AIO_AVAILABLE = False
+    HTTP_CLIENT_AVAILABLE = False
     from speechkit import model_repository
-    logger.info("gRPC aio not available - using synchronous speechkit")
+    logger.info("aiohttp not available - using synchronous speechkit")
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -440,8 +438,9 @@ class GoogleTTSEngine(TTSEngine):
 
 class YandexTTSEngine(TTSEngine):
     """
-    Implementation of TTSEngine using Yandex SpeechKit v3 with true async support.
-    Uses grpc.aio when available for non-blocking async TTS, falls back to speechkit.
+    Implementation of TTSEngine using Yandex SpeechKit v3.
+    Uses HTTP REST API for async TTS when available, falls back to sync speechkit.
+    Runs search in thread pool to avoid event loop saturation with TTS HTTP requests.
     """
 
     def __init__(self, config, timezone: str = ""):
@@ -459,18 +458,19 @@ class YandexTTSEngine(TTSEngine):
                 "Yandex API key is not provided in environment variables or configuration"
             )
 
-        self.use_async = GRPC_AIO_AVAILABLE
+        self.use_async = HTTP_CLIENT_AVAILABLE
         self.timezone = timezone
 
+        # Create dedicated thread pool for TTS to avoid competition with search
+        import concurrent.futures
+        self.tts_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="tts-synthesis"
+        )
+
         if self.use_async:
-            logger.info("Using async gRPC for TTS - will be truly non-blocking")
-            # Get IAM token for async API
-            try:
-                import yandexcloud
-                self.iam_token = yandexcloud.YC_LOGIN_TOKEN
-            except ImportError:
-                # Will get token later if needed
-                self.iam_token = None
+            logger.info("Using async HTTP API for TTS - will be truly non-blocking")
+            # Note: HTTP API uses API key directly, no IAM token needed
+            self.iam_token = None
         else:
             logger.info("Using synchronous speechkit for TTS")
             from speechkit import configure_credentials, creds
@@ -621,19 +621,19 @@ class YandexTTSEngine(TTSEngine):
         Uses async gRPC when available, falls back to sync speechkit.
         """
         start_time = time.time()
-        logger.info(f"TTS synthesis start time: {time.strftime('%H:%M:%S', time.localtime(start_time))}")
+        logger.debug(f"TTS synthesis start time: {time.strftime('%H:%M:%S', time.localtime(start_time))}")
 
         if self.use_async:
-            # Use async gRPC API - truly non-blocking
-            logger.info(f"Synthesizing with async gRPC API: {text[:50]}...")
-            audio_data = await self._synthesize_async_grpc(text, tone, lang)
+            # Use async HTTP API - truly non-blocking
+            logger.debug(f"Synthesizing with async HTTP API: {text[:50]}...")
+            audio_data = await self._synthesize_async_http(text, tone, lang)
         else:
             # Fall back to sync speechkit in thread pool
-            logger.info(f"Synthesizing with sync speechkit: {text[:50]}...")
+            logger.debug(f"Synthesizing with sync speechkit: {text[:50]}...")
             audio_data = await self._synthesize_sync_wrapper(text, tone, lang)
 
         synthesis_time = time.time() - start_time
-        logger.info(f"TTS synthesis completed in {synthesis_time:.2f} seconds for text: {text[:50]}...")
+        logger.debug(f"TTS synthesis completed in {synthesis_time:.2f} seconds for text: {text[:50]}...")
 
         write_start = time.time()
         async with aiofiles.open(filename, "wb") as out:
@@ -642,32 +642,32 @@ class YandexTTSEngine(TTSEngine):
         logger.debug(f"TTS file write completed in {write_time:.2f} seconds")
 
         total_time = time.time() - start_time
-        logger.info(f"TTS total time: {total_time:.2f} seconds")
+        logger.debug(f"TTS total time: {total_time:.2f} seconds")
         return True
 
-    async def _synthesize_async_grpc(
+    async def _synthesize_async_http(
         self,
         text: str,
         tone: Tone,
         lang: Language
     ) -> bytes:
         """
-        Synthesize using HTTP REST API to avoid gRPC conflicts with search.
+        Synthesize using HTTP REST API to avoid event loop saturation with search.
         """
         try:
-            # Use HTTP REST API to avoid gRPC conflicts
-            logger.info(f"Using HTTP REST API for TTS (avoiding gRPC conflicts): {text[:50]}...")
+            # Use HTTP REST API for async TTS
+            logger.debug(f"Using HTTP REST API for TTS: {text[:50]}...")
 
             # Prepare request data
             voice = self.lang_voices[lang]
             role = self.roles.get(tone, "neutral")
 
-            # Correct HTTP REST API endpoint
+            # HTTP REST API endpoint
             url = "https://tts.api.cloud.yandex.net/tts/v3/utteranceSynthesis"
 
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
-                "x-folder-id": "b1gneg45domem8k0u9l3",  # Correct folder ID
+                "x-folder-id": "b1gneg45domem8k0u9l3",
                 "Content-Type": "application/json"
             }
 
@@ -686,7 +686,7 @@ class YandexTTSEngine(TTSEngine):
                         result = await response.json()
                         # Response contains base64-encoded audio
                         audio_data = base64.b64decode(result["result"]["audioChunk"]["data"])
-                        logger.info(f"HTTP TTS synthesis completed successfully")
+                        logger.debug(f"HTTP TTS synthesis completed successfully")
                         return audio_data
                     else:
                         error_text = await response.text()
@@ -694,21 +694,8 @@ class YandexTTSEngine(TTSEngine):
 
         except Exception as e:
             logger.error(f"HTTP TTS synthesis failed: {str(e)}")
-            # Fall back to async gRPC
-            logger.warning("Falling back to async gRPC")
-            return await self._synthesize_async_grpc_fallback(text, tone, lang)
-
-    async def _synthesize_async_grpc_fallback(
-        self,
-        text: str,
-        tone: Tone,
-        lang: Language
-    ) -> bytes:
-        """
-        Fallback to sync wrapper.
-        """
-        logger.warning("Falling back to synchronous synthesis")
-        return await self._synthesize_sync_wrapper(text, tone, lang)
+            logger.warning("Falling back to synchronous speechkit")
+            return await self._synthesize_sync_wrapper(text, tone, lang)
 
     async def _synthesize_sync_wrapper(
         self,
@@ -717,13 +704,44 @@ class YandexTTSEngine(TTSEngine):
         lang: Language
     ) -> bytes:
         """
-        Fallback: Use async gRPC even in sync mode to avoid speechkit gRPC conflicts.
+        Fallback: Use synchronous speechkit in thread pool.
         """
-        # Use async gRPC to avoid speechkit conflicts
-        # Even if grpc.aio detection failed, try to use it
-        if not self.use_async:
-            logger.info("Attempting async gRPC even in sync mode to avoid conflicts")
-        return await self._synthesize_async_grpc(text, tone, lang)
+        # Run sync speechkit in thread pool to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self.tts_executor,
+            self._synthesize_sync, text, tone, lang
+        )
+
+    def _synthesize_sync(
+        self,
+        text: str,
+        tone: Tone,
+        lang: Language
+    ) -> bytes:
+        """
+        Synchronous synthesis using speechkit SDK.
+        """
+        logger.debug(f"Using synchronous speechkit SDK: {text[:50]}...")
+        model = self.voice_model(tone=tone, lang=lang)
+
+        # Create a temporary file to capture audio
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            result = model.synthesize(text, raw_format=False)
+            result.export(tmp_path, "wav")
+
+            # Read the file and return as bytes
+            with open(tmp_path, "rb") as f:
+                return f.read()
+        finally:
+            # Clean up temp file
+            import os
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
 
 class ElevenLabsAPIError(Exception):
@@ -1026,7 +1044,7 @@ class ElevenLabsTTSEngine(TTSEngine):
                 session, text, voice_id
             )
             if history_item_id:
-                logger.info(f"Found existing audio for text: {text[:30]}...")
+                logger.debug(f"Found existing audio for text: {text[:30]}...")
                 mp3_filename = f"{filename}.mp3"
                 await self._download_audio_async(session, history_item_id, mp3_filename)
                 await self._convert_mp3_to_wav_async(mp3_filename, filename)
@@ -1137,7 +1155,7 @@ class ElevenLabsTTSEngine(TTSEngine):
         try:
             history_item_id = self._find_matching_history_item(text, voice_id)
             if history_item_id:
-                logger.info(f"Found existing audio for text: {text[:30]}...")
+                logger.debug(f"Found existing audio for text: {text[:30]}...")
                 self._download_audio(history_item_id, filename + ".mp3")
                 self._convert_mp3_to_wav(filename + ".mp3", filename)
                 os.remove(filename + ".mp3")

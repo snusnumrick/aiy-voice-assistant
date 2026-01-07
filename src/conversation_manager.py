@@ -496,7 +496,7 @@ class ConversationManager:
 
             # backup existing facts.json, rename it facts_prev.json
             if p.exists():
-                logger.info("backup existing facts.json")
+                logger.debug("backup existing facts.json")
                 p.rename("facts_prev.json")
 
             self.save_facts(self.facts)
@@ -529,7 +529,7 @@ class ConversationManager:
             self.rules = optimized_rules
             # backup existing rules
             if p.exists():
-                logger.info("backup existing rules.json")
+                logger.debug("backup existing rules.json")
                 p.rename("rules_prev.json")
             self.save_rules(self.rules)
 
@@ -547,15 +547,15 @@ class ConversationManager:
                     "Это необязательно, но может хочешь еще что-нибудь запомнить "
                     "из нашего разговора перед тем как его удалю?",
                 )
-                logger.info(f"form new memory by asking {prompt}")
+                logger.debug(f"form new memory by asking {prompt}")
                 num_facts_before = len(self.facts)
                 async for ai_response in self.get_response(prompt):
-                    logger.info("CM: AI response: %s", ai_response)
+                    logger.debug("CM: AI response: %s", ai_response)
                 num_facts_after_clean = len(self.facts)
                 if num_facts_after_clean == num_facts_before:
-                    logger.info("no new memories formed")
+                    logger.debug("no new memories formed")
                 else:
-                    logger.info(
+                    logger.debug(
                         f"{num_facts_after_clean - num_facts_before} new facts remembered"
                     )
 
@@ -577,19 +577,19 @@ class ConversationManager:
 
         removed_facts = list(existing_facts - set(self.facts))
         if removed_facts:
-            logger.info(f"removed facts: \n{newline.join(removed_facts)}")
+            logger.debug(f"removed facts: \n{newline.join(removed_facts)}")
 
         new_facts = list(set(self.facts) - existing_facts)
         if new_facts:
-            logger.info(f"new facts: \n{newline.join(new_facts)}")
+            logger.debug(f"new facts: \n{newline.join(new_facts)}")
 
         removed_rules = list(existing_rules - set(self.rules))
         if removed_rules:
-            logger.info(f"removed rules: \n{newline.join(removed_rules)}")
+            logger.debug(f"removed rules: \n{newline.join(removed_rules)}")
 
         new_rules = list(set(self.rules) - existing_rules)
         if new_rules:
-            logger.info(f"new rules: \n{newline.join(new_rules)}")
+            logger.debug(f"new rules: \n{newline.join(new_rules)}")
 
         # remove temp wav files
         num_removed = 0
@@ -603,7 +603,7 @@ class ConversationManager:
                     logger.warning(
                         f"Error occurred while trying to remove {filepath}. Error: {e}"
                     )
-        logger.info(f"removed {num_removed} temp wav files")
+        logger.debug(f"removed {num_removed} temp wav files")
 
     @staticmethod
     def load_facts():
