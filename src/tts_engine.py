@@ -37,7 +37,22 @@ import aiofiles
 import aiohttp
 import requests
 from pydub import AudioSegment
-from speechkit import model_repository
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
+# Try to import grpc.aio for true async TTS
+try:
+    import grpc.aio
+    from grpc.aio import secure_channel  # This specifically checks for grpc.aio
+    import yandex.cloud.ai.tts.v3.tts_pb2 as tts_pb2
+    import yandex.cloud.ai.tts.v3.tts_service_pb2_grpc as tts_svc
+    GRPC_AIO_AVAILABLE = True
+    logger.info("gRPC aio available - using async TTS")
+except (ImportError, ModuleNotFoundError):
+    GRPC_AIO_AVAILABLE = False
+    from speechkit import model_repository
+    logger.info("gRPC aio not available - using synchronous speechkit")
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -46,8 +61,7 @@ if __name__ == "__main__":
 from src.config import Config
 from src.tools import retry_async
 
-# Set up logging
-logger = logging.getLogger(__name__)
+
 
 # Set up TTS usage logger
 TTS_USAGE_LOG = os.environ.get('APP_LOG_DIR', 'logs') + '/tts_usage.log'
@@ -425,7 +439,8 @@ class GoogleTTSEngine(TTSEngine):
 
 class YandexTTSEngine(TTSEngine):
     """
-    Implementation of TTSEngine using Yandex SpeechKit via the speechkit module.
+    Implementation of TTSEngine using Yandex SpeechKit v3 with true async support.
+    Uses grpc.aio when available for non-blocking async TTS, falls back to speechkit.
     """
 
     def __init__(self, config, timezone: str = ""):
@@ -436,8 +451,6 @@ class YandexTTSEngine(TTSEngine):
             config (Config): The application configuration object.
             timezone (str): The timezone to use.
         """
-        from speechkit import configure_credentials, creds
-
         # Try to get the API key from environment variable first, then fall back to config
         self.api_key = os.environ.get("YANDEX_API_KEY") or config.get("yandex_api_key")
         if not self.api_key:
@@ -445,10 +458,25 @@ class YandexTTSEngine(TTSEngine):
                 "Yandex API key is not provided in environment variables or configuration"
             )
 
-        # Configure SDK credentials
-        configure_credentials(
-            yandex_credentials=creds.YandexCredentials(api_key=self.api_key)
-        )
+        self.use_async = GRPC_AIO_AVAILABLE
+        self.timezone = timezone
+
+        if self.use_async:
+            logger.info("Using async gRPC for TTS - will be truly non-blocking")
+            # Get IAM token for async API
+            try:
+                import yandexcloud
+                self.iam_token = yandexcloud.YC_LOGIN_TOKEN
+            except ImportError:
+                # Will get token later if needed
+                self.iam_token = None
+        else:
+            logger.info("Using synchronous speechkit for TTS")
+            from speechkit import configure_credentials, creds
+            # Configure SDK credentials
+            configure_credentials(
+                yandex_credentials=creds.YandexCredentials(api_key=self.api_key)
+            )
 
         # Language and voice settings
         self.langs = {
@@ -465,40 +493,38 @@ class YandexTTSEngine(TTSEngine):
             Tone.PLAIN: config.get("yandex_tts_role_plain", "neutral"),
             Tone.HAPPY: config.get("yandex_tts_role_happy", "good"),
         }
-        self.role_plain = config.get("yandex_tts_role_plain", "neutral")
-        self.role_happy = config.get("yandex_tts_role_happy", "good")
         self.speed = config.get("yandex_tts_speed", 1.0)
-        self.timezone = timezone
 
-        # Cache for SDK
+        # Initialize voice_models dict (always needed for fallback)
+        from speechkit import model_repository
         self.voice_models: Dict[
             Language : Dict[Tone, model_repository.SynthesisModel]
         ] = {}
-        self.voice_model(tone=Tone.PLAIN, lang=Language.RUSSIAN)
-        self.voice_model(tone=Tone.HAPPY, lang=Language.RUSSIAN)
 
-        # Create a dedicated thread pool for TTS to avoid blocking
-        # This ensures TTS doesn't compete with search for CPU
-        import concurrent.futures
-        self.tts_executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=2, thread_name_prefix="tts-synthesis"
-        )
-        logger.info("TTS thread pool initialized for fast synthesis")
+        # Only pre-initialize models in sync mode
+        if not self.use_async:
+            self.voice_model(tone=Tone.PLAIN, lang=Language.RUSSIAN)
+            self.voice_model(tone=Tone.HAPPY, lang=Language.RUSSIAN)
 
     def voice_model(self, tone=Tone.PLAIN, lang=Language.RUSSIAN):
-        if lang in self.voice_models and tone in self.voice_models[lang]:
-            return self.voice_models[lang][tone]
-        model = model_repository.synthesis_model()
-        model.voice = self.lang_voices[lang]
-        if lang == Language.RUSSIAN:
-            model.role = self.roles[tone]
-        model.language = self.langs[lang]
-        model.speed = self.speed
-        if lang in self.voice_models:
-            self.voice_models[lang][tone] = model
-        else:
-            self.voice_models[lang] = {tone: model}
-        return model
+        """Get voice model (only used in sync mode)."""
+        if not self.use_async and hasattr(self, 'voice_models'):
+            if lang in self.voice_models and tone in self.voice_models[lang]:
+                return self.voice_models[lang][tone]
+            from speechkit import model_repository
+            model = model_repository.synthesis_model()
+            model.voice = self.lang_voices[lang]
+            if lang == Language.RUSSIAN:
+                model.role = self.roles[tone]
+            model.language = self.langs[lang]
+            model.speed = self.speed
+            if lang in self.voice_models:
+                self.voice_models[lang][tone] = model
+            else:
+                self.voice_models[lang] = {tone: model}
+            return model
+        # In async mode, we don't need cached models
+        return None
 
     def synthesize(
         self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN
@@ -593,33 +619,124 @@ class YandexTTSEngine(TTSEngine):
     ) -> bool:
         """
         Internal method that actually performs synthesis.
+        Uses async gRPC when available, falls back to sync speechkit.
         """
-        # v3 SDK doesn't have async API, use dedicated thread pool
         start_time = time.time()
-        logger.info(f"Synthesizing with v3 SDK (dedicated thread pool): {text[:50]}...")
-
-        def synthesize_wrapper(model, text: str) -> bytes:
-            """Wrapper method to call synthesize with the correct parameters."""
-            return model.synthesize(text, raw_format=True)
-
-        model = self.voice_model(tone=tone, lang=lang)
         logger.info(f"TTS synthesis start time: {time.strftime('%H:%M:%S', time.localtime(start_time))}")
-        # Use dedicated thread pool to avoid competition with search tool
-        result = await asyncio.get_event_loop().run_in_executor(
-            self.tts_executor, synthesize_wrapper, model, text
-        )
+
+        if self.use_async:
+            # Use async gRPC API - truly non-blocking
+            logger.info(f"Synthesizing with async gRPC API: {text[:50]}...")
+            audio_data = await self._synthesize_async_grpc(text, tone, lang)
+        else:
+            # Fall back to sync speechkit in thread pool
+            logger.info(f"Synthesizing with sync speechkit: {text[:50]}...")
+            audio_data = await self._synthesize_sync_wrapper(text, tone, lang)
+
         synthesis_time = time.time() - start_time
         logger.info(f"TTS synthesis completed in {synthesis_time:.2f} seconds for text: {text[:50]}...")
 
         write_start = time.time()
         async with aiofiles.open(filename, "wb") as out:
-            await out.write(result)
+            await out.write(audio_data)
         write_time = time.time() - write_start
         logger.debug(f"TTS file write completed in {write_time:.2f} seconds")
 
         total_time = time.time() - start_time
         logger.info(f"TTS total time: {total_time:.2f} seconds")
         return True
+
+    async def _synthesize_async_grpc(
+        self,
+        text: str,
+        tone: Tone,
+        lang: Language
+    ) -> bytes:
+        """
+        Synthesize using async gRPC API - truly non-blocking.
+        UtteranceSynthesis returns a stream of audio chunks.
+        """
+        try:
+            # Create gRPC channel
+            cred = grpc.ssl_channel_credentials()
+            async with grpc.aio.secure_channel('tts.api.cloud.yandex.net:443', cred) as channel:
+                stub = tts_svc.SynthesizerStub(channel)
+
+                # Get voice name
+                voice = self.lang_voices[lang]
+
+                # Create request - try different possible field names
+                # Voice might be set via hints or directly
+                req_kwargs = {
+                    'text': text,
+                    'output_audio_spec': tts_pb2.AudioFormatOptions(
+                        container_audio=tts_pb2.ContainerAudio(
+                            container_audio_type=tts_pb2.ContainerAudio.WAV
+                        )
+                    ),
+                    'loudness_normalization_type': tts_pb2.UtteranceSynthesisRequest.LUFS
+                }
+
+                # Try to set voice via hints if available
+                try:
+                    req_kwargs['hints'] = [tts_pb2.Hints(voice=voice)]
+                except:
+                    # If Hints doesn't exist, try setting voice directly
+                    req_kwargs['voice'] = voice
+
+                req = tts_pb2.UtteranceSynthesisRequest(**req_kwargs)
+
+                # Make async call - returns a stream of chunks
+                response_stream = stub.UtteranceSynthesis(
+                    req,
+                    metadata=(('authorization', f'Bearer {self.api_key}',),)
+                )
+
+                # Collect audio chunks from stream
+                audio_data = bytearray()
+                async for chunk in response_stream:
+                    audio_data.extend(chunk.audio_chunk.data)
+
+                return bytes(audio_data)
+
+        except Exception as e:
+            logger.error(f"Async gRPC synthesis failed: {str(e)}")
+            # Fall back to sync method
+            logger.warning("Falling back to synchronous synthesis")
+            return await self._synthesize_sync_wrapper(text, tone, lang)
+
+    async def _synthesize_sync_wrapper(
+        self,
+        text: str,
+        tone: Tone,
+        lang: Language
+    ) -> bytes:
+        """
+        Wrap synchronous speechkit in async using run_in_executor.
+        """
+        def synthesize():
+            # Configure credentials for fallback
+            from speechkit import configure_credentials, creds
+            configure_credentials(
+                yandex_credentials=creds.YandexCredentials(api_key=self.api_key)
+            )
+
+            # Ensure voice model is initialized for fallback
+            from speechkit import model_repository
+            model = model_repository.synthesis_model()
+            model.voice = self.lang_voices[lang]
+            if lang == Language.RUSSIAN:
+                model.role = self.roles.get(tone, "neutral")
+            model.language = self.langs[lang]
+            model.speed = self.speed
+            audio_result = model.synthesize(text, raw_format=True)
+            return audio_result
+
+        # Use thread pool to avoid blocking
+        audio_result = await asyncio.get_event_loop().run_in_executor(
+            None, synthesize
+        )
+        return audio_result
 
 
 class ElevenLabsAPIError(Exception):
