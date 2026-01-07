@@ -25,6 +25,7 @@ import asyncio
 import logging
 import os
 import random
+import sys
 import time
 import json
 from abc import ABC, abstractmethod
@@ -37,6 +38,10 @@ import aiohttp
 import requests
 from pydub import AudioSegment
 from speechkit import model_repository
+
+if __name__ == "__main__":
+    # add current directory to python path
+    sys.path.append(os.getcwd())
 
 from src.config import Config
 from src.tools import retry_async
@@ -1138,7 +1143,7 @@ async def main():
     config = Config()
     engine = YandexTTSEngine(config)
     async with aiohttp.ClientSession() as session:
-        await engine.synthesize_async(session, "to be or not to be", "test.wav")
+        await engine.synthesize_async(session, "Сейчас поищу актуальную информацию о ситуации в Венесуэле.", "test.wav")
 
 
 if __name__ == "__main__":
