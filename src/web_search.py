@@ -319,10 +319,13 @@ class WebSearcher:
 
     async def search_providers_async(self, query: str, enabled_providers):
         logger.info(f"Searching for {query} with providers: {enabled_providers}")
-        tasks = [
-            getattr(self, provider).search(query) for provider in enabled_providers
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Run search in a thread pool to avoid HTTP event loop saturation
+        # This prevents search from competing with TTS HTTP requests
+        loop = asyncio.get_event_loop()
+        results = await loop.run_in_executor(
+            None, self._search_providers_sync, query, enabled_providers
+        )
 
         combined_result = ""
         for provider, result in zip(enabled_providers, results):
@@ -335,6 +338,44 @@ class WebSearcher:
                 combined_result += f"Result from {provider}: \n{result}\n"
 
         return combined_result
+
+    def _search_providers_sync(self, query: str, enabled_providers):
+        """
+        Synchronous wrapper for searching providers in a separate thread.
+        This avoids HTTP event loop saturation when combined with TTS requests.
+        """
+        import concurrent.futures
+
+        results = []
+
+        # Create a thread pool for concurrent search
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="search") as executor:
+            # Submit all search tasks to the thread pool
+            future_to_provider = {
+                executor.submit(self._search_single_provider, provider, query): provider
+                for provider in enabled_providers
+            }
+
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_provider):
+                provider = future_to_provider[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception as e:
+                    logger.error(f"Error in thread for provider {provider}: {str(e)}")
+                    results.append(e)
+
+        return results
+
+    def _search_single_provider(self, provider_name: str, query: str):
+        """
+        Execute search for a single provider synchronously.
+        Creates a new event loop for this thread since provider.search() is async.
+        """
+        provider = getattr(self, provider_name)
+        # Run the async search in a new event loop for this thread
+        return asyncio.run(provider.search(query))
 
     async def search_async(self, query: str) -> str:
         logger.info(f"Searching for {query}")
