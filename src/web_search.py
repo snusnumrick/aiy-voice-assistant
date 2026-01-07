@@ -160,24 +160,31 @@ class GeminiSearch(SearchProvider):
     """
 
     def __init__(self, config: Config):
-        from google import genai
-        from google.genai import types
-
-        # self.model = GeminiAIModeWithTools(config, builtin_tools=[BuiltinTools.SEARCH], model_id = "gemini-flash-lite-latest")
-        self.client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-        self.config = types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
+        self.api_key=os.environ.get("GEMINI_API_KEY", "")
+        self.model_id = "gemini-flash-lite-latest"
+        self.url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_id}:generateContent?key={self.api_key}"
 
     async def search(self, query: str) -> str:
         start_time = time.time()
-        response = await self.client.aio.models.generate_content(
-            model="gemini-flash-lite-latest",
-            contents=query,
-            config=self.config,
-        )
+        payload = {
+            "contents": [{"parts": [{"text": query}]}],
+            "tools": [{"google_search": {}}],
+        }
+        headers = {"Content-Type": "application/json"}
+        answer = ""
+        try:
+            response = requests.post(self.url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
 
+            # Extract the answer
+            candidate = data["candidates"][0]
+            answer = candidate["content"]["parts"][0]["text"]
+        except Exception as e:
+            logger.error(f"gemini search failed: {e}")
         duration = time.time() - start_time
         logger.debug(f"Gemini search (raw) took {duration:.2f} seconds")
-        return response.text
+        return answer
 
 
 class Tavily(SearchProvider):
