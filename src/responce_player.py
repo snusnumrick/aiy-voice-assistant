@@ -217,6 +217,7 @@ class ResponsePlayer:
             leds (Leds): An instance of the Leds class for controlling LED behavior.
             timezone (str): The timezone used for logging timestamps.
         """
+        logger.debug(f"Initializing ResponsePlayer with {len(playlist)} items")
         self.timezone = timezone
         self.leds = leds
         self.playlist = queue.Queue()
@@ -237,6 +238,8 @@ class ResponsePlayer:
         self.change_light_behavior({})
         self._playback_completed.set() # Set initially to prevent blocking stop() when no playback has occurred
 
+        logger.debug(f"ResponsePlayer initialized: _stopped={self._stopped}, _should_play={self._should_play}")
+
         for item in playlist:
             self.add(item)
 
@@ -244,8 +247,9 @@ class ResponsePlayer:
         """
         Add a new item to the merge queue and start merging if necessary.
 
-        If the player is in a stopped state, this method will ignore the add request.
-        When an item is added, it notifies the playback thread to wake up and process the new item.
+        If the player is in a stopped state, this method will reinitialize the player
+        to accept new audio. This is needed when a new conversation starts after
+        the previous one ended.
 
         Args:
             playitem (Tuple[Optional[Dict], str]): A tuple containing the LED behavior (or None) and the audio file path.
@@ -254,7 +258,8 @@ class ResponsePlayer:
         # (reinit creates new lock, can't do it while holding old lock)
         if self._stopped:
             logger.warning(
-                "reinit as player is stopped."
+                f"Player is stopped (_stopped={self._stopped}, _should_play={self._should_play}), reinitializing. "
+                f"This indicates the player was stopped - likely due to button press, error, or timeout."
             )
             self.__init__(playlist=[], leds=self.leds, timezone=self.timezone)
 
@@ -274,7 +279,10 @@ class ResponsePlayer:
             self.merge_thread = threading.Thread(target=self._merge_audio_files)
             self.merge_thread.start()
         if not self._should_play:
+            logger.debug("Starting playback for new audio")
             self.play()
+        else:
+            logger.debug("Playback already active, new audio will be queued")
 
     def change_light_behavior(self, behaviour: dict) -> None:
         """
@@ -472,10 +480,12 @@ class ResponsePlayer:
                     break
 
         logger.info("Stopping playback and clearing all queues")
+        logger.debug(f"Stop called - current state: _stopped={self._stopped}, _should_play={self._should_play}")
         with self.condition:
             self._should_play = False
             self._stopped = True
             self.condition.notify_all()
+        logger.debug(f"Stop set flags - _stopped={self._stopped}, _should_play={self._should_play}")
 
         if self.current_process:
             self.current_process.terminate()

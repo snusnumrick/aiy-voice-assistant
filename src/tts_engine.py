@@ -590,7 +590,7 @@ class YandexTTSEngine(TTSEngine):
             return model.synthesize(text, raw_format=True)
 
         model = self.voice_model(tone=tone, lang=lang)
-        logger.debug(f"TTS synthesis start time: {time.strftime('%H:%M:%S', time.localtime(start_time))}")
+        logger.info(f"TTS synthesis start time: {time.strftime('%H:%M:%S', time.localtime(start_time))}")
         result = await asyncio.get_event_loop().run_in_executor(None, synthesize_wrapper, model, text)
         synthesis_time = time.time() - start_time
         logger.info(f"TTS synthesis completed in {synthesis_time:.2f} seconds for text: {text[:50]}...")
@@ -1136,7 +1136,7 @@ async def main():
     Main function for testing the ElevenLabsTTSEngine.
     """
     config = Config()
-    engine = ElevenLabsTTSEngine(config)
+    engine = YandexTTSEngine(config)
     async with aiohttp.ClientSession() as session:
         await engine.synthesize_async(session, "to be or not to be", "test.wav")
 
