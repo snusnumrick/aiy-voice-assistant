@@ -582,19 +582,27 @@ class YandexTTSEngine(TTSEngine):
         Internal method that actually performs synthesis.
         """
         # v3 SDK doesn't have async API, use executor
+        start_time = time.time()
         logger.debug(f"Synthesizing with v3 SDK (executor): {text[:50]}...")
 
-        def synthesize_wrapper(par: dict) -> bytes:
+        def synthesize_wrapper(model, text: str) -> bytes:
             """Wrapper method to call synthesize with the correct parameters."""
-            return par["model"].synthesize(par["text"], raw_format=True)
+            return model.synthesize(text, raw_format=True)
 
-        loop = asyncio.get_event_loop()
-        args = {"model": self.voice_model(tone=tone, lang=lang), "text": text}
-        result = await loop.run_in_executor(None, synthesize_wrapper, args)
+        model = self.voice_model(tone=tone, lang=lang)
+        logger.debug(f"TTS synthesis start time: {time.strftime('%H:%M:%S', time.localtime(start_time))}")
+        result = await asyncio.get_event_loop().run_in_executor(None, synthesize_wrapper, model, text)
+        synthesis_time = time.time() - start_time
+        logger.info(f"TTS synthesis completed in {synthesis_time:.2f} seconds for text: {text[:50]}...")
 
+        write_start = time.time()
         async with aiofiles.open(filename, "wb") as out:
             await out.write(result)
+        write_time = time.time() - write_start
+        logger.debug(f"TTS file write completed in {write_time:.2f} seconds")
 
+        total_time = time.time() - start_time
+        logger.info(f"TTS total time: {total_time:.2f} seconds")
         return True
 
 

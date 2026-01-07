@@ -215,7 +215,7 @@ class DialogManager:
                             f"Task {next_response_index} took {completion_time - creation_time:.2f} seconds to complete"
                         )
 
-                    if await asyncio.wait_for(task, timeout=10.0):  # 10 second timeout
+                    if await asyncio.wait_for(task, timeout=20.0):  # 20 second timeout for slow TTS
                         logger.debug(f"Task {next_response_index} completed")
                         self.handle_successful_synthesis(response_info)
                         next_response_index += 1
