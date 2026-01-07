@@ -477,6 +477,14 @@ class YandexTTSEngine(TTSEngine):
         self.voice_model(tone=Tone.PLAIN, lang=Language.RUSSIAN)
         self.voice_model(tone=Tone.HAPPY, lang=Language.RUSSIAN)
 
+        # Create a dedicated thread pool for TTS to avoid blocking
+        # This ensures TTS doesn't compete with search for CPU
+        import concurrent.futures
+        self.tts_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="tts-synthesis"
+        )
+        logger.info("TTS thread pool initialized for fast synthesis")
+
     def voice_model(self, tone=Tone.PLAIN, lang=Language.RUSSIAN):
         if lang in self.voice_models and tone in self.voice_models[lang]:
             return self.voice_models[lang][tone]
@@ -586,9 +594,9 @@ class YandexTTSEngine(TTSEngine):
         """
         Internal method that actually performs synthesis.
         """
-        # v3 SDK doesn't have async API, use executor
+        # v3 SDK doesn't have async API, use dedicated thread pool
         start_time = time.time()
-        logger.debug(f"Synthesizing with v3 SDK (executor): {text[:50]}...")
+        logger.info(f"Synthesizing with v3 SDK (dedicated thread pool): {text[:50]}...")
 
         def synthesize_wrapper(model, text: str) -> bytes:
             """Wrapper method to call synthesize with the correct parameters."""
@@ -596,7 +604,10 @@ class YandexTTSEngine(TTSEngine):
 
         model = self.voice_model(tone=tone, lang=lang)
         logger.info(f"TTS synthesis start time: {time.strftime('%H:%M:%S', time.localtime(start_time))}")
-        result = await asyncio.get_event_loop().run_in_executor(None, synthesize_wrapper, model, text)
+        # Use dedicated thread pool to avoid competition with search tool
+        result = await asyncio.get_event_loop().run_in_executor(
+            self.tts_executor, synthesize_wrapper, model, text
+        )
         synthesis_time = time.time() - start_time
         logger.info(f"TTS synthesis completed in {synthesis_time:.2f} seconds for text: {text[:50]}...")
 
