@@ -506,6 +506,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     content = event.get("content_block", {})
                     if content.get("type") == "tool_use":
                         logger.info(f"{self._time_str()}Processing tool use: {event['content_block']['name']}")
+                        # Signal that a tool is about to be used
+                        yield "[[TOOL_USE]]"
                         current_tool_use = process_content_block_start(event)
 
                 elif event_type == "content_block_stop":

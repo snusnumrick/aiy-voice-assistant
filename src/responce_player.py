@@ -262,7 +262,7 @@ class ResponsePlayer:
             emo, file, text = playitem
             light = None if emo is None else emo.get("light", None)
             m_item = MergeItem(light=light, filename=file, text=text)
-            logger.debug(
+            logger.info(
                 f"({time_string_ms(self.timezone)}) Adding {m_item} to merge queue."
             )
             self.merge_queue.put(m_item)
@@ -333,7 +333,7 @@ class ResponsePlayer:
                     break
                 try:
                     mi: MergeItem = self.merge_queue.get_nowait()
-                    logger.debug(
+                    logger.info(
                         f"({time_string_ms(self.timezone)}) merging {mi.light} {mi.filename}"
                     )
                     if not self.wav_list:
@@ -364,7 +364,7 @@ class ResponsePlayer:
             if not self.wav_list:
                 return
 
-            logger.debug(
+            logger.info(
                 f"({time_string_ms(self.timezone)}) processing {len(self.wav_list)} files to playlist"
             )
 
@@ -381,7 +381,7 @@ class ResponsePlayer:
             with self.condition:
                 self.condition.notify()
 
-            logger.debug(
+            logger.info(
                 f"Processed and added merged audio to playlist: {self.wav_list_light}, {self.wav_list}"
             )
             self.wav_list = []
@@ -417,16 +417,16 @@ class ResponsePlayer:
                     and self.playlist.empty()
                     and self.merge_queue.empty()
                 ):
-                    logger.debug(
+                    logger.info(
                         f"({time_string_ms(self.timezone)}) wait for condition"
                     )
                     self.condition.wait()
                 if not self._should_play:
-                    logger.debug("_play_sequence: should_play=False, exiting")
+                    logger.info("_play_sequence: should_play=False, exiting")
                     break
                 try:
                     light, audio_file = self.playlist.get_nowait()
-                    logger.debug(
+                    logger.info(
                         f"({time_string_ms(self.timezone)}) got from playlist {audio_file}"
                     )
                 except queue.Empty:
@@ -434,7 +434,7 @@ class ResponsePlayer:
                     self._process_wav_list()
                     continue
 
-            logger.debug(
+            logger.info(
                 f"({time_string_ms(self.timezone)}) Playing {audio_file} with {light}"
             )
 

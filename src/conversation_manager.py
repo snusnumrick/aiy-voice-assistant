@@ -375,6 +375,21 @@ class ConversationManager:
             if rules:
                 logger.debug(f"Extracted rules: {rules}")
 
+            # Check if this is a tool use signal
+            if response_text.strip() == "[[TOOL_USE]]":
+                logger.debug("Received tool use signal, flushing sentence buffer")
+                # Flush buffer immediately when tool is about to be used
+                if buffer_enabled and sentence_buffer:
+                    logger.info(
+                        f"Sentence buffer: tool use detected, flushing {len(sentence_buffer)} sentences "
+                        f"({buffer_chars} chars)"
+                    )
+                    yield combine_buffer()
+                    sentence_buffer.clear()
+                    buffer_chars = 0
+                # Don't process further
+                continue
+
             # Process emotions and language for this sentence
             for emo, t in extract_emotions(response_text):
                 logger.debug(f"Emotion: {emo} -> {t}")
