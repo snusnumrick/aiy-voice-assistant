@@ -16,6 +16,7 @@ if __name__ == "__main__":
     
 from src.config import Config
 from src.ai_models_with_tools import Tool, ToolParameter
+from src.server_utils import get_server_url
 
 # Optional dependency for Image processing
 try:
@@ -162,7 +163,7 @@ class GeminiImageTool:
 
     def _discover_pictures_folder(self) -> Optional[Path]:
         """Discover cubie-server and get pictures folder path"""
-        server_url = 'http://localhost:5001'
+        server_url = get_server_url()
 
         try:
             logger.info(f"🔍 Discovering cubie-server at {server_url}...")

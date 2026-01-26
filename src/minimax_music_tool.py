@@ -7,6 +7,7 @@ from typing import Dict
 from pydub import AudioSegment
 from src.config import Config
 from src.ai_models_with_tools import Tool, ToolParameter
+from src.server_utils import get_server_url
 import logging
 
 # Optional dependency for MP3 metadata
@@ -66,7 +67,7 @@ class MiniMaxMusicTool:
 
     def _discover_music_folder(self) -> Path:
         """Discover cubie-server and get music folder path (from example_voice_assistant.py)"""
-        server_url = 'http://localhost:5001'
+        server_url = get_server_url()
 
         try:
             logger.info(f"🔍 Discovering cubie-server at {server_url}...")
@@ -92,7 +93,7 @@ class MiniMaxMusicTool:
 
     def _refresh_music_library(self):
         """Tell cubie-server to refresh its music library (from example_voice_assistant.py)"""
-        server_url = 'http://cubie-server.local:5001'
+        server_url = get_server_url(hostname='cubie-server.local')
 
         try:
             response = requests.post(f'{server_url}/api/refresh', timeout=5)

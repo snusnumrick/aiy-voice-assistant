@@ -10,6 +10,7 @@ import re
 from src.ai_models import OpenAIModel, to_reasoning_effort
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
+from src.server_utils import get_server_url
 import logging
 import asyncio
 import json
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def _discover_doc_folder() -> Optional[Path]:
     """Discover cubie-server and get documents folder path"""
-    server_url = "http://localhost:5001"
+    server_url = get_server_url()
 
     try:
         logger.info(f"🔍 Discovering cubie-server at {server_url}...")
