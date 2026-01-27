@@ -141,7 +141,7 @@ class HumeEmotionEngine(EmotionEngine):
         try:
             async with websockets.connect(
                 self.websocket_url,
-                additional_headers={"X-Hume-Api-Key": self.api_key}
+                extra_headers={"X-Hume-Api-Key": self.api_key}
             ) as ws:
                 # Read and encode audio file
                 with open(audio_file, "rb") as f:
@@ -200,7 +200,7 @@ class HumeEmotionEngine(EmotionEngine):
         try:
             async with websockets.connect(
                 self.websocket_url,
-                additional_headers={"X-Hume-Api-Key": self.api_key}
+                extra_headers={"X-Hume-Api-Key": self.api_key}
             ) as ws:
                 # Accumulate chunks and send periodically for better predictions
                 accumulated_data = bytearray()
