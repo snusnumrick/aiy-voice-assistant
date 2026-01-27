@@ -203,6 +203,15 @@ else
     echo "$(date): ERROR: Failed to install Tailscale with exit code $INSTALL_RESULT" >> $TAILSCALE_LOG
 fi
 
+# Start the tailscaled daemon
+echo "$(date): Starting tailscaled service..." >> $TAILSCALE_LOG
+sudo systemctl start tailscaled >> $TAILSCALE_LOG 2>&1
+if [ $? -eq 0 ]; then
+    echo "$(date): tailscaled service start initiated" >> $TAILSCALE_LOG
+else
+    echo "$(date): WARNING: Failed to start tailscaled service" >> $TAILSCALE_LOG
+fi
+
 # Add more detailed email sending process
 if [ -n "${ERRORS_DETECTED}" ]; then
     echo "$(date): Errors detected in Tailscale setup, sending email report" >> $TAILSCALE_LOG
