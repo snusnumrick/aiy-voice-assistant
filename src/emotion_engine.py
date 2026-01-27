@@ -219,12 +219,13 @@ class HumeEmotionEngine(EmotionEngine):
                         "models": {"prosody": {}},
                     }
                     await ws.send(json.dumps(request))
-                    logger.debug(
+                    logger.info(
                         f"Sent {len(accumulated_data)} bytes ({chunk_count} chunks) to Hume API"
                     )
 
                     # Receive final response
                     response_text = await asyncio.wait_for(ws.recv(), self.timeout)
+                    logger.info(f"Received Hume API response: {response_text}")
                     response = json.loads(response_text)
                     last_result = self._parse_response(response)
 
