@@ -68,24 +68,24 @@ class EmotionEngine(ABC):
         # Default implementation: not supported, subclasses can override
         return None
 
-    def format_annotation(self, result: Optional[EmotionResult]) -> str:
-        """
-        Format emotion result as text annotation for LLM.
+def format_annotation(result: Optional[EmotionResult]) -> str:
+    """
+    Format emotion result as text annotation for LLM.
 
-        Args:
-            result: EmotionResult to format.
+    Args:
+        result: EmotionResult to format.
 
-        Returns:
-            Formatted string like "[User emotion: excited (0.82), curious (0.65)]"
-            or empty string if no emotions detected.
-        """
-        if not result or not result.top_emotions:
-            return ""
-        emotions_str = ", ".join(
-            f"{name} ({score:.2f})"
-            for name, score in result.top_emotions
-        )
-        return f"[User emotion: {emotions_str}]"
+    Returns:
+        Formatted string like "[User emotion: excited (0.82), curious (0.65)]"
+        or empty string if no emotions detected.
+    """
+    if not result or not result.top_emotions:
+        return ""
+    emotions_str = ", ".join(
+        f"{name} ({score:.2f})"
+        for name, score in result.top_emotions
+    )
+    return f"[User emotion: {emotions_str}]"
 
 
 class HumeEmotionEngine(EmotionEngine):

@@ -31,7 +31,7 @@ from src.responce_player import ResponsePlayer
 from src.tools import time_string_ms, get_timezone, combine_audio_files
 from src.tts_engine import TTSEngine
 from src.background_tasks import BackgroundTaskManager
-from src.emotion_engine import EmotionEngine
+from src.emotion_engine import EmotionEngine, format_annotation
 
 logger = logging.getLogger(__name__)
 
@@ -833,7 +833,7 @@ class SpeechTranscriber:
                             emotion_generator(),
                             sample_rate=self.audio_sample_rate
                         )
-                        annotation = self.emotion_engine.format_annotation(result)
+                        annotation = format_annotation(result)
                         if annotation:
                             logger.info(f"Detected emotion: {annotation}")
                         return annotation
