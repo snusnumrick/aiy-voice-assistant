@@ -7,9 +7,11 @@ including Hume AI's Expression Measurement API for voice emotion detection.
 
 import asyncio
 import base64
+import io
 import json
 import logging
 import os
+import wave
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Dict, List, Optional, Tuple
@@ -213,19 +215,29 @@ class HumeEmotionEngine(EmotionEngine):
 
                 # Send all accumulated audio at end of stream
                 if accumulated_data:
-                    audio_b64 = base64.b64encode(bytes(accumulated_data)).decode()
+                    # Wrap raw PCM data in WAV format - Hume API requires valid audio format
+                    wav_buffer = io.BytesIO()
+                    with wave.open(wav_buffer, 'wb') as wav_file:
+                        wav_file.setnchannels(1)  # Mono
+                        wav_file.setsampwidth(2)  # 16-bit
+                        wav_file.setframerate(sample_rate)
+                        wav_file.writeframes(bytes(accumulated_data))
+                    wav_data = wav_buffer.getvalue()
+
+                    audio_b64 = base64.b64encode(wav_data).decode()
                     request = {
                         "data": audio_b64,
                         "models": {"prosody": {}},
                     }
                     await ws.send(json.dumps(request))
                     logger.info(
-                        f"Sent {len(accumulated_data)} bytes ({chunk_count} chunks) to Hume API"
+                        f"Sent {len(wav_data)} bytes WAV ({len(accumulated_data)} PCM, "
+                        f"{chunk_count} chunks, {sample_rate}Hz) to Hume API"
                     )
 
                     # Receive final response
                     response_text = await asyncio.wait_for(ws.recv(), self.timeout)
-                    logger.info(f"Received Hume API response: {response_text}")
+                    logger.info(f"Received Hume API raw response: {response_text[:500]}")
                     response = json.loads(response_text)
                     last_result = self._parse_response(response)
 
@@ -248,19 +260,27 @@ class HumeEmotionEngine(EmotionEngine):
         Returns:
             EmotionResult with parsed emotions, or None if no predictions.
         """
+        # Check for API error response
+        if "error" in response:
+            logger.error(f"Hume API returned error: {response['error']}")
+            return None
+
         try:
             # Navigate to prosody predictions
             prosody = response.get("prosody", {})
             predictions = prosody.get("predictions", [])
 
             if not predictions:
-                logger.debug("No prosody predictions in Hume response")
+                logger.warning(
+                    f"No prosody predictions in Hume response. "
+                    f"Response keys: {list(response.keys())}"
+                )
                 return None
 
             # Get emotions from first prediction
             emotions = predictions[0].get("emotions", [])
             if not emotions:
-                logger.debug("No emotions in prosody predictions")
+                logger.warning("No emotions in prosody predictions")
                 return None
 
             # Sort by score, filter by threshold, take top N
@@ -276,10 +296,17 @@ class HumeEmotionEngine(EmotionEngine):
                 if e.get("score", 0) >= self.min_score
             ][:self.top_n]
 
+            if not top:
+                logger.info(
+                    f"No emotions above threshold {self.min_score}. "
+                    f"Highest score: {sorted_emotions[0].get('score', 0):.2f} "
+                    f"({sorted_emotions[0].get('name', 'unknown')})"
+                )
+
             raw = {e["name"]: e["score"] for e in emotions}
             confidence = top[0][1] if top else 0.0
 
-            logger.debug(f"Detected emotions: {top}")
+            logger.info(f"Detected emotions: {top}")
             return EmotionResult(
                 top_emotions=top,
                 raw_scores=raw,
@@ -287,7 +314,10 @@ class HumeEmotionEngine(EmotionEngine):
             )
 
         except (KeyError, IndexError, TypeError) as e:
-            logger.error(f"Failed to parse Hume response: {e}")
+            logger.error(
+                f"Failed to parse Hume response: {e}. "
+                f"Response structure: {json.dumps(response, default=str)[:500]}"
+            )
             return None
 
 
