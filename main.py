@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from aiy.board import Board
 from aiy.leds import Color, Leds
 from src.ai_models_with_tools import ClaudeAIModelWithTools, OpenAIModelWithTools
+from src.emotion_engine import HumeEmotionEngine, NoOpEmotionEngine
 from src.gemini_image_tool import GeminiImageTool
 from src.responce_player import ResponsePlayer
 from src.code_interpreter_tool import InterpreterTool
@@ -202,6 +203,18 @@ def main():
 
         conversation_manager = ConversationManager(config, ai_model, timezone, enabled_tools=tools)
 
+        # Initialize emotion engine
+        emotion_engine = None
+        if config.get("emotion_detection_enabled", False):
+            try:
+                emotion_engine = HumeEmotionEngine(config)
+                logger.info("Hume emotion detection enabled")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Hume emotion engine: {e}")
+                emotion_engine = NoOpEmotionEngine()
+        else:
+            emotion_engine = NoOpEmotionEngine()
+
         logger.info("All components initialized. Starting main conversation loop.")
 
         # Start the main conversation loop
@@ -215,6 +228,7 @@ def main():
                 config,
                 timezone,
                 response_player,
+                emotion_engine,
             )
         )
 

@@ -37,6 +37,7 @@ from aiy.leds import Leds, Color
 from .audio import SpeechTranscriber
 from .config import Config
 from .conversation_manager import ConversationManager
+from .emotion_engine import EmotionEngine
 from .responce_player import ResponsePlayer
 from .tools import time_string_ms, save_to_conversation
 from .tts_engine import TTSEngine, Tone, Language
@@ -145,6 +146,7 @@ class DialogManager:
         timezone (str): The timezone to use for the conversation loop.
         transcriber (SpeechTranscriber): Handles speech-to-text conversion.
         response_player (ResponsePlayer): Plays synthesized speech responses.
+        emotion_engine (EmotionEngine): Optional emotion detection engine.
     """
 
     def __init__(
@@ -157,6 +159,7 @@ class DialogManager:
         config: Config,
         timezone: str,
         response_player: ResponsePlayer,
+        emotion_engine: EmotionEngine = None,
     ):
         """
         Initialize the DialogManager with necessary components.
@@ -170,6 +173,7 @@ class DialogManager:
             config (Config): The application configuration object.
             timezone (str): The timezone to use for the conversation loop.
             response_player (ResponsePlayer): The audio response player for playback.
+            emotion_engine (EmotionEngine): Optional emotion detection engine.
         """
         self.button = button
         self.leds = leds
@@ -179,8 +183,10 @@ class DialogManager:
         self.config = config
         self.timezone = timezone
         self.response_player = response_player
+        self.emotion_engine = emotion_engine
         self.transcriber = SpeechTranscriber(
-            button, leds, config, cleaning=self.cleaning_routine, timezone=timezone
+            button, leds, config, cleaning=self.cleaning_routine, timezone=timezone,
+            emotion_engine=emotion_engine
         )
 
     async def cleaning_routine(self):
@@ -264,15 +270,22 @@ class DialogManager:
             while True:
                 try:
                     self.conversation_manager.save_dialog()
-                    text = await self.transcriber.transcribe_speech(
+                    text, emotion_annotation = await self.transcriber.transcribe_speech(
                         self.response_player
                     )
-                    logger.info(f"({time_string_ms(self.timezone)}) You said: {text}")
+
+                    # Combine emotion annotation with text for LLM
+                    if emotion_annotation and text:
+                        annotated_text = f"{emotion_annotation} {text}"
+                    else:
+                        annotated_text = text
+
+                    logger.info(f"({time_string_ms(self.timezone)}) You said: {annotated_text}")
 
                     if text:
                         await asyncio.gather(
                             save_to_conversation("user", text, self.timezone),
-                            self.process_ai_response(session, text),
+                            self.process_ai_response(session, annotated_text),
                         )
 
                 except Exception as e:
@@ -514,6 +527,7 @@ async def main_loop_async(
     config: Config,
     timezone: str,
     response_player: ResponsePlayer,
+    emotion_engine: EmotionEngine = None,
 ) -> None:
     """
     The main entry point for the conversation loop of the AI assistant.
@@ -529,6 +543,7 @@ async def main_loop_async(
         config (Config): The application configuration object.
         timezone (str): The timezone to use for the conversation loop.
         response_player (ResponsePlayer): The audio response player for playback.
+        emotion_engine (EmotionEngine): Optional emotion detection engine.
     """
     dialog_manager = DialogManager(
         button,
@@ -539,5 +554,6 @@ async def main_loop_async(
         config,
         timezone,
         response_player,
+        emotion_engine,
     )
     await dialog_manager.main_loop_async()

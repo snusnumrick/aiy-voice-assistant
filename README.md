@@ -40,6 +40,7 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 - **Russian Stress Marking**: Ability to add stress marks to Russian words, enhancing pronunciation guidance and language learning.
 - **Code Interpretation**: Can execute Python code, allowing for complex computations and data analysis, with results conveyed verbally.
 - **Volume Control**: Ability to adjust speaker volume through voice commands, enhancing user comfort and accessibility.
+- **Voice Emotion Detection**: Real-time detection of user emotions from voice using Hume AI, enabling emotionally-aware responses that match the user's mood.
 - **Music Generation**: Generate and play music with lyrics using MiniMax API, supporting lullabies, songs, and custom musical compositions with streaming playback.
 - **Comprehensive Weather Information**: Provides detailed weather data including:
   - Current conditions and forecasts (hourly/daily)
@@ -200,6 +201,7 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
         WAQI_API_KEY=your_waqi_api_key                   # For air quality data
         OPENUV_API_KEY=your_openuv_api_key               # For UV index data
         MINIMAX_API_KEY=your_minimax_api_key             # For music generation (optional)
+        HUME_API_KEY=your_hume_api_key                   # For voice emotion detection (optional)
     ```
     Notes
     1. Make sure to keep your `.env` file secure and never commit it to version control.
@@ -442,6 +444,7 @@ The assistant uses cron to manage Tailscale for optimal performance:
   - `conversation_manager.py`: Manages conversation flow and memory
   - `dialog.py`: Main conversation loop
   - `email_tools.py`: Email functionality
+  - `emotion_engine.py`: Voice emotion detection using Hume AI
   - `moon.py`: Astronomical calculations for lunar phases and information
   - `openuv.py`: UV index and ozone data fetching using OpenUV API
   - `responce_player.py`: Audio playback and LED control
@@ -503,6 +506,15 @@ The assistant uses cron to manage Tailscale for optimal performance:
   * Music generation requires streaming support - verify network connection
   * If playback is interrupted, temporary WAV files are automatically cleaned up
   * Maximum 50 temporary music files are kept, older files are auto-deleted
+
+- For voice emotion detection issues:
+  * Verify HUME_API_KEY is set in .env file
+  * Ensure `emotion_detection_enabled` is set to `true` in config.json
+  * Install websockets package: ```pip install websockets```
+  * Check Hume API key validity at https://platform.hume.ai
+  * Emotion detection runs in parallel with STT - if STT works but emotions aren't detected, check Hume API connectivity
+  * If emotion detection times out, adjust `emotion_detection_timeout` in config (default: 10 seconds)
+  * Emotions are added as annotations to user messages, e.g., `[User emotion: excited (0.82)]`
 
 ## Performance Considerations
 

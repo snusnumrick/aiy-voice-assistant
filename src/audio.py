@@ -31,6 +31,7 @@ from src.responce_player import ResponsePlayer
 from src.tools import time_string_ms, get_timezone, combine_audio_files
 from src.tts_engine import TTSEngine
 from src.background_tasks import BackgroundTaskManager
+from src.emotion_engine import EmotionEngine
 
 logger = logging.getLogger(__name__)
 
@@ -556,6 +557,7 @@ class SpeechTranscriber:
         config,
         cleaning: Optional[Callable] = None,
         timezone: Optional[str] = None,
+        emotion_engine: Optional[EmotionEngine] = None,
     ) -> None:
         """
         Initialize the SpeechTranscriber.
@@ -566,10 +568,12 @@ class SpeechTranscriber:
             config (Config): The application configuration object.
             cleaning (Optional[Callable]): Optional callback function to clean the audio stream.
             timezone (Optional[str]): The timezone of the current location.
+            emotion_engine (Optional[EmotionEngine]): Optional emotion detection engine.
         """
         self.button = button
         self.leds = leds
         self.config = config
+        self.emotion_engine = emotion_engine
         self.setup_speech_service()
         self.breathing_period_ms = self.config.get("ready_breathing_period_ms", 10000)
         self.led_breathing_color = self.config.get(
@@ -619,15 +623,17 @@ class SpeechTranscriber:
 
     async def transcribe_speech(
         self, player_process: Optional[ResponsePlayer] = None
-    ) -> str:
+    ) -> tuple:
         """
         Transcribe speech from the microphone input, including pre and post buffering.
+        Optionally runs emotion detection in parallel with STT.
 
         Args:
             player_process (Optional[ResponsePlayer]): Object representing a running audio player.
 
         Returns:
-            str: The transcribed text.
+            tuple: (transcribed_text, emotion_annotation) where emotion_annotation is
+                   a string like "[User emotion: excited (0.82)]" or empty string.
         """
 
         chunks_deque = deque()
@@ -762,38 +768,103 @@ class SpeechTranscriber:
             logger.info("Processing audio...")
 
             try:
-                audio_queue = queue.Queue()
+                # Two queues distribute audio chunks to STT and emotion detection.
+                # Different queue types match each consumer's execution model:
+                #
+                # - stt_queue (queue.Queue): STT runs in thread pool via run_in_executor
+                #   because transcribe_stream() is a blocking sync function.
+                #   Sync queue's .get() blocks the thread until chunk arrives.
+                #
+                # - emotion_queue (asyncio.Queue): Emotion detection is async-native,
+                #   using await with websockets. Async queue's .get() yields control
+                #   to event loop while waiting, enabling true concurrency.
+                stt_queue = queue.Queue()
+                emotion_queue = asyncio.Queue()
 
-                async def fill_queue():
+                async def fill_queues():
+                    """Distribute each audio chunk to both consumers."""
                     async for chunk in audio_generator:
-                        audio_queue.put(chunk)
-                    audio_queue.put(None)  # Сигнал окончания
+                        stt_queue.put(chunk)        # Non-blocking for sync queue
+                        await emotion_queue.put(chunk)  # Async put
+                    # Signal end-of-stream to both consumers
+                    stt_queue.put(None)
+                    await emotion_queue.put(None)
 
-                def sync_audio_generator():
+                def stt_generator():
+                    """Sync generator for STT - blocks on queue.get() in thread."""
                     while True:
-                        chunk = audio_queue.get()
+                        chunk = stt_queue.get()  # Blocks thread until chunk available
                         if chunk is None:
                             break
                         yield chunk
 
-                # fill queue in background
-                fill_queue_task = asyncio.create_task(fill_queue())
+                async def emotion_generator():
+                    """Async generator for emotion - awaits on queue.get() in event loop."""
+                    while True:
+                        chunk = await emotion_queue.get()  # Yields to event loop
+                        if chunk is None:
+                            break
+                        yield chunk
 
-                loop = asyncio.get_event_loop()
-                text = await loop.run_in_executor(
-                    None,
-                    self.speech_service.transcribe_stream,
-                    sync_audio_generator(),
-                    self.config,
+                async def run_stt():
+                    """Run STT in thread pool (sync function can't run in event loop)."""
+                    try:
+                        loop = asyncio.get_event_loop()
+                        return await loop.run_in_executor(
+                            None,
+                            self.speech_service.transcribe_stream,
+                            stt_generator(),
+                            self.config,
+                        )
+                    except Exception as e:
+                        logger.error(f"Error in STT: {str(e)}")
+                        return ""
+
+                async def run_emotion_detection():
+                    """Run emotion detection in event loop (async-native)."""
+                    if not self.emotion_engine:
+                        # Drain queue to avoid blocking fill_queues
+                        async for _ in emotion_generator():
+                            pass
+                        return ""
+
+                    try:
+                        result = await self.emotion_engine.detect_stream(
+                            emotion_generator(),
+                            sample_rate=self.audio_sample_rate
+                        )
+                        annotation = self.emotion_engine.format_annotation(result)
+                        if annotation:
+                            logger.info(f"Detected emotion: {annotation}")
+                        return annotation
+                    except Exception as e:
+                        logger.error(f"Error in emotion detection: {str(e)}")
+                        return ""
+
+                # Start distributing chunks to both queues
+                fill_queues_task = asyncio.create_task(fill_queues())
+
+                # Run STT and emotion detection in parallel, both streaming
+                logger.debug("Starting parallel streaming STT and emotion detection")
+                text, emotion_annotation = await asyncio.gather(
+                    run_stt(),
+                    run_emotion_detection()
                 )
 
-                # wait queue
-                await fill_queue_task
+                # Ensure fill_queues completes
+                await fill_queues_task
+
+                logger.debug(
+                    f"Parallel processing complete: text={len(text) if text else 0} chars, "
+                    f"emotion={emotion_annotation}"
+                )
 
             except Exception as e:
                 logger.error(f"Error transcribing speech: {str(e)}")
                 text = ""
-        return text
+                emotion_annotation = ""
+
+        return text, emotion_annotation
 
     def wait_for_button_press(self):
         """

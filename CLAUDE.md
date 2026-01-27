@@ -60,9 +60,9 @@ ruff format src/
 
 ### High-Level Flow
 The application follows this execution flow:
-1. **main.py** (entry point) → Initializes hardware, config, AI models
-2. **dialog.py** (`main_loop_async()`) → Button handling, recording, STT, conversation loop
-3. **conversation_manager.py** → Context management, user adaptation
+1. **main.py** (entry point) → Initializes hardware, config, AI models, emotion engine
+2. **dialog.py** (`main_loop_async()`) → Button handling, recording, parallel STT + emotion detection, conversation loop
+3. **conversation_manager.py** → Context management, user adaptation, emotion-aware prompts
 4. **ai_models.py** / **ai_models_with_tools.py** → AI integration (Claude, OpenAI, etc.)
 5. **tools/** → Specialized capabilities (weather, web search, code execution, etc.)
 
@@ -86,9 +86,10 @@ The application follows this execution flow:
 - `src/ai_models_with_tools.py:1` - AI models with tool-calling support
 
 **Speech Processing:**
-- `src/audio.py:1` - Audio recording/playback
-- `src/stt_engine.py:1` - Speech-to-text (Yandex, Google Cloud)
+- `src/audio.py:1` - Audio recording/playback, parallel STT and emotion streaming
+- `src/stt_engine.py:1` - Speech-to-text (Yandex, Google Cloud, OpenAI)
 - `src/tts_engine.py:1` - Text-to-speech (Yandex, ElevenLabs)
+- `src/emotion_engine.py:1` - Voice emotion detection (Hume AI)
 
 **Tools (Specialized Capabilities):**
 - `src/weather_tool.py:1` - Weather data (Tomorrow.io, WAQI, OpenUV)
@@ -116,6 +117,17 @@ The application uses a hierarchical configuration system with this precedence:
 - **`config.json`** - Shared settings: LLM selection, streaming, chunk duration, admin email
 - **`user.json.example`** - Template for user-specific overrides (copy to `user.json`)
 - **`.env`** - API keys and sensitive data (never committed)
+
+**Emotion Detection Configuration:**
+```json
+{
+  "emotion_detection_enabled": true,   // Enable/disable Hume AI emotion detection
+  "emotion_top_n": 3,                  // Number of top emotions to report
+  "emotion_min_score": 0.3,            // Minimum confidence threshold
+  "emotion_detection_timeout": 10.0    // WebSocket timeout in seconds
+}
+```
+Requires `HUME_API_KEY` in `.env` file.
 
 ### System Integration
 

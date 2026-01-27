@@ -114,6 +114,24 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
     return modified_text, extracted_rules
 
 
+def _get_emotion_awareness_rule_russian() -> str:
+    """Rule for interpreting emotion annotations in user messages."""
+    return (
+        "Сообщения пользователя могут начинаться с [User emotion: эмоция1 (оценка), ...]. "
+        "Учитывай эти эмоции при ответе. Если пользователь взволнован - отвечай энергично, "
+        "если грустит - будь поддерживающим, если раздражён - оставайся спокойным. "
+    )
+
+
+def _get_emotion_awareness_rule_english() -> str:
+    """English version of emotion awareness rule."""
+    return (
+        "User messages may start with [User emotion: emotion1 (score), ...]. "
+        "Consider these emotions when responding. Match excited energy, "
+        "be supportive when user is sad, stay calm when frustrated. "
+    )
+
+
 def _get_base_rules_russian() -> str:
     """Base rules that are tool-independent (preserved from current implementation)"""
     return (
@@ -191,10 +209,15 @@ class ConversationManager:
         self.timezone = timezone
         self.current_language_code = "ru"
         self.enabled_tools = enabled_tools or []
+        self.emotion_detection_enabled = config.get("emotion_detection_enabled", False)
 
         # hard rules
+        base_rules = _get_base_rules_russian()
+        if self.emotion_detection_enabled:
+            base_rules += _get_emotion_awareness_rule_russian()
+
         self.hard_rules = _combine_rules(
-            _get_base_rules_russian(),
+            base_rules,
             self._generate_tool_rules("russian")
         )
 
