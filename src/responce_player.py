@@ -257,7 +257,7 @@ class ResponsePlayer:
         # Check if reinit needed BEFORE acquiring lock
         # (reinit creates new lock, can't do it while holding old lock)
         if self._stopped:
-            logger.warning(
+            logger.debug(
                 f"Player is stopped (_stopped={self._stopped}, _should_play={self._should_play}), reinitializing. "
                 f"This indicates the player was stopped - likely due to button press, error, or timeout."
             )

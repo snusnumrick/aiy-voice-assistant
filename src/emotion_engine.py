@@ -230,7 +230,7 @@ class HumeEmotionEngine(EmotionEngine):
                         "models": {"prosody": {}},
                     }
                     await ws.send(json.dumps(request))
-                    logger.info(
+                    logger.debug(
                         f"Sent {len(wav_data)} bytes WAV ({len(accumulated_data)} PCM, "
                         f"{chunk_count} chunks, {sample_rate}Hz) to Hume API"
                     )
@@ -306,7 +306,7 @@ class HumeEmotionEngine(EmotionEngine):
             raw = {e["name"]: e["score"] for e in emotions}
             confidence = top[0][1] if top else 0.0
 
-            logger.info(f"Detected emotions: {top}")
+            logger.debug(f"Detected emotions: {top}")
             return EmotionResult(
                 top_emotions=top,
                 raw_scores=raw,

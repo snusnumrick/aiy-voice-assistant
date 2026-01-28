@@ -735,7 +735,7 @@ class SpeechTranscriber:
                     continue
 
                 if not chunks_deque:
-                    logger.info("No audio chunk available")
+                    logger.debug("No audio chunk available")
 
                     # import wave
                     #
@@ -835,7 +835,7 @@ class SpeechTranscriber:
                         )
                         annotation = format_annotation(result)
                         if annotation:
-                            logger.info(f"Detected emotion: {annotation}")
+                            logger.debug(f"Detected emotion: {annotation}")
                         return annotation
                     except Exception as e:
                         logger.error(f"Error in emotion detection: {str(e)}")

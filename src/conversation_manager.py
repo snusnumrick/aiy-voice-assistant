@@ -118,8 +118,8 @@ def _get_emotion_awareness_rule_russian() -> str:
     """Rule for interpreting emotion annotations in user messages."""
     return (
         "Сообщения пользователя могут начинаться с [User emotion: эмоция1 (оценка), ...]. "
-        "Учитывай эти эмоции при ответе. Если пользователь взволнован - отвечай энергично, "
-        "если грустит - будь поддерживающим, если раздражён - оставайся спокойным. "
+        # "Учитывай эти эмоции при ответе. Если пользователь взволнован - отвечай энергично, "
+        # "если грустит - будь поддерживающим, если раздражён - оставайся спокойным. "
     )
 
 
@@ -127,8 +127,8 @@ def _get_emotion_awareness_rule_english() -> str:
     """English version of emotion awareness rule."""
     return (
         "User messages may start with [User emotion: emotion1 (score), ...]. "
-        "Consider these emotions when responding. Match excited energy, "
-        "be supportive when user is sad, stay calm when frustrated. "
+        # "Consider these emotions when responding. Match excited energy, "
+        # "be supportive when user is sad, stay calm when frustrated. "
     )
 
 
@@ -403,7 +403,7 @@ class ConversationManager:
                 logger.debug("Received tool use signal, flushing sentence buffer")
                 # Flush buffer immediately when tool is about to be used
                 if buffer_enabled and sentence_buffer:
-                    logger.info(
+                    logger.debug(
                         f"Sentence buffer: tool use detected, flushing {len(sentence_buffer)} sentences "
                         f"({buffer_chars} chars)"
                     )
@@ -440,7 +440,7 @@ class ConversationManager:
 
                             # Flush if we should cross a unit boundary or exceed max_length
                             if (would_cross_unit or would_exceed_max) and buffer_chars > 0:
-                                logger.info(
+                                logger.debug(
                                     f"Sentence buffer: optimizing for billing units "
                                     f"({buffer_chars}/{sentence_len}={buffer_chars + sentence_len} chars), "
                                     f"yielding {len(sentence_buffer)} sentences"
@@ -459,7 +459,7 @@ class ConversationManager:
 
         # Flush remaining buffer at the end
         if buffer_enabled and sentence_buffer:
-            logger.info(
+            logger.debug(
                 f"Sentence buffer: end of response, yielding {len(sentence_buffer)} sentences "
                 f"({buffer_chars} chars)"
             )
