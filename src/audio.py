@@ -953,7 +953,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
         try:
             async with self.websockets.connect(uri) as websocket:
                 config_message = self._build_config_message()
-                logger.info("Sending Soniox config message: %s", config_message)
+                logger.debug("Sending Soniox config message: %s", config_message)
                 await websocket.send(self.json.dumps(config_message))
 
                 send_task = self.asyncio.create_task(
@@ -1023,7 +1023,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
 
         if self.send_finalize:
             finalize = self.json.dumps({"type": "finalize"})
-            logger.info("Sending finalize message: %s", finalize)
+            logger.debug("Sending finalize message: %s", finalize)
             await websocket.send(finalize)
 
         await websocket.send(b"")
@@ -1051,7 +1051,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
                 logger.info("Soniox WebSocket closed")
                 break
 
-            logger.info("Received message from Soniox: %s", message)
+            logger.debug("Received message from Soniox: %s", message)
 
             if not message:
                 continue
@@ -1089,7 +1089,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
                         continue
                     if token.get("is_final"):
                         if text == "<fin>":
-                            logger.info("Soniox final transcript received")
+                            logger.debug("Soniox final transcript received")
                             break
                         transcript_parts.append(text)
                     else:
@@ -1097,7 +1097,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
                 if partial_parts:
                     last_partial = "".join(partial_parts)
                 elif send_done.is_set():
-                    logger.info("Soniox: all parts are final")
+                    logger.debug("Soniox: all parts are final")
                     break
 
         if transcript_parts:

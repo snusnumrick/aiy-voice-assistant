@@ -103,7 +103,7 @@ def log_tts_usage(text: str, engine: str, lang: str, tone: str, filename: str):
         f.write(json.dumps(usage_record, ensure_ascii=False) + '\n')
 
     # Also log to application log
-    logger.info(
+    logger.debug(
         f"TTS Usage (v3) | {engine} | {char_count} chars | "
         f"{cost_detail} | ${cost_usd:.6f} | {lang}/{tone}"
     )

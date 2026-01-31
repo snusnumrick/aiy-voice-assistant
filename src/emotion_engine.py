@@ -237,7 +237,7 @@ class HumeEmotionEngine(EmotionEngine):
 
                     # Receive final response
                     response_text = await asyncio.wait_for(ws.recv(), self.timeout)
-                    logger.info(f"Received Hume API raw response: {response_text[:500]}")
+                    logger.debug(f"Received Hume API raw response: {response_text[:500]}")
                     response = json.loads(response_text)
                     last_result = self._parse_response(response)
 
@@ -297,7 +297,7 @@ class HumeEmotionEngine(EmotionEngine):
             ][:self.top_n]
 
             if not top:
-                logger.info(
+                logger.debug(
                     f"No emotions above threshold {self.min_score}. "
                     f"Highest score: {sorted_emotions[0].get('score', 0):.2f} "
                     f"({sorted_emotions[0].get('name', 'unknown')})"
