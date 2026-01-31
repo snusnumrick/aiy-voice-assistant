@@ -1057,7 +1057,9 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
             await websocket.send(chunk)
 
         if self.send_finalize:
-            await websocket.send(self.json.dumps({"type": "finalize"}))
+            finalize = self.json.dumps({"type": "finalize"})
+            logger.info("Sending finalize message: %s", finalize)
+            await websocket.send(finalize)
 
         await websocket.send(b"")
         send_done.set()
@@ -1126,6 +1128,9 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
                         partial_parts.append(text)
                 if partial_parts:
                     last_partial = "".join(partial_parts)
+                elif send_done.is_set():
+                    logger.info("Soniox: all parts are final")
+                    break
 
         if transcript_parts:
             return "".join(transcript_parts)
