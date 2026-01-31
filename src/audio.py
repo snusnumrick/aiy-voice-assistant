@@ -923,7 +923,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
             )
 
         self.api_key = api_key
-        self.model = config.get("soniox_model", "stt-rt-v3")
+        self.model = config.get("soniox_model", "stt-async-v4")
         self.audio_format = config.get("soniox_audio_format", "pcm_s16le")
         self.sample_rate = config.get("sample_rate_hertz", 16000)
         self.num_channels = config.get("soniox_num_channels", 1)
@@ -985,6 +985,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
         transcript_parts = []
         last_partial = ""
 
+        # Transcribes audio stream; handles connection and exceptions
         try:
             async with self.websockets.connect(uri) as websocket:
                 config_message = self._build_config_message()
@@ -1076,9 +1077,11 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
                 )
             except self.asyncio.TimeoutError:
                 if send_done.is_set():
+                    logger.info("Soniox WebSocket timed out after send_done was set")
                     break
                 continue
             except self.ConnectionClosed:
+                logger.info("Soniox WebSocket closed")
                 break
 
             logger.info("Received message from Soniox: %s", message)
@@ -1089,7 +1092,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
                 try:
                     message = message.decode("utf-8")
                 except Exception:
-                    logger.debug("Non-UTF8 message from Soniox")
+                    logger.warning("Non-UTF8 message from Soniox")
                     continue
 
             try:
@@ -1107,6 +1110,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
                 return ""
 
             if response.get("finished"):
+                logger.info("Soniox transcription finished")
                 break
 
             tokens = response.get("tokens", [])
@@ -1125,6 +1129,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
 
         if transcript_parts:
             return "".join(transcript_parts)
+        logger.warning("No final transcript received from Soniox, returning last partial: %s", last_partial)
         return (last_partial or "").strip()
 
     async def _async_generator(self, sync_generator: Iterator[bytes]):
