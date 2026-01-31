@@ -12,9 +12,9 @@
   "openai_use_search":false,
   "admin_email": "treskunov@gmail.com",
   "minimax_base_url": "https://api.minimax.io",
-  "speech_recognition_service": "yandex",
+  "speech_recognition_service": "soniox",
   "openai_transcription_model": "gpt-4o-transcribe",
-  "sample_rate_hertz":24000,
+  "sample_rate_hertz":16000,
   "language_code": "ru",
   "wizard_model_id": "gpt-5.2",
   "max_optimized_facts": 20,
@@ -23,5 +23,6 @@
   "gemini_image_model": "gemini-3-pro-image-preview",
   "sentence_buffer_enabled": true,
   "sentence_buffer_timeout": 1.5,
-  "sentence_buffer_max_length": 240
+  "sentence_buffer_max_length": 240,
+  "soniox_send_finalize":true
 }

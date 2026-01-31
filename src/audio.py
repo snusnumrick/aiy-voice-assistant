@@ -42,7 +42,9 @@ class SpeechRecognitionService(ABC):
         pass
 
     @abstractmethod
-    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(
+        self, audio_generator: Iterator[bytes], config
+    ) -> str:
         pass
 
 
@@ -60,7 +62,13 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
         )
         self.client = speech.SpeechClient(credentials=credentials)
 
-    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self._transcribe_stream_sync, audio_generator, config
+        )
+
+    def _transcribe_stream_sync(self, audio_generator: Iterator[bytes], config) -> str:
         logger.debug("Transcribing audio stream (google)")
         streaming_config = speech.types.StreamingRecognitionConfig(
             config=speech.types.RecognitionConfig(
@@ -124,7 +132,13 @@ class YandexSpeechRecognition(SpeechRecognitionService):
             )
         )
 
-    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self._transcribe_stream_sync, audio_generator, config
+        )
+
+    def _transcribe_stream_sync(self, audio_generator: Iterator[bytes], config) -> str:
         def request_generator():
             import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 
@@ -217,11 +231,10 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         self.websockets = websockets
         self.ConnectionClosed = ConnectionClosed
 
-    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
         """
         Transcribe audio stream using OpenAI Realtime API.
 
-        Runs WebSocket connection in a separate thread to avoid event loop conflicts.
         Streams PCM16 audio chunks in real-time with transcription results.
 
         Args:
@@ -233,26 +246,8 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         """
         logger.debug("Transcribing audio stream (openai realtime)")
 
-        import asyncio
-
-        def run_in_thread():
-            """Run async transcription in a separate thread with its own event loop."""
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                return loop.run_until_complete(
-                    self._transcribe_stream_async(audio_generator)
-                )
-            finally:
-                loop.close()
-
-        # Run in separate thread to avoid event loop conflicts
         try:
-            # Use ThreadPoolExecutor for proper cleanup
-            from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(run_in_thread)
-                return future.result()
+            return await self._transcribe_stream_async(audio_generator)
         except Exception as e:
             logger.error(f"Error transcribing audio with OpenAI: {str(e)}")
             import traceback
@@ -605,31 +600,15 @@ class ElevenLabsSpeechRecognition(SpeechRecognitionService):
             self.commit_strategy = "manual"
         logger.info("Setting up ElevenLabs Realtime Speech client completed")
 
-    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
         """
         Transcribe audio stream using ElevenLabs Realtime Speech-to-Text API.
 
-        Runs WebSocket connection in a separate thread to avoid event loop conflicts.
         """
         logger.debug("Transcribing audio stream (elevenlabs realtime)")
 
-        import asyncio
-        from concurrent.futures import ThreadPoolExecutor
-
-        def run_in_thread():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                return loop.run_until_complete(
-                    self._transcribe_stream_async(audio_generator)
-                )
-            finally:
-                loop.close()
-
         try:
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(run_in_thread)
-                return future.result()
+            return await self._transcribe_stream_async(audio_generator)
         except Exception as e:
             logger.error(f"Error transcribing audio with ElevenLabs: {str(e)}")
             import traceback
@@ -951,26 +930,11 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
         self.websockets = websockets
         self.ConnectionClosed = ConnectionClosed
 
-    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
         logger.debug("Transcribing audio stream (soniox realtime)")
 
-        import asyncio
-        from concurrent.futures import ThreadPoolExecutor
-
-        def run_in_thread():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                return loop.run_until_complete(
-                    self._transcribe_stream_async(audio_generator)
-                )
-            finally:
-                loop.close()
-
         try:
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(run_in_thread)
-                return future.result()
+            return await self._transcribe_stream_async(audio_generator)
         except Exception as e:
             logger.error(f"Error transcribing audio with Soniox: {str(e)}")
             import traceback
@@ -1419,8 +1383,7 @@ class SpeechTranscriber:
                 # Two queues distribute audio chunks to STT and emotion detection.
                 # Different queue types match each consumer's execution model:
                 #
-                # - stt_queue (queue.Queue): STT runs in thread pool via run_in_executor
-                #   because transcribe_stream() is a blocking sync function.
+                # - stt_queue (queue.Queue): STT consumes chunks from a sync generator.
                 #   Sync queue's .get() blocks the thread until chunk arrives.
                 #
                 # - emotion_queue (asyncio.Queue): Emotion detection is async-native,
@@ -1457,14 +1420,10 @@ class SpeechTranscriber:
                         yield chunk
 
                 async def run_stt():
-                    """Run STT in thread pool (sync function can't run in event loop)."""
+                    """Run STT in the event loop (async service interface)."""
                     try:
-                        loop = asyncio.get_event_loop()
-                        return await loop.run_in_executor(
-                            None,
-                            self.speech_service.transcribe_stream,
-                            stt_generator(),
-                            self.config,
+                        return await self.speech_service.transcribe_stream(
+                            stt_generator(), self.config
                         )
                     except Exception as e:
                         logger.error(f"Error in STT: {str(e)}")
