@@ -1384,6 +1384,24 @@ class SpeechTranscriber:
             logger.info("Processing audio...")
 
             try:
+                debug_wav = None
+                debug_wav_path = None
+                if self.config.get("stt_debug_recording_enabled", False):
+                    import wave
+
+                    debug_wav_path = self.config.get("stt_debug_recording_path")
+                    if not debug_wav_path:
+                        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        debug_wav_path = os.path.join(
+                            "logs", f"stt_debug_{timestamp}.wav"
+                        )
+                    os.makedirs(os.path.dirname(debug_wav_path), exist_ok=True)
+                    debug_wav = wave.open(debug_wav_path, "wb")
+                    debug_wav.setnchannels(1)
+                    debug_wav.setsampwidth(2)
+                    debug_wav.setframerate(self.audio_sample_rate)
+                    logger.info("Recording STT debug audio to %s", debug_wav_path)
+
                 # Two queues distribute audio chunks to STT and emotion detection.
                 # Different queue types match each consumer's execution model:
                 #
@@ -1402,6 +1420,8 @@ class SpeechTranscriber:
                     async for chunk in audio_generator:
                         stt_queue.put(chunk)        # Non-blocking for sync queue
                         await emotion_queue.put(chunk)  # Async put
+                        if debug_wav is not None:
+                            debug_wav.writeframes(chunk)
                     # Signal end-of-stream to both consumers
                     stt_queue.put(None)
                     await emotion_queue.put(None)
@@ -1479,6 +1499,13 @@ class SpeechTranscriber:
                 logger.error(f"Error transcribing speech: {str(e)}")
                 text = ""
                 emotion_annotation = ""
+            finally:
+                if debug_wav is not None:
+                    try:
+                        debug_wav.close()
+                        logger.info("STT debug audio saved to %s", debug_wav_path)
+                    except Exception as e:
+                        logger.error(f"Error closing STT debug audio file: {str(e)}")
 
         return text, emotion_annotation
 
