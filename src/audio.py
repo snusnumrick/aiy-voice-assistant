@@ -923,7 +923,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
             )
 
         self.api_key = api_key
-        self.model = config.get("soniox_model", "stt-rt-preview")
+        self.model = config.get("soniox_model", "stt-rt-v3")
         self.audio_format = config.get("soniox_audio_format", "pcm_s16le")
         self.sample_rate = config.get("sample_rate_hertz", 16000)
         self.num_channels = config.get("soniox_num_channels", 1)
