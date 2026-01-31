@@ -195,6 +195,7 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
         OPENROUTER_API_KEY=your_open_router_api_key
         PERPLEXITY_API_KEY=your_perplexity_api_key
         ELEVENLABS_API_KEY=your_elevenlabs_api_key
+        SONIOX_API_KEY=your_soniox_api_key
         GEMINI_API_KEY=your_gemini_api_key
         TOMORROW_API_KEY=your_tomorrow_io_api_key        # For weather data
         GEOCODE_API_KEY=your_maps_co_geocoding_api_key   # For location lookup
@@ -405,6 +406,9 @@ Possible customizations:
 - Adjust the system prompt and other configuration options in `config.json`.
 - Customize TTS voices and languages in the configuration.
 - Adjust volume control settings (min/max volume, step size) in the `config.json` file
+- Configure speech recognition and STT context hints:
+  - `speech_recognition_service` (google/yandex/openai/elevenlabs/soniox)
+  - `stt_context_enabled`, `stt_context_prefix`, `stt_context_max_age_sec`, `stt_context_max_length`
 
 WizardTool Configuration:
 
