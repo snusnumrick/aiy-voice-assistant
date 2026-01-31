@@ -1286,8 +1286,13 @@ class SpeechTranscriber:
                 nonlocal player_process
                 if player_process:
                     try:
-                        chunks_deque.clear()
-                        player_process.stop()
+                        if player_process.is_playing():
+                            logger.info(
+                                "Stopping playback; clearing %s buffered audio chunks",
+                                len(chunks_deque),
+                            )
+                            chunks_deque.clear()
+                            player_process.stop()
                     except Exception as e:
                         logger.error(f"Error stopping player process: {str(e)}")
 
