@@ -902,6 +902,244 @@ class ElevenLabsSpeechRecognition(SpeechRecognitionService):
         )
 
 
+class SonioxSpeechRecognition(SpeechRecognitionService):
+    """
+    Soniox Real-time WebSocket Speech-to-Text implementation.
+    """
+
+    def setup_client(self, config):
+        import json
+        import asyncio
+        import websockets
+        from websockets.exceptions import ConnectionClosed
+
+        logger.info("Setting up Soniox Realtime Speech client")
+
+        api_key = os.environ.get("SONIOX_API_KEY") or config.get("soniox_api_key")
+        if not api_key:
+            raise ValueError(
+                "Soniox API key is not provided. Set SONIOX_API_KEY environment variable "
+                "or 'soniox_api_key' in configuration."
+            )
+
+        self.api_key = api_key
+        self.model = config.get("soniox_model", "stt-rt-preview")
+        self.audio_format = config.get("soniox_audio_format", "pcm_s16le")
+        self.sample_rate = config.get("sample_rate_hertz", 16000)
+        self.num_channels = config.get("soniox_num_channels", 1)
+        self.language_hints = config.get("soniox_language_hints")
+        if not self.language_hints:
+            language_code = config.get("language_code")
+            if language_code:
+                self.language_hints = [language_code]
+        self.language_hints_strict = config.get("soniox_language_hints_strict")
+        self.enable_endpoint_detection = config.get(
+            "soniox_enable_endpoint_detection"
+        )
+        self.enable_language_identification = config.get(
+            "soniox_enable_language_identification"
+        )
+        self.enable_speaker_diarization = config.get(
+            "soniox_enable_speaker_diarization"
+        )
+        self.client_reference_id = config.get("soniox_client_reference_id")
+        self.response_timeout_sec = config.get("soniox_response_timeout_sec", 15)
+        self.send_finalize = bool(config.get("soniox_send_finalize", False))
+
+        self.json = json
+        self.asyncio = asyncio
+        self.websockets = websockets
+        self.ConnectionClosed = ConnectionClosed
+
+    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+        logger.debug("Transcribing audio stream (soniox realtime)")
+
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
+
+        def run_in_thread():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(
+                    self._transcribe_stream_async(audio_generator)
+                )
+            finally:
+                loop.close()
+
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_in_thread)
+                return future.result()
+        except Exception as e:
+            logger.error(f"Error transcribing audio with Soniox: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return ""
+
+    async def _transcribe_stream_async(self, audio_generator: Iterator[bytes]) -> str:
+        uri = "wss://stt-rt.soniox.com/transcribe-websocket"
+        logger.debug("Connecting to Soniox WebSocket: %s", uri)
+
+        send_done = self.asyncio.Event()
+        transcript_parts = []
+        last_partial = ""
+
+        try:
+            async with self.websockets.connect(uri) as websocket:
+                config_message = self._build_config_message()
+                await websocket.send(self.json.dumps(config_message))
+
+                send_task = self.asyncio.create_task(
+                    self._send_audio(websocket, audio_generator, send_done)
+                )
+                receive_task = self.asyncio.create_task(
+                    self._receive_transcripts(
+                        websocket, send_done, transcript_parts, last_partial
+                    )
+                )
+
+                await send_task
+                result = await receive_task
+                return result.strip() if result else ""
+
+        except self.ConnectionClosed as e:
+            logger.error(f"Soniox WebSocket closed: {str(e)}")
+            return "".join(transcript_parts).strip()
+        except Exception as e:
+            logger.error(f"Error in Soniox async transcription: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return ""
+
+    def _build_config_message(self) -> dict:
+        message = {
+            "api_key": self.api_key,
+            "model": self.model,
+            "audio_format": self.audio_format,
+        }
+
+        if self.audio_format != "auto":
+            message["sample_rate"] = self.sample_rate
+            message["num_channels"] = self.num_channels
+
+        if self.language_hints:
+            message["language_hints"] = self.language_hints
+
+        if self.language_hints_strict is not None:
+            message["language_hints_strict"] = bool(self.language_hints_strict)
+
+        if self.enable_endpoint_detection is not None:
+            message["enable_endpoint_detection"] = bool(
+                self.enable_endpoint_detection
+            )
+
+        if self.enable_language_identification is not None:
+            message["enable_language_identification"] = bool(
+                self.enable_language_identification
+            )
+
+        if self.enable_speaker_diarization is not None:
+            message["enable_speaker_diarization"] = bool(
+                self.enable_speaker_diarization
+            )
+
+        if self.client_reference_id:
+            message["client_reference_id"] = self.client_reference_id
+
+        return message
+
+    async def _send_audio(self, websocket, audio_generator: Iterator[bytes], send_done):
+        async for chunk in self._async_generator(audio_generator):
+            if not chunk:
+                continue
+            await websocket.send(chunk)
+
+        if self.send_finalize:
+            await websocket.send(self.json.dumps({"type": "finalize"}))
+
+        await websocket.send(b"")
+        send_done.set()
+
+    async def _receive_transcripts(
+        self,
+        websocket,
+        send_done,
+        transcript_parts: List[str],
+        last_partial: str,
+    ) -> str:
+        # Receives and processes transcript messages from websocket
+        while True:
+            try:
+                message = await self.asyncio.wait_for(
+                    websocket.recv(), timeout=self.response_timeout_sec
+                )
+            except self.asyncio.TimeoutError:
+                if send_done.is_set():
+                    break
+                continue
+            except self.ConnectionClosed:
+                break
+
+            logger.info("Received message from Soniox: %s", message)
+
+            if not message:
+                continue
+            if isinstance(message, (bytes, bytearray)):
+                try:
+                    message = message.decode("utf-8")
+                except Exception:
+                    logger.debug("Non-UTF8 message from Soniox")
+                    continue
+
+            try:
+                response = self.json.loads(message)
+            except Exception:
+                logger.warning("Non-JSON message from Soniox: %s", message)
+                continue
+
+            if response.get("error_code"):
+                logger.error(
+                    "Soniox error %s: %s",
+                    response.get("error_code"),
+                    response.get("error_message"),
+                )
+                return ""
+
+            if response.get("finished"):
+                break
+
+            tokens = response.get("tokens", [])
+            if tokens:
+                partial_parts = []
+                for token in tokens:
+                    text = token.get("text", "")
+                    if not text:
+                        continue
+                    if token.get("is_final"):
+                        transcript_parts.append(text)
+                    else:
+                        partial_parts.append(text)
+                if partial_parts:
+                    last_partial = "".join(partial_parts)
+
+        if transcript_parts:
+            return "".join(transcript_parts)
+        return (last_partial or "").strip()
+
+    async def _async_generator(self, sync_generator: Iterator[bytes]):
+        try:
+            for chunk in sync_generator:
+                await self.asyncio.sleep(0)
+                yield chunk
+        except self.asyncio.CancelledError:
+            logger.debug("Soniox async generator cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"Error in Soniox async generator: {str(e)}")
+            raise
+
+
 class RecordingStatus(Enum):
     NOT_STARTED = 0
     STARTED = 1
@@ -992,6 +1230,9 @@ class SpeechTranscriber:
         elif service_name == "elevenlabs":
             logger.info("using elevenlabs realtime speech recognition")
             self.speech_service = ElevenLabsSpeechRecognition()
+        elif service_name == "soniox":
+            logger.info("using soniox realtime speech recognition")
+            self.speech_service = SonioxSpeechRecognition()
         else:
             raise ValueError(f"Unsupported speech recognition service: {service_name}")
         self.speech_service.setup_client(self.config)
