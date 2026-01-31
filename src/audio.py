@@ -989,6 +989,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
         try:
             async with self.websockets.connect(uri) as websocket:
                 config_message = self._build_config_message()
+                logger.info("Sending Soniox config message: %s", config_message)
                 await websocket.send(self.json.dumps(config_message))
 
                 send_task = self.asyncio.create_task(
@@ -1123,6 +1124,9 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
                     if not text:
                         continue
                     if token.get("is_final"):
+                        if text == "<fin>":
+                            logger.info("Soniox final transcript received")
+                            break
                         transcript_parts.append(text)
                     else:
                         partial_parts.append(text)
