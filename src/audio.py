@@ -530,6 +530,375 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
             raise
 
 
+class ElevenLabsSpeechRecognition(SpeechRecognitionService):
+    """
+    ElevenLabs Realtime Speech-to-Text API implementation.
+
+    Uses WebSocket connection to stream audio and receive transcripts.
+    """
+
+    def setup_client(self, config):
+        import base64
+        import json
+        import asyncio
+        import websockets
+        from websockets.exceptions import ConnectionClosed
+
+        logger.info("Setting up ElevenLabs Realtime Speech client")
+
+        api_key = os.environ.get("ELEVENLABS_API_KEY") or config.get(
+            "elevenlabs_api_key"
+        )
+        token = config.get("elevenlabs_token")
+
+        if not api_key and not token:
+            raise ValueError(
+                "ElevenLabs API key or token is not provided. Set ELEVENLABS_API_KEY "
+                "environment variable or 'elevenlabs_api_key'/'elevenlabs_token' in configuration."
+            )
+
+        self.api_key = api_key
+        self.token = token
+        self.model_id = config.get("elevenlabs_model_id", "scribe_v2_realtime")
+        self.language_code = config.get("language_code") or config.get(
+            "elevenlabs_language_code"
+        )
+        self.sample_rate = config.get("sample_rate_hertz", 16000)
+        self.audio_format = config.get("elevenlabs_audio_format") or self._infer_audio_format(
+            self.sample_rate
+        )
+        self.commit_strategy = config.get(
+            "elevenlabs_commit_strategy", "manual"
+        ).lower()
+        self.include_timestamps = bool(
+            config.get("elevenlabs_include_timestamps", False)
+        )
+        self.include_language_detection = bool(
+            config.get("elevenlabs_include_language_detection", False)
+        )
+        self.enable_logging = config.get("elevenlabs_enable_logging")
+        self.vad_silence_threshold_secs = config.get(
+            "elevenlabs_vad_silence_threshold_secs"
+        )
+        self.vad_threshold = config.get("elevenlabs_vad_threshold")
+        self.min_speech_duration_ms = config.get(
+            "elevenlabs_min_speech_duration_ms"
+        )
+        self.min_silence_duration_ms = config.get(
+            "elevenlabs_min_silence_duration_ms"
+        )
+        self.response_timeout_sec = config.get(
+            "elevenlabs_response_timeout_sec", 15
+        )
+        self.previous_text = config.get("elevenlabs_previous_text")
+        self.base64 = base64
+        self.json = json
+        self.asyncio = asyncio
+        self.websockets = websockets
+        self.ConnectionClosed = ConnectionClosed
+
+        if self.commit_strategy not in {"manual", "vad"}:
+            logger.warning(
+                "Unsupported ElevenLabs commit strategy '%s', defaulting to manual",
+                self.commit_strategy,
+            )
+            self.commit_strategy = "manual"
+
+    def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+        """
+        Transcribe audio stream using ElevenLabs Realtime Speech-to-Text API.
+
+        Runs WebSocket connection in a separate thread to avoid event loop conflicts.
+        """
+        logger.debug("Transcribing audio stream (elevenlabs realtime)")
+
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
+
+        def run_in_thread():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(
+                    self._transcribe_stream_async(audio_generator)
+                )
+            finally:
+                loop.close()
+
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_in_thread)
+                return future.result()
+        except Exception as e:
+            logger.error(f"Error transcribing audio with ElevenLabs: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return ""
+
+    async def _transcribe_stream_async(self, audio_generator: Iterator[bytes]) -> str:
+        import urllib.parse
+
+        uri = self._build_ws_uri(urllib.parse.urlencode)
+        logger.debug("Connecting to ElevenLabs WebSocket: %s", uri)
+
+        extra_headers = {}
+        if self.api_key:
+            extra_headers["xi-api-key"] = self.api_key
+
+        send_done = self.asyncio.Event()
+        commit_sent = self.asyncio.Event()
+
+        full_transcript = []
+
+        try:
+            async with self.websockets.connect(
+                uri,
+                extra_headers=extra_headers if extra_headers else None,
+            ) as websocket:
+                send_task = self.asyncio.create_task(
+                    self._send_audio(websocket, audio_generator, send_done, commit_sent)
+                )
+                receive_task = self.asyncio.create_task(
+                    self._receive_transcripts(
+                        websocket, send_done, commit_sent, full_transcript
+                    )
+                )
+
+                await send_task
+                result = await receive_task
+                return result.strip() if result else ""
+
+        except self.ConnectionClosed as e:
+            logger.error(f"ElevenLabs WebSocket closed: {str(e)}")
+            return " ".join(full_transcript).strip()
+        except Exception as e:
+            logger.error(f"Error in ElevenLabs async transcription: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return ""
+
+    async def _send_audio(
+        self,
+        websocket,
+        audio_generator: Iterator[bytes],
+        send_done,
+        commit_sent,
+    ):
+        first_sent = False
+        pending_chunk = None
+        previous_text = (self.previous_text or "").strip()
+        if previous_text:
+            previous_text = previous_text[:50]
+
+        async for chunk in self._async_generator(audio_generator):
+            if not chunk:
+                continue
+            if pending_chunk is None:
+                pending_chunk = chunk
+                continue
+
+            await self._send_chunk(
+                websocket,
+                pending_chunk,
+                commit=False,
+                include_previous=not first_sent,
+                previous_text=previous_text,
+            )
+            first_sent = True
+            pending_chunk = chunk
+
+        if pending_chunk is not None:
+            commit = self.commit_strategy == "manual"
+            await self._send_chunk(
+                websocket,
+                pending_chunk,
+                commit=commit,
+                include_previous=not first_sent,
+                previous_text=previous_text,
+            )
+            if commit:
+                commit_sent.set()
+
+        send_done.set()
+
+    async def _send_chunk(
+        self,
+        websocket,
+        chunk: bytes,
+        commit: bool,
+        include_previous: bool,
+        previous_text: str,
+    ):
+        payload = {
+            "message_type": "input_audio_chunk",
+            "audio_base_64": self.base64.b64encode(chunk).decode("utf-8"),
+            "sample_rate": self.sample_rate,
+        }
+        if include_previous and previous_text:
+            payload["previous_text"] = previous_text
+        if self.commit_strategy == "manual":
+            payload["commit"] = bool(commit)
+
+        await websocket.send(self.json.dumps(payload))
+
+    async def _receive_transcripts(
+        self,
+        websocket,
+        send_done,
+        commit_sent,
+        full_transcript: List[str],
+    ) -> str:
+        error_types = {
+            "auth_error",
+            "quota_exceeded",
+            "transcriber_error",
+            "input_error",
+            "error",
+            "commit_throttled",
+            "unaccepted_terms",
+            "scribe_auth_error",
+            "scribe_quota_exceeded_error",
+            "scribe_transcriber_error",
+            "scribe_input_error",
+            "scribe_error",
+            "scribe_throttled_error",
+            "scribe_rate_limited_error",
+            "scribe_unaccepted_terms_error",
+            "scribe_queue_overflow_error",
+            "scribe_resource_exhausted_error",
+            "scribe_session_time_limit_exceeded_error",
+            "scribe_chunk_size_exceeded_error",
+            "scribe_insufficient_audio_activity_error",
+        }
+
+        while True:
+            try:
+                message = await self.asyncio.wait_for(
+                    websocket.recv(), timeout=self.response_timeout_sec
+                )
+            except self.asyncio.TimeoutError:
+                if send_done.is_set():
+                    break
+                continue
+            except self.ConnectionClosed:
+                break
+
+            try:
+                response = self.json.loads(message)
+            except Exception:
+                logger.debug("Non-JSON message from ElevenLabs: %s", message)
+                continue
+
+            message_type = response.get("message_type")
+            if not message_type:
+                continue
+
+            if message_type == "session_started":
+                logger.debug("ElevenLabs session started")
+                continue
+
+            if message_type == "partial_transcript":
+                partial_text = response.get("text", "")
+                if partial_text:
+                    logger.debug("ElevenLabs partial: %s", partial_text)
+                continue
+
+            if message_type in {
+                "committed_transcript",
+                "committed_transcript_with_timestamps",
+            }:
+                text = response.get("text", "")
+                if text:
+                    full_transcript.append(text)
+                    if self.commit_strategy == "manual" and commit_sent.is_set():
+                        return " ".join(full_transcript)
+                continue
+
+            if message_type in error_types:
+                logger.error(
+                    "ElevenLabs error: %s",
+                    response.get("message") or response.get("error") or response,
+                )
+                return ""
+
+        return " ".join(full_transcript)
+
+    async def _async_generator(self, sync_generator: Iterator[bytes]):
+        try:
+            for chunk in sync_generator:
+                await self.asyncio.sleep(0)
+                yield chunk
+        except self.asyncio.CancelledError:
+            logger.debug("ElevenLabs async generator cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"Error in ElevenLabs async generator: {str(e)}")
+            raise
+
+    def _infer_audio_format(self, sample_rate: int) -> str:
+        mapping = {
+            8000: "pcm_8000",
+            16000: "pcm_16000",
+            22050: "pcm_22050",
+            24000: "pcm_24000",
+            44100: "pcm_44100",
+            48000: "pcm_48000",
+        }
+        audio_format = mapping.get(sample_rate)
+        if not audio_format:
+            logger.warning(
+                "Unsupported ElevenLabs sample_rate_hertz %s; defaulting to pcm_16000",
+                sample_rate,
+            )
+            audio_format = "pcm_16000"
+        return audio_format
+
+    def _build_ws_uri(self, urlencode):
+        query_params = {
+            "model_id": self.model_id,
+            "audio_format": self.audio_format,
+            "commit_strategy": self.commit_strategy,
+        }
+
+        if self.language_code:
+            query_params["language_code"] = self.language_code
+
+        if self.token:
+            query_params["token"] = self.token
+
+        if self.include_timestamps:
+            query_params["include_timestamps"] = "true"
+
+        if self.include_language_detection:
+            query_params["include_language_detection"] = "true"
+
+        if self.enable_logging is not None:
+            query_params["enable_logging"] = (
+                "true" if bool(self.enable_logging) else "false"
+            )
+
+        if self.commit_strategy == "vad":
+            if self.vad_silence_threshold_secs is not None:
+                query_params["vad_silence_threshold_secs"] = str(
+                    self.vad_silence_threshold_secs
+                )
+            if self.vad_threshold is not None:
+                query_params["vad_threshold"] = str(self.vad_threshold)
+            if self.min_speech_duration_ms is not None:
+                query_params["min_speech_duration_ms"] = str(
+                    self.min_speech_duration_ms
+                )
+            if self.min_silence_duration_ms is not None:
+                query_params["min_silence_duration_ms"] = str(
+                    self.min_silence_duration_ms
+                )
+
+        return (
+            "wss://api.elevenlabs.io/v1/speech-to-text/realtime?"
+            + urlencode(query_params)
+        )
+
+
 class RecordingStatus(Enum):
     NOT_STARTED = 0
     STARTED = 1
@@ -617,6 +986,9 @@ class SpeechTranscriber:
         elif service_name == "openai":
             logger.info("using openai realtime speech recognition")
             self.speech_service = OpenAISpeechRecognition()
+        elif service_name == "elevenlabs":
+            logger.info("using elevenlabs realtime speech recognition")
+            self.speech_service = ElevenLabsSpeechRecognition()
         else:
             raise ValueError(f"Unsupported speech recognition service: {service_name}")
         self.speech_service.setup_client(self.config)
