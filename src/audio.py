@@ -549,7 +549,7 @@ class ElevenLabsSpeechRecognition(SpeechRecognitionService):
         api_key = os.environ.get("ELEVENLABS_API_KEY") or config.get(
             "elevenlabs_api_key"
         )
-        token = config.get("elevenlabs_token")
+        token = config.get("elevenlabs_token", "")
 
         if not api_key and not token:
             raise ValueError(
@@ -603,6 +603,7 @@ class ElevenLabsSpeechRecognition(SpeechRecognitionService):
                 self.commit_strategy,
             )
             self.commit_strategy = "manual"
+        logger.info("Setting up ElevenLabs Realtime Speech client completed")
 
     def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
         """
@@ -783,10 +784,12 @@ class ElevenLabsSpeechRecognition(SpeechRecognitionService):
             except self.ConnectionClosed:
                 break
 
+            logger.info("Received message from ElevenLabs: %s", message)
+
             try:
                 response = self.json.loads(message)
             except Exception:
-                logger.debug("Non-JSON message from ElevenLabs: %s", message)
+                logger.warning("Non-JSON message from ElevenLabs: %s", message)
                 continue
 
             message_type = response.get("message_type")
