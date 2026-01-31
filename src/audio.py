@@ -1232,9 +1232,10 @@ class SpeechTranscriber:
 
         chunks_deque = deque()
         status = RecordingStatus.NOT_STARTED
+        prebuffer_chunks_to_skip = 0
 
         async def generate_audio_chunks():
-            nonlocal status, chunks_deque, player_process
+            nonlocal status, chunks_deque, player_process, prebuffer_chunks_to_skip
 
             audio_format = AudioFormat(
                 sample_rate_hz=self.audio_sample_rate,
@@ -1329,6 +1330,7 @@ class SpeechTranscriber:
                 if (status == RecordingStatus.NOT_STARTED) and self.button.state == ButtonState.PRESSED:
                     stop_playing()
                     start_listening()
+                    prebuffer_chunks_to_skip = len(chunks_deque)
                     logger.info(f"{len(chunks_deque)} audio chunks buffered")
                     status = RecordingStatus.STARTED
                     continue
@@ -1367,6 +1369,31 @@ class SpeechTranscriber:
             logger.info("Processing audio...")
 
             try:
+                if prebuffer_chunks_to_skip > 0:
+                    prebuffer_chunks_to_skip -= 1
+
+                emotion_limit_sec = self.config.get("emotion_audio_limit_sec", 5.0)
+                emotion_max_chunks = None
+                try:
+                    if emotion_limit_sec is not None:
+                        limit_sec = float(emotion_limit_sec)
+                        if limit_sec <= 0:
+                            emotion_max_chunks = 0
+                        else:
+                            chunk_duration = float(
+                                self.audio_recording_chunk_duration_sec
+                            )
+                            if chunk_duration > 0:
+                                emotion_max_chunks = int(limit_sec / chunk_duration)
+                            else:
+                                emotion_max_chunks = None
+                except Exception as e:
+                    logger.error(
+                        "Invalid emotion_audio_limit_sec (%s): %s",
+                        emotion_limit_sec,
+                        str(e),
+                    )
+
                 debug_wav = None
                 debug_wav_path = None
                 if self.config.get("stt_debug_recording_enabled", False):
@@ -1399,14 +1426,34 @@ class SpeechTranscriber:
 
                 async def fill_queues():
                     """Distribute each audio chunk to both consumers."""
+                    remaining_prebuffer = prebuffer_chunks_to_skip
+                    emotion_chunks_sent = 0
+                    emotion_done = False
                     async for chunk in audio_generator:
                         stt_queue.put(chunk)        # Non-blocking for sync queue
-                        await emotion_queue.put(chunk)  # Async put
+                        if not emotion_done:
+                            if remaining_prebuffer > 0:
+                                remaining_prebuffer -= 1
+                            elif (emotion_max_chunks is None) or (
+                                emotion_chunks_sent < emotion_max_chunks
+                            ):
+                                await emotion_queue.put(chunk)  # Async put
+                                emotion_chunks_sent += 1
+                                if (
+                                    emotion_max_chunks is not None
+                                    and emotion_chunks_sent >= emotion_max_chunks
+                                ):
+                                    await emotion_queue.put(None)
+                                    emotion_done = True
+                            else:
+                                await emotion_queue.put(None)
+                                emotion_done = True
                         if debug_wav is not None:
                             debug_wav.writeframes(chunk)
                     # Signal end-of-stream to both consumers
                     stt_queue.put(None)
-                    await emotion_queue.put(None)
+                    if not emotion_done:
+                        await emotion_queue.put(None)
 
                 def stt_generator():
                     """Sync generator for STT - blocks on queue.get() in thread."""
