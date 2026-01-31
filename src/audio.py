@@ -43,7 +43,10 @@ class SpeechRecognitionService(ABC):
 
     @abstractmethod
     async def transcribe_stream(
-        self, audio_generator: Iterator[bytes], config
+        self,
+        audio_generator: Iterator[bytes],
+        config,
+        context: Optional[str] = None,
     ) -> str:
         pass
 
@@ -62,7 +65,12 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
         )
         self.client = speech.SpeechClient(credentials=credentials)
 
-    async def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(
+        self,
+        audio_generator: Iterator[bytes],
+        config,
+        context: Optional[str] = None,
+    ) -> str:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, self._transcribe_stream_sync, audio_generator, config
@@ -132,7 +140,12 @@ class YandexSpeechRecognition(SpeechRecognitionService):
             )
         )
 
-    async def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(
+        self,
+        audio_generator: Iterator[bytes],
+        config,
+        context: Optional[str] = None,
+    ) -> str:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, self._transcribe_stream_sync, audio_generator, config
@@ -231,7 +244,12 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         self.websockets = websockets
         self.ConnectionClosed = ConnectionClosed
 
-    async def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(
+        self,
+        audio_generator: Iterator[bytes],
+        config,
+        context: Optional[str] = None,
+    ) -> str:
         """
         Transcribe audio stream using OpenAI Realtime API.
 
@@ -600,7 +618,12 @@ class ElevenLabsSpeechRecognition(SpeechRecognitionService):
             self.commit_strategy = "manual"
         logger.info("Setting up ElevenLabs Realtime Speech client completed")
 
-    async def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(
+        self,
+        audio_generator: Iterator[bytes],
+        config,
+        context: Optional[str] = None,
+    ) -> str:
         """
         Transcribe audio stream using ElevenLabs Realtime Speech-to-Text API.
 
@@ -930,18 +953,25 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
         self.websockets = websockets
         self.ConnectionClosed = ConnectionClosed
 
-    async def transcribe_stream(self, audio_generator: Iterator[bytes], config) -> str:
+    async def transcribe_stream(
+        self,
+        audio_generator: Iterator[bytes],
+        config,
+        context: Optional[str] = None,
+    ) -> str:
         logger.debug("Transcribing audio stream (soniox realtime)")
 
         try:
-            return await self._transcribe_stream_async(audio_generator)
+            return await self._transcribe_stream_async(audio_generator, context)
         except Exception as e:
             logger.error(f"Error transcribing audio with Soniox: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
             return ""
 
-    async def _transcribe_stream_async(self, audio_generator: Iterator[bytes]) -> str:
+    async def _transcribe_stream_async(
+        self, audio_generator: Iterator[bytes], context: Optional[str]
+    ) -> str:
         uri = "wss://stt-rt.soniox.com/transcribe-websocket"
         logger.debug("Connecting to Soniox WebSocket: %s", uri)
 
@@ -952,7 +982,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
         # Transcribes audio stream; handles connection and exceptions
         try:
             async with self.websockets.connect(uri) as websocket:
-                config_message = self._build_config_message()
+                config_message = self._build_config_message(context)
                 logger.debug("Sending Soniox config message: %s", config_message)
                 await websocket.send(self.json.dumps(config_message))
 
@@ -978,7 +1008,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
             logger.error(traceback.format_exc())
             return ""
 
-    def _build_config_message(self) -> dict:
+    def _build_config_message(self, context: Optional[str]) -> dict:
         message = {
             "api_key": self.api_key,
             "model": self.model,
@@ -1012,6 +1042,9 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
 
         if self.client_reference_id:
             message["client_reference_id"] = self.client_reference_id
+
+        if context:
+            message["context"] = {"text": str(context)}
 
         return message
 
@@ -1216,7 +1249,9 @@ class SpeechTranscriber:
         self.speech_service.setup_client(self.config)
 
     async def transcribe_speech(
-        self, player_process: Optional[ResponsePlayer] = None
+        self,
+        player_process: Optional[ResponsePlayer] = None,
+        context: Optional[str] = None,
     ) -> tuple:
         """
         Transcribe speech from the microphone input, including pre and post buffering.
@@ -1224,6 +1259,7 @@ class SpeechTranscriber:
 
         Args:
             player_process (Optional[ResponsePlayer]): Object representing a running audio player.
+            context (Optional[str]): Optional STT context string.
 
         Returns:
             tuple: (transcribed_text, emotion_annotation) where emotion_annotation is
@@ -1475,7 +1511,7 @@ class SpeechTranscriber:
                     """Run STT in the event loop (async service interface)."""
                     try:
                         return await self.speech_service.transcribe_stream(
-                            stt_generator(), self.config
+                            stt_generator(), self.config, context=context
                         )
                     except Exception as e:
                         logger.error(f"Error in STT: {str(e)}")

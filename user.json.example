@@ -3,5 +3,9 @@
   "user_email_address": "treskunov@gmail.com",
   "smtp_server": "mail.treskunov.net",
   "smtp_port": "26",
-  "assistant_email_username": "cubick@treskunov.net"
+  "assistant_email_username": "cubick@treskunov.net",
+  "stt_context_max_age_sec": 0,
+  "stt_context_enabled": true,
+  "stt_context_prefix": "",
+  "stt_context_max_length": 600
 }

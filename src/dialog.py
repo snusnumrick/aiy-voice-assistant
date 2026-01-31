@@ -26,8 +26,9 @@ import asyncio
 import logging
 import os
 import time
+import re
 import traceback
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import aiohttp
 import tempfile
@@ -188,6 +189,35 @@ class DialogManager:
             button, leds, config, cleaning=self.cleaning_routine, timezone=timezone,
             emotion_engine=emotion_engine
         )
+        self.last_assistant_response_text: Optional[str] = None
+        self.last_assistant_response_time: Optional[float] = None
+
+    @staticmethod
+    def _sanitize_stt_context(text: str) -> str:
+        if not text:
+            return ""
+        text = re.sub(r"\$emotion:\s*(\{.*?\})?\$", "", text, flags=re.DOTALL)
+        text = re.sub(r"\$lang:\s*[A-Za-z]+\s*\$?", "", text)
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
+
+    @staticmethod
+    def _cap_stt_context(prefix: str, response: str, max_len: int) -> str:
+        if max_len is None or max_len <= 0:
+            combined = " ".join(p for p in [prefix, response] if p)
+            return combined.strip()
+        if not prefix and not response:
+            return ""
+        if prefix and not response:
+            return prefix[-max_len:]
+        if response and not prefix:
+            return response[-max_len:]
+        if len(prefix) >= max_len:
+            return prefix[-max_len:]
+        remaining = max_len - len(prefix) - 1
+        if remaining <= 0:
+            return prefix[-max_len:]
+        return f"{prefix} {response[-remaining:]}"
 
     async def cleaning_routine(self):
         """Perform cleanup tasks for the conversation manager."""
@@ -270,8 +300,36 @@ class DialogManager:
             while True:
                 try:
                     self.conversation_manager.save_dialog()
+                    context = None
+                    context_enabled = self.config.get("stt_context_enabled", True)
+                    if context_enabled:
+                        context_text = None
+                        max_age = self.config.get("stt_context_max_age_sec", 0)
+                        if (
+                            max_age
+                            and self.last_assistant_response_time
+                            and self.last_assistant_response_text
+                        ):
+                            age_sec = time.time() - self.last_assistant_response_time
+                            if age_sec <= max_age:
+                                context_text = self.last_assistant_response_text
+
+                        prefix = self.config.get("stt_context_prefix")
+                        if isinstance(prefix, str):
+                            prefix = self._sanitize_stt_context(prefix)
+                        else:
+                            prefix = ""
+
+                        if context_text:
+                            context_text = self._sanitize_stt_context(context_text)
+
+                        max_len = self.config.get("stt_context_max_length", 0)
+                        context = self._cap_stt_context(
+                            prefix, context_text or "", max_len
+                        )
+
                     text, emotion_annotation = await self.transcriber.transcribe_speech(
-                        self.response_player
+                        self.response_player, context=context
                     )
 
                     # Combine emotion annotation with text for LLM
@@ -422,6 +480,8 @@ class DialogManager:
                     save_to_conversation("assistant", ai_message, self.timezone)
                 )
                 logger.debug("Initiated new save_to_conversation task")
+                self.last_assistant_response_text = ai_message
+                self.last_assistant_response_time = time.time()
 
         except Exception as e:
             logger.error(f"Unexpected error in process_ai_response: {str(e)}")
