@@ -189,7 +189,9 @@ class ConversationManager:
         message_history (deque): A queue of message dictionaries representing the conversation history.
     """
 
-    def __init__(self, config, ai_model: AIModel, timezone: str, enabled_tools: Optional[List] = None):
+    def __init__(
+        self, config, ai_model: AIModel, timezone: str, enabled_tools: Optional[List] = None
+    ):
         """
         Initialize the ConversationManager.
 
@@ -216,10 +218,7 @@ class ConversationManager:
         if self.emotion_detection_enabled:
             base_rules += _get_emotion_awareness_rule_russian()
 
-        self.hard_rules = _combine_rules(
-            base_rules,
-            self._generate_tool_rules("russian")
-        )
+        self.hard_rules = _combine_rules(base_rules, self._generate_tool_rules("russian"))
 
         self.default_system_prompt_russian = (
             "Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
@@ -261,7 +260,7 @@ class ConversationManager:
         """
         rules = []
         for tool in self.enabled_tools:
-            if hasattr(tool, 'rule_instructions') and language in tool.rule_instructions:
+            if hasattr(tool, "rule_instructions") and language in tool.rule_instructions:
                 rule_text = tool.rule_instructions[language].strip()
                 if rule_text:
                     rules.append(rule_text)
@@ -301,9 +300,7 @@ class ConversationManager:
 
         return prompt
 
-    async def get_response(
-        self, text: str
-    ) -> AsyncGenerator[List[Dict[str, any]], None]:
+    async def get_response(self, text: str) -> AsyncGenerator[List[Dict[str, any]], None]:
         """
         Get an AI response based on the current conversation state and new input.
 
@@ -327,7 +324,9 @@ class ConversationManager:
         buffer_max_length = self.config.get("sentence_buffer_max_length", 200)
 
         if buffer_enabled:
-            logger.debug(f"Sentence buffer: enabled, timeout={buffer_timeout}s, max_length={buffer_max_length}")
+            logger.debug(
+                f"Sentence buffer: enabled, timeout={buffer_timeout}s, max_length={buffer_max_length}"
+            )
 
         # update system message
         self.message_history[0] = {
@@ -337,16 +336,12 @@ class ConversationManager:
 
         # cleanup in case of previous errors
         if self.message_history[-1]["role"] == "user":
-            logger.warning(
-                f"ignoring previous user message: {self.message_history[-1]['content']}"
-            )
+            logger.warning(f"ignoring previous user message: {self.message_history[-1]['content']}")
             self.message_history.pop()
 
         self.message_history.append({"role": "user", "content": text})
 
-        if get_token_count(list(self.message_history)) > self.config.get(
-            "token_threshold", 2500
-        ):
+        if get_token_count(list(self.message_history)) > self.config.get("token_threshold", 2500):
             new_message_history = await summarize_and_compress_history(
                 self.message_history, self.summarize_model, self.config
             )
@@ -368,15 +363,15 @@ class ConversationManager:
 
             # Combine texts, keep first emotion/language
             combined_text = " ".join(s["text"] for s in sentence_buffer)
-            return [{
-                "emotion": sentence_buffer[0]["emotion"],
-                "language": sentence_buffer[0]["language"],
-                "text": combined_text
-            }]
+            return [
+                {
+                    "emotion": sentence_buffer[0]["emotion"],
+                    "language": sentence_buffer[0]["language"],
+                    "text": combined_text,
+                }
+            ]
 
-        async for response_text in self.ai_model.get_response_async(
-            list(self.message_history)
-        ):
+        async for response_text in self.ai_model.get_response_async(list(self.message_history)):
             crt = clean_response(response_text)
 
             if self.message_history[-1]["role"] != "assistant":
@@ -433,7 +428,9 @@ class ConversationManager:
 
                             # Check if adding this sentence would cross a billing unit boundary
                             # (Yandex v3 charges per 250-char unit)
-                            would_cross_unit = buffer_chars > 0 and buffer_chars + sentence_len > 250
+                            would_cross_unit = (
+                                buffer_chars > 0 and buffer_chars + sentence_len > 250
+                            )
 
                             # Also flush if max_length exceeded (safety check)
                             would_exceed_max = buffer_chars + sentence_len > buffer_max_length
@@ -495,9 +492,7 @@ class ConversationManager:
         mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(p))
 
         cutoff = datetime.datetime.now() - datetime.timedelta(days=1)
-        cutoff = cutoff.replace(
-            hour=cleaning_time_stop_hour, minute=0, second=0, microsecond=0
-        )
+        cutoff = cutoff.replace(hour=cleaning_time_stop_hour, minute=0, second=0, microsecond=0)
 
         # if there were no modifications today
         if mod_time < cutoff:
@@ -535,9 +530,7 @@ class ConversationManager:
         mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(p))
 
         cutoff = datetime.datetime.now() - datetime.timedelta(days=1)
-        cutoff = cutoff.replace(
-            hour=cleaning_time_stop_hour, minute=0, second=0, microsecond=0
-        )
+        cutoff = cutoff.replace(hour=cleaning_time_stop_hour, minute=0, second=0, microsecond=0)
 
         # if there were no modifications today
         if mod_time < cutoff:
@@ -578,9 +571,7 @@ class ConversationManager:
                 if num_facts_after_clean == num_facts_before:
                     logger.debug("no new memories formed")
                 else:
-                    logger.debug(
-                        f"{num_facts_after_clean - num_facts_before} new facts remembered"
-                    )
+                    logger.debug(f"{num_facts_after_clean - num_facts_before} new facts remembered")
 
         if self.config.get("clean_message_history_at_night", True) or force:
             # cleanup conversation
@@ -623,9 +614,7 @@ class ConversationManager:
                     logger.debug(f"File {filepath} has been removed successfully")
                     num_removed += 1
                 except Exception as e:
-                    logger.warning(
-                        f"Error occurred while trying to remove {filepath}. Error: {e}"
-                    )
+                    logger.warning(f"Error occurred while trying to remove {filepath}. Error: {e}")
         logger.debug(f"removed {num_removed} temp wav files")
 
     @staticmethod
@@ -671,11 +660,8 @@ async def test():
     config = Config()
     timezone = get_timezone()
     ai_model = ClaudeAIModelWithTools(config)
-    conversation_manager = ConversationManager(
-        config, ai_model, timezone
-    )
+    conversation_manager = ConversationManager(config, ai_model, timezone)
     await conversation_manager.process_and_clean(force=True)
-
 
 
 if __name__ == "__main__":
