@@ -5,8 +5,8 @@ This module provides abstract and concrete implementations of STT engines,
 including OpenAI's Whisper model and Google's Speech Recognition.
 """
 
-from abc import ABC, abstractmethod
 import logging
+from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
 

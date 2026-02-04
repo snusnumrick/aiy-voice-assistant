@@ -277,7 +277,7 @@ def show_diagnostic_led_pattern(leds, network_ok, vpn_ok, ssh_ok):
         vpn_ok: VPN connection status
         ssh_ok: SSH service status
     """
-    from aiy.leds import Leds, Color
+    from aiy.leds import Color, Leds
 
     if network_ok and vpn_ok and ssh_ok:
         # All good - Green solid
@@ -322,7 +322,7 @@ def check_tech_support_mode():
     """
     # Import hardware modules only when needed (lazy loading for faster startup)
     from aiy.board import Board, ButtonState
-    from aiy.leds import Leds, Color, Pattern
+    from aiy.leds import Color, Leds, Pattern
 
     logger.info("=" * 60)
     logger.info("TECH SUPPORT MODE CHECK")

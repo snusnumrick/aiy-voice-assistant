@@ -1,19 +1,19 @@
+import asyncio
+import json
+import logging
 import os
-from typing import Dict, Union, List, Optional
-from pathlib import Path
-import aiofiles
-from datetime import datetime
-
-import requests
 import re
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Union
+
+import aiofiles
+import requests
 
 from src.ai_models import OpenAIModel, to_reasoning_effort
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 from src.server_utils import get_server_url
-import logging
-import asyncio
-import json
 
 logger = logging.getLogger(__name__)
 
@@ -780,7 +780,7 @@ Depth: {depth}
             return f"Report '{filename}' not found"
 
         # Read the file asynchronously
-        async with aiofiles.open(filepath, "r", encoding="utf-8") as f:
+        async with aiofiles.open(filepath, encoding="utf-8") as f:
             content = await f.read()
 
         logger.info(f"Report '{filename}' retrieved")
@@ -916,6 +916,7 @@ async def test_wizard():
 
 if __name__ == "__main__":
     import asyncio
+
     from dotenv import load_dotenv
 
     logging.basicConfig(level=logging.INFO)

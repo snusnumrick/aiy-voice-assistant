@@ -17,8 +17,8 @@ if __name__ == "__main__":
     # add current directory to python path
     sys.path.append(os.getcwd())
 
-from src.config import Config
 from src.ai_models import OpenRouterModel
+from src.config import Config
 
 logger = logging.getLogger(__name__)
 

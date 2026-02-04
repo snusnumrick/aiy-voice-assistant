@@ -1,10 +1,10 @@
 import logging
 import os
 import uuid
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
 from typing import Dict
 
 if __name__ == "__main__":
@@ -341,6 +341,7 @@ If you can read this, the email was sent successfully!
 
 if __name__ == "__main__":
     import asyncio
+
     from dotenv import load_dotenv
 
     logging.basicConfig(level=logging.INFO)

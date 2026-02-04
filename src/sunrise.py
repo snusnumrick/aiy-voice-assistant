@@ -1,9 +1,9 @@
-import requests
-import aiohttp
 import asyncio
-from datetime import datetime
-from typing import Optional, Dict, Union, Any, Awaitable
-from urllib.parse import urljoin
+from typing import Any, Dict, Optional
+
+import aiohttp
+import requests
+
 
 def get_solar_data(
         latitude: float,

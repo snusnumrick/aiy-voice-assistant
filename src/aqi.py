@@ -1,7 +1,8 @@
-import requests
+from typing import Dict, Union
+
 import aiohttp
-import asyncio
-from typing import Dict, Union, Optional, Awaitable
+import requests
+
 
 def get_air_quality(latitude: float, longitude: float, token: str) -> Dict[str, Union[str, dict]]:
     """
@@ -109,6 +110,7 @@ async def get_air_quality_async(latitude: float, longitude: float, token: str) -
 # Example usage:
 if __name__ == "__main__":
     import os
+
     from dotenv import load_dotenv
     load_dotenv()
 

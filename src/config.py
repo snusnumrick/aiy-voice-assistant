@@ -6,9 +6,9 @@ from both shared and user-specific JSON files and environment variables, using P
 
 Backward compatible with both Pydantic v1 and v2.
 """
+import json
 import logging
 import os
-import json
 from typing import Any, Dict
 
 # Try to import Pydantic v2 first, fall back to v1
@@ -51,7 +51,7 @@ class Config(BaseModel):
         # Load from shared config file (lowest precedence)
         if os.path.exists(config_file):
             try:
-                with open(config_file, "r") as f:
+                with open(config_file) as f:
                     file_config = json.load(f)
                     init_data.update(file_config)
                     logger.info(f"Loaded shared config from {config_file}")
@@ -63,7 +63,7 @@ class Config(BaseModel):
         # Load from user config file (overrides shared config)
         if os.path.exists(user_config_file):
             try:
-                with open(user_config_file, "r") as f:
+                with open(user_config_file) as f:
                     user_config = json.load(f)
                     init_data.update(user_config)
                     logger.info(f"Loaded user config from {user_config_file}")

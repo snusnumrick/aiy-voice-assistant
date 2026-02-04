@@ -5,19 +5,17 @@ import os
 import random
 import re
 import time
+from collections.abc import AsyncGenerator, AsyncIterator, Iterable
 from datetime import datetime
 from functools import wraps
 from typing import (
-    List,
-    Dict,
-    Union,
     Any,
     Callable,
-    AsyncGenerator,
-    Iterable,
-    Tuple,
-    AsyncIterator,
+    Dict,
+    List,
     Optional,
+    Tuple,
+    Union,
 )
 
 import aiofiles
@@ -141,8 +139,9 @@ def get_timezone(set_system_tz: bool = True) -> str:
 
     # 1) Try Google Maps Time Zone API first
     try:
-        import googlemaps  # heavy import only when needed
         import time as _time
+
+        import googlemaps  # heavy import only when needed
 
         g = geocoder.ip("me")
         latlng = getattr(g, "latlng", None)
@@ -184,7 +183,7 @@ def get_timezone(set_system_tz: bool = True) -> str:
     try:
         cache_path = "timezone.cache"
         if os.path.exists(cache_path):
-            with open(cache_path, "r", encoding="utf-8") as f:
+            with open(cache_path, encoding="utf-8") as f:
                 cached = f.read().strip()
                 if _validate_tz(cached):
                     _set_system_timezone(cached)

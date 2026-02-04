@@ -11,27 +11,28 @@ import json
 import logging
 import os
 import sys
-from typing import List, Dict, Callable, AsyncGenerator, Optional, Coroutine, Union
+from collections.abc import AsyncGenerator, Coroutine
+from typing import Callable, Dict, List, Optional, Union
 
 import aiohttp
 from pydantic import BaseModel, Field
 
 from src.ai_models import (
     ClaudeAIModel,
-    OpenAIModel,
-    MessageList,
-    normalize_messages,
     GeminiAIModel,
+    MessageList,
+    OpenAIModel,
     ReasoningEffort,
     _to_openai_reasoning_effort,
+    normalize_messages,
 )
 from src.config import Config
 from src.tools import (
     extract_sentences,
-    yield_complete_sentences,
-    retry_async_generator,
-    get_token_count,
     get_timezone,
+    get_token_count,
+    retry_async_generator,
+    yield_complete_sentences,
 )
 
 logger = logging.getLogger(__name__)
@@ -1157,8 +1158,8 @@ async def main_async():
     Asynchronous main function for testing the ClaudeAIModelWithTools.
     """
     from src.code_interpreter_tool import InterpreterTool
-    from src.wizard_tool import WizardTool
     from src.web_search_tool import WebSearchTool
+    from src.wizard_tool import WizardTool
 
     # from src.interpreter_tool_judge0 import InterpreterTool
     config = Config()

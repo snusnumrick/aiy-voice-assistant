@@ -1,27 +1,27 @@
-from datetime import datetime, timezone
+import base64
+import io
+import logging
 import os
 import time
-import aiohttp
-import requests
-import base64
-import logging
-import io
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
+
+import aiohttp
+import requests
 
 if __name__ == "__main__":
     # add the current directory to the python path
     import sys
     sys.path.append(os.getcwd())
     
-from src.config import Config
 from src.ai_models_with_tools import Tool, ToolParameter
+from src.config import Config
 from src.server_utils import get_server_url
 
 # Optional dependency for Image processing
 try:
-    from PIL import Image
-    from PIL import ImageFile
+    from PIL import Image, ImageFile
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
@@ -401,6 +401,7 @@ async def main():
 
 if __name__ == "__main__":
     import asyncio
+
     from dotenv import load_dotenv
 
     load_dotenv() # Load environment variables for API key

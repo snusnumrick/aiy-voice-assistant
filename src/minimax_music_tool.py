@@ -1,36 +1,38 @@
+import logging
 import os
 import time
-import aiohttp
-import requests
 from pathlib import Path
 from typing import Dict
+
+import aiohttp
+import requests
 from pydub import AudioSegment
-from src.config import Config
+
 from src.ai_models_with_tools import Tool, ToolParameter
+from src.config import Config
 from src.server_utils import get_server_url
-import logging
 
 # Optional dependency for MP3 metadata
 try:
-    from mutagen.mp3 import MP3
     from mutagen.id3 import (
-        ID3NoHeaderError,
-        ID3,
         APIC,
-        TIT2,
-        TPE1,
-        TALB,
-        TCON,
         COMM,
-        TRCK,
-        TDRC,
-        TLEN,
-        TPE2,
-        TENC,
-        TCOP,
-        USLT,
+        ID3,
+        TALB,
         TCOM,
+        TCON,
+        TCOP,
+        TDRC,
+        TENC,
+        TIT2,
+        TLEN,
+        TPE1,
+        TPE2,
+        TRCK,
+        USLT,
+        ID3NoHeaderError,
     )
+    from mutagen.mp3 import MP3
 
     HAS_MUTAGEN = True
 except ImportError:

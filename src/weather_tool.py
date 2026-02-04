@@ -1,16 +1,18 @@
-import os
-from typing import Dict
 import asyncio
-from src.ai_models_with_tools import Tool, ToolParameter
-from src.config import Config
-from src.web_search import WebSearcher
 import logging
+import os
+from datetime import datetime
+from typing import Dict
+
 import aiohttp
+
+from src.ai_models_with_tools import Tool, ToolParameter
+from src.aqi import get_air_quality_async
+from src.config import Config
 from src.moon import Moon
 from src.openuv import get_uv_index_async
-from src.aqi import get_air_quality_async
 from src.sunrise import get_solar_data_async
-from datetime import datetime
+from src.web_search import WebSearcher
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,7 @@ def _format_weather_response(weather_data: Dict, timeframe: str, timezone: str) 
             # Returns: '2025-01-27T23:00:00-05:00'
         """
         from datetime import datetime
+
         from pytz import timezone, utc
 
         # Parse the UTC string into a datetime object
@@ -473,6 +476,7 @@ class EnhancedWeatherTool:
 # Test code
 if __name__ == "__main__":
     from dataclasses import dataclass
+
     from dotenv import load_dotenv
 
     logger.setLevel(logging.INFO)

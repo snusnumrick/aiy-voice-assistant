@@ -13,8 +13,9 @@ import logging
 import os
 import wave
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,9 @@ class HumeEmotionEngine(EmotionEngine):
         Returns:
             EmotionResult with detected emotions, or None on failure.
         """
+        if not os.path.exists(audio_file):
+            logger.error(f"Audio file not found: {audio_file}")
+            return None
         try:
             import websockets
         except ImportError:
@@ -167,9 +171,6 @@ class HumeEmotionEngine(EmotionEngine):
 
         except asyncio.TimeoutError:
             logger.warning(f"Emotion detection timed out after {self.timeout}s")
-            return None
-        except FileNotFoundError:
-            logger.error(f"Audio file not found: {audio_file}")
             return None
         except Exception as e:
             logger.error(f"Emotion detection failed: {e}")

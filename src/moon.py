@@ -1,6 +1,7 @@
 import math
 from datetime import datetime
 
+
 class Moon:
     # Astronomical constants
     EPOCH = 2444238.5        # 1980 January 0.0

@@ -1,8 +1,9 @@
+import logging
 from typing import Dict
+
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 from src.web_search import WebSearcher
-import logging
 
 logger = logging.getLogger(__name__)
 

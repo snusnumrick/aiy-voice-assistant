@@ -1,6 +1,8 @@
-import requests
-import aiohttp
 import asyncio
+
+import aiohttp
+import requests
+
 
 class UVIndexError(Exception):
     """Custom exception for UV index API errors"""
@@ -130,8 +132,9 @@ async def get_uv_index_async(lat: float, lng: float, api_key: str) -> dict:
 
 # Example usage
 if __name__ == "__main__":
-    from dotenv import load_dotenv
     import os
+
+    from dotenv import load_dotenv
 
     load_dotenv()
     async def main():

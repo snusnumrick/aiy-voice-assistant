@@ -13,8 +13,9 @@ import logging
 import os
 import sys
 from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
 from enum import Enum
-from typing import AsyncGenerator, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import aiohttp
 import requests

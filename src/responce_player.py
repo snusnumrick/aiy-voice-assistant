@@ -12,11 +12,10 @@ import tempfile
 import threading
 from dataclasses import dataclass
 from subprocess import Popen
-from typing import List, Tuple, Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import play_wav_async
-
 from src.tools import combine_audio_files, time_string_ms
 
 logger = logging.getLogger(__name__)

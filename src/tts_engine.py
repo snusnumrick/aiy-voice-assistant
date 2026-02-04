@@ -23,16 +23,16 @@ Enums:
 
 import asyncio
 import base64
+import json
 import logging
 import os
 import random
 import sys
 import time
-import json
 from abc import ABC, abstractmethod
-from enum import Enum, IntEnum
-from typing import Optional, List, Dict, Any
 from datetime import datetime
+from enum import Enum, IntEnum
+from typing import Any, Dict, List, Optional
 
 import aiofiles
 import aiohttp
@@ -50,7 +50,6 @@ try:
     logger.info("aiohttp available - can use async HTTP TTS")
 except (ImportError, ModuleNotFoundError):
     HTTP_CLIENT_AVAILABLE = False
-    from speechkit import model_repository
     logger.info("aiohttp not available - using synchronous speechkit")
 
 if __name__ == "__main__":
@@ -59,8 +58,6 @@ if __name__ == "__main__":
 
 from src.config import Config
 from src.tools import retry_async
-
-
 
 # Set up TTS usage logger
 TTS_USAGE_LOG = os.environ.get('APP_LOG_DIR', 'logs') + '/tts_usage.log'
@@ -347,8 +344,8 @@ class GoogleTTSEngine(TTSEngine):
         Args:
             config (Config): The application configuration object.
         """
-        from google.oauth2 import service_account
         from google.cloud import texttospeech
+        from google.oauth2 import service_account
 
         service_account_file = config.get(
             "google_service_account_file", "~/gcloud.json"
@@ -686,7 +683,7 @@ class YandexTTSEngine(TTSEngine):
                         result = await response.json()
                         # Response contains base64-encoded audio
                         audio_data = base64.b64decode(result["result"]["audioChunk"]["data"])
-                        logger.debug(f"HTTP TTS synthesis completed successfully")
+                        logger.debug("HTTP TTS synthesis completed successfully")
                         return audio_data
                     else:
                         error_text = await response.text()
