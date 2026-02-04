@@ -26,7 +26,10 @@ import grpc
 from aiy.board import Button, ButtonState
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import AudioFormat, Recorder
-from google.cloud import speech
+try:
+    from google.cloud import speech
+except Exception:
+    speech = None
 from src.background_tasks import BackgroundTaskManager
 from src.config import Config
 from src.emotion_engine import EmotionEngine, format_annotation
@@ -57,6 +60,8 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
         from google.oauth2 import service_account
 
         logger.debug("Setting up Google Speech client")
+        if speech is None:
+            raise ImportError("google-cloud-speech is not installed")
         service_account_file = config.get(
             "google_service_account_file", "~/gcloud.json"
         )
