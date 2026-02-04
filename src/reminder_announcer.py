@@ -51,6 +51,14 @@ class ReminderAnnouncer:
             },
         )
         self._bell_duration_sec = self._load_bell_duration_sec(self.bell_file)
+        self._silence_cache: Dict[float, str] = {}
+        self.ready_breathing_period_ms = float(
+            config.get("ready_breathing_period_ms", 10000)
+        )
+        self.ready_breathing_color = config.get("ready_breathing_color", (0, 1, 0))
+        self.ready_breathing_duration = float(
+            config.get("ready_breathing_duration", 60)
+        )
 
     def _load_bell_duration_sec(self, path: str) -> Optional[float]:
         if not os.path.exists(path):
@@ -122,6 +130,49 @@ class ReminderAnnouncer:
             return f"{prefix}{message.strip()}"
         return None
 
+    def _breathing_light(self) -> dict:
+        color = self.ready_breathing_color
+        if isinstance(color, tuple):
+            color = list(color)
+        return {
+            "color": color,
+            "behavior": "breathing",
+            "brightness": "medium",
+            "period": self.ready_breathing_period_ms / 1000.0,
+        }
+
+    def _get_silence_file(self, duration_sec: float) -> Optional[str]:
+        duration_sec = max(0.0, float(duration_sec))
+        if duration_sec <= 0:
+            return None
+        if duration_sec in self._silence_cache:
+            return self._silence_cache[duration_sec]
+        path = f"/tmp/silence_{int(duration_sec * 1000)}ms.wav"
+        try:
+            sample_rate = 44100
+            frames = int(sample_rate * duration_sec)
+            with wave.open(path, "w") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(sample_rate)
+                wf.writeframes(b"\x00\x00" * frames)
+            self._silence_cache[duration_sec] = path
+            return path
+        except Exception as e:
+            logger.warning(f"Failed to create silence file: {e}")
+            return None
+
+    def _queue_ready_breathing(self) -> None:
+        if self.ready_breathing_duration <= 0:
+            return
+        silence_file = self._get_silence_file(self.ready_breathing_duration)
+        if silence_file:
+            self.response_player.add(
+                ({"light": self._breathing_light()}, silence_file, "reminder_breathing")
+            )
+        if os.path.exists(self.silence_file):
+            self.response_player.add(({}, self.silence_file, "reminder_reset"))
+
     async def _synthesize_speech(self, text: str, tone: Tone, lang: Language) -> Optional[str]:
         audio_file_name = f"/tmp/reminder_{int(asyncio.get_event_loop().time() * 1000)}.wav"
         tts_engine = self.tts_engines.get(lang, self.tts_engines[Language.RUSSIAN])
@@ -155,6 +206,7 @@ class ReminderAnnouncer:
 
         speak_text = self._resolve_speak_text(reminder)
         if not speak_text:
+            self._queue_ready_breathing()
             return
 
         lang = self._resolve_language(reminder)
@@ -171,3 +223,4 @@ class ReminderAnnouncer:
         speech_file = await speech_task
         if speech_file:
             self.response_player.add(({"light": light}, speech_file, speak_text))
+        self._queue_ready_breathing()
