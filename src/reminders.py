@@ -94,6 +94,9 @@ class ReminderManager:
         message: str,
         when: dt.datetime,
         recurring: bool = False,
+        speak_text: Optional[str] = None,
+        language: Optional[str] = None,
+        emotion: Optional[Dict[str, Any]] = None,
         light: Optional[Dict[str, Any]] = None,
         bell_repeat: Optional[int] = None,
         bell_duration_sec: Optional[float] = None,
@@ -106,6 +109,12 @@ class ReminderManager:
             "recurring": bool(recurring),
             "done": False,
         }
+        if isinstance(speak_text, str):
+            reminder["speak_text"] = speak_text
+        if isinstance(language, str):
+            reminder["language"] = language
+        if isinstance(emotion, dict):
+            reminder["emotion"] = emotion
         if isinstance(light, dict):
             reminder["light"] = light
         if bell_repeat is not None:
@@ -132,6 +141,12 @@ class ReminderManager:
                 reminder["recurring"] = bool(updates["recurring"])
             if "done" in updates:
                 reminder["done"] = bool(updates["done"])
+            if "speak_text" in updates and isinstance(updates["speak_text"], str):
+                reminder["speak_text"] = updates["speak_text"]
+            if "language" in updates and isinstance(updates["language"], str):
+                reminder["language"] = updates["language"]
+            if "emotion" in updates and isinstance(updates["emotion"], dict):
+                reminder["emotion"] = updates["emotion"]
             if "light" in updates and isinstance(updates["light"], dict):
                 reminder["light"] = updates["light"]
             if "bell_repeat" in updates and updates["bell_repeat"] is not None:

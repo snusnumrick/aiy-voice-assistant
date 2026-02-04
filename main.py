@@ -210,6 +210,8 @@ def main():
             config=config,
             response_player=response_player,
             conversation_manager=conversation_manager,
+            tts_engines=tts_engines,
+            fallback_tts_engine=fallback_tts_engine,
         )
 
         # Initialize emotion engine

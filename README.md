@@ -42,6 +42,7 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 - **Volume Control**: Ability to adjust speaker volume through voice commands, enhancing user comfort and accessibility.
 - **Voice Emotion Detection**: Real-time detection of user emotions from voice using Hume AI, enabling emotionally-aware responses that match the user's mood.
 - **Music Generation**: Generate and play music with lyrics using MiniMax API, supporting lullabies, songs, and custom musical compositions with streaming playback.
+- **Reminders**: Set reminders that trigger a bell + LED pattern and optionally spoken reminders, with context injection so you can ask “what was the reminder about?”.
 - **Comprehensive Weather Information**: Provides detailed weather data including:
   - Current conditions and forecasts (hourly/daily)
   - UV index and ozone levels
@@ -180,6 +181,11 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
     cp user.json.example user.json
     ```
     Customize user.json according to your needs. 
+
+    Reminders:
+    * Reminders are stored in `reminders.json` at the project root.
+    * Optional config keys: `reminders_enabled`, `reminders_check_interval_sec`, `reminders_file`,
+      `reminder_bell_file`, `reminder_silence_file`, `reminder_speech_delay_sec`.
 
 12. **Set up environment variables:**
     Create a `.env` file in the project root (Environment variables will override settings from both config files) 

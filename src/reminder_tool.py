@@ -71,6 +71,16 @@ Return concise confirmations and IDs.
                     description="Reminder message (required for set/update).",
                 ),
                 ToolParameter(
+                    name="speak_text",
+                    type="string",
+                    description="Text to speak when reminder fires (optional).",
+                ),
+                ToolParameter(
+                    name="language",
+                    type="string",
+                    description="Language code for spoken reminder (ru/en/de).",
+                ),
+                ToolParameter(
                     name="time",
                     type="string",
                     description="ISO timestamp for set/update, e.g. 2026-02-05T14:30:00+03:00",
@@ -103,7 +113,7 @@ Return concise confirmations and IDs.
                     type="object",
                     description=(
                         "Optional emotion dict in the same format as $emotion; "
-                        "if provided, only emotion.light is used for reminders."
+                        "used for both LED behavior and voice tone."
                     ),
                 ),
                 ToolParameter(
@@ -143,6 +153,8 @@ Return concise confirmations and IDs.
 
         if action == "set_reminder_at":
             message = parameters.get("message")
+            speak_text = parameters.get("speak_text")
+            language = parameters.get("language")
             time_value = parameters.get("time")
             recurring = bool(parameters.get("recurring", False))
             light = parameters.get("light")
@@ -160,6 +172,9 @@ Return concise confirmations and IDs.
                 str(message),
                 when,
                 recurring,
+                speak_text=str(speak_text) if speak_text is not None else None,
+                language=str(language) if language is not None else None,
+                emotion=emotion if isinstance(emotion, dict) else None,
                 light=light if isinstance(light, dict) else None,
                 bell_repeat=bell_repeat,
                 bell_duration_sec=bell_duration_sec,
@@ -168,6 +183,8 @@ Return concise confirmations and IDs.
 
         if action == "set_reminder_in":
             message = parameters.get("message")
+            speak_text = parameters.get("speak_text")
+            language = parameters.get("language")
             amount = parameters.get("amount")
             unit = parameters.get("unit")
             recurring = bool(parameters.get("recurring", False))
@@ -202,6 +219,9 @@ Return concise confirmations and IDs.
                 str(message),
                 when,
                 recurring,
+                speak_text=str(speak_text) if speak_text is not None else None,
+                language=str(language) if language is not None else None,
+                emotion=emotion if isinstance(emotion, dict) else None,
                 light=light if isinstance(light, dict) else None,
                 bell_repeat=bell_repeat,
                 bell_duration_sec=bell_duration_sec,
@@ -232,6 +252,10 @@ Return concise confirmations and IDs.
             updates: Dict[str, Optional[any]] = {}
             if "message" in parameters:
                 updates["message"] = parameters.get("message")
+            if "speak_text" in parameters:
+                updates["speak_text"] = parameters.get("speak_text")
+            if "language" in parameters:
+                updates["language"] = parameters.get("language")
             if "time" in parameters:
                 updates["time"] = parameters.get("time")
             if "recurring" in parameters:
@@ -244,6 +268,7 @@ Return concise confirmations and IDs.
                 emotion = parameters.get("emotion")
                 if isinstance(emotion, dict) and isinstance(emotion.get("light"), dict):
                     updates["light"] = emotion.get("light")
+                updates["emotion"] = emotion
             if "bell_repeat" in parameters:
                 updates["bell_repeat"] = parameters.get("bell_repeat")
             if "bell_duration_sec" in parameters:
