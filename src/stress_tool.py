@@ -1,8 +1,10 @@
+import logging
 from typing import Dict
+
+import aiohttp
+
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
-import aiohttp
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +70,16 @@ class StressTool:
             ],
             required=["word"],
             processor=self.do_stress_async,
+            rule_instructions={
+                "russian": (
+                    "Если пользователь просит поставить ударение в русском слове "
+                    "или ты сомневаешься в позиции ударения, используй инструмент stress_marker."
+                ),
+                "english": (
+                    "If the user asks to add stress marks to a Russian word or нщг фку unsure "
+                    "about Russian word stress, use the stress_marker tool."
+                ),
+            },
         )
 
     def __init__(self, config: Config):
