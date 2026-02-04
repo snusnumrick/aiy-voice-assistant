@@ -243,6 +243,7 @@ class ConversationManager:
         )
 
         self.default_system_prompt = self.default_system_prompt_russian
+        self.reminder_fact_marker = "Напоминание (ожидает):"
 
         self.message_history: Deque[dict] = deque(
             [{"role": "system", "content": self.get_system_prompt()}]
@@ -504,6 +505,8 @@ class ConversationManager:
         for line in self.facts:
             if "/tmp/" in line:
                 continue
+            if self.reminder_fact_marker in line:
+                continue
             pre_optimized_facts.append(line)
 
         # Asynchronously optimize facts
@@ -616,6 +619,19 @@ class ConversationManager:
                 except Exception as e:
                     logger.warning(f"Error occurred while trying to remove {filepath}. Error: {e}")
         logger.debug(f"removed {num_removed} temp wav files")
+
+    def add_pending_reminder_fact(self, reminder: dict) -> None:
+        message = reminder.get("message")
+        if not isinstance(message, str) or not message.strip():
+            return
+        time_value = reminder.get("time")
+        time_part = f" Время: {time_value}." if time_value else ""
+        fact_text = f"{self.reminder_fact_marker} {message.strip()}.{time_part}"
+        if any(fact_text in existing for existing in self.facts):
+            return
+        fact = get_current_date_time_for_facts(self.timezone) + " : " + fact_text
+        self.facts += [fact]
+        self.save_facts(self.facts)
 
     @staticmethod
     def load_facts():

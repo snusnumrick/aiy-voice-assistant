@@ -16,22 +16,23 @@ import tempfile
 import time
 from abc import ABC, abstractmethod
 from collections import deque
+from collections.abc import Iterator
 from enum import Enum
-from typing import Optional, List, Iterator, Callable
+from typing import Awaitable, Callable, List, Optional
 
 import aiohttp
 import grpc
+
 from aiy.board import Button, ButtonState
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import AudioFormat, Recorder
 from google.cloud import speech
-
-from src.config import Config
-from src.responce_player import ResponsePlayer
-from src.tools import time_string_ms, get_timezone, combine_audio_files
-from src.tts_engine import TTSEngine
 from src.background_tasks import BackgroundTaskManager
+from src.config import Config
 from src.emotion_engine import EmotionEngine, format_annotation
+from src.responce_player import ResponsePlayer
+from src.tools import combine_audio_files, get_timezone, time_string_ms
+from src.tts_engine import TTSEngine
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +106,8 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
 
 class YandexSpeechRecognition(SpeechRecognitionService):
     def setup_client(self, config):
-        import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
         import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
+        import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
 
         self.api_key = os.environ.get("YANDEX_API_KEY") or config.get("yandex_api_key")
         if not self.api_key:
@@ -216,9 +217,10 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         Raises:
             ValueError: If OpenAI API key is not provided
         """
+        import asyncio
         import base64
         import json
-        import asyncio
+
         import websockets
         from websockets.exceptions import ConnectionClosed
 
@@ -551,9 +553,10 @@ class ElevenLabsSpeechRecognition(SpeechRecognitionService):
     """
 
     def setup_client(self, config):
+        import asyncio
         import base64
         import json
-        import asyncio
+
         import websockets
         from websockets.exceptions import ConnectionClosed
 
@@ -910,8 +913,9 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
     """
 
     def setup_client(self, config):
-        import json
         import asyncio
+        import json
+
         import websockets
         from websockets.exceptions import ConnectionClosed
 
@@ -1179,6 +1183,7 @@ class SpeechTranscriber:
         cleaning: Optional[Callable] = None,
         timezone: Optional[str] = None,
         emotion_engine: Optional[EmotionEngine] = None,
+        reminder_notifier: Optional[Callable[[dict], Awaitable[None]]] = None,
     ) -> None:
         """
         Initialize the SpeechTranscriber.
@@ -1224,6 +1229,8 @@ class SpeechTranscriber:
         self.task_manager = BackgroundTaskManager(config, timezone)
         if cleaning:
             self.task_manager.set_cleaning_routine(cleaning)
+        if reminder_notifier:
+            self.task_manager.set_reminder_notifier(reminder_notifier)
 
     async def check_and_schedule_tasks(self) -> None:
         """Check and run scheduled background tasks."""

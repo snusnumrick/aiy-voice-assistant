@@ -20,22 +20,24 @@ from dotenv import load_dotenv
 from aiy.board import Board
 from aiy.leds import Color, Leds
 from src.ai_models_with_tools import ClaudeAIModelWithTools, OpenAIModelWithTools
-from src.emotion_engine import HumeEmotionEngine, NoOpEmotionEngine
-from src.gemini_image_tool import GeminiImageTool
-from src.responce_player import ResponsePlayer
 from src.code_interpreter_tool import InterpreterTool
 from src.config import Config
 from src.conversation_manager import ConversationManager
 from src.dialog import main_loop_async
 from src.email_tools import SendEmailTool
-from src.weather_tool import EnhancedWeatherTool
+from src.emotion_engine import HumeEmotionEngine, NoOpEmotionEngine
+from src.gemini_image_tool import GeminiImageTool
+from src.minimax_music_tool import MiniMaxMusicTool
+from src.reminder_announcer import ReminderAnnouncer
+from src.reminder_tool import ReminderTool
+from src.responce_player import ResponsePlayer
 from src.stress_tool import StressTool
 from src.tools import get_timezone
 from src.tts_engine import ElevenLabsTTSEngine, Language, YandexTTSEngine
 from src.volume_control_tool import VolumeControlTool
+from src.weather_tool import EnhancedWeatherTool
 from src.web_search_tool import WebSearchTool
 from src.wizard_tool import WizardTool
-from src.minimax_music_tool import MiniMaxMusicTool
 
 # Set up signal handling for graceful shutdown
 signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
@@ -143,6 +145,7 @@ def main():
         weather_tool = EnhancedWeatherTool(config)
         wizard_tool = WizardTool(config)
         image_tool = GeminiImageTool(config)
+        reminder_tool = ReminderTool(config)
 
         tools = [
             send_email_tool.tool_definition(),
@@ -151,6 +154,7 @@ def main():
             volume_control_tool.tool_definition(),
             weather_tool.tool_definition(),
             image_tool.tool_definition(),
+            reminder_tool.tool_definition(),
         ] + wizard_tool.tool_definitions()
         if not use_builtin_search:
             tools.append(search_tool.tool_definition())
@@ -202,6 +206,11 @@ def main():
             ai_model = ClaudeAIModelWithTools(config, tools=tools, timezone=timezone)
 
         conversation_manager = ConversationManager(config, ai_model, timezone, enabled_tools=tools)
+        reminder_announcer = ReminderAnnouncer(
+            config=config,
+            response_player=response_player,
+            conversation_manager=conversation_manager,
+        )
 
         # Initialize emotion engine
         emotion_engine = None
@@ -229,6 +238,7 @@ def main():
                 timezone,
                 response_player,
                 emotion_engine,
+                reminder_announcer.notify,
             )
         )
 

@@ -25,23 +25,24 @@ Dependencies:
 import asyncio
 import logging
 import os
-import time
 import re
+import tempfile
+import time
 import traceback
-from typing import Dict, List, Tuple, Optional
+from typing import Awaitable, Callable, Dict, List, Optional, Tuple
 
 import aiohttp
-import tempfile
+
 from aiy.board import Button
-from aiy.leds import Leds, Color
+from aiy.leds import Color, Leds
 
 from .audio import SpeechTranscriber
 from .config import Config
 from .conversation_manager import ConversationManager
 from .emotion_engine import EmotionEngine
 from .responce_player import ResponsePlayer
-from .tools import time_string_ms, save_to_conversation
-from .tts_engine import TTSEngine, Tone, Language
+from .tools import save_to_conversation, time_string_ms
+from .tts_engine import Language, Tone, TTSEngine
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,7 @@ class DialogManager:
         timezone: str,
         response_player: ResponsePlayer,
         emotion_engine: EmotionEngine = None,
+        reminder_notifier: Optional[Callable[[dict], Awaitable[None]]] = None,
     ):
         """
         Initialize the DialogManager with necessary components.
@@ -186,8 +188,13 @@ class DialogManager:
         self.response_player = response_player
         self.emotion_engine = emotion_engine
         self.transcriber = SpeechTranscriber(
-            button, leds, config, cleaning=self.cleaning_routine, timezone=timezone,
-            emotion_engine=emotion_engine
+            button,
+            leds,
+            config,
+            cleaning=self.cleaning_routine,
+            timezone=timezone,
+            emotion_engine=emotion_engine,
+            reminder_notifier=reminder_notifier,
         )
         self.last_assistant_response_text: Optional[str] = None
         self.last_assistant_response_time: Optional[float] = None
@@ -588,6 +595,7 @@ async def main_loop_async(
     timezone: str,
     response_player: ResponsePlayer,
     emotion_engine: EmotionEngine = None,
+    reminder_notifier: Optional[Callable[[dict], Awaitable[None]]] = None,
 ) -> None:
     """
     The main entry point for the conversation loop of the AI assistant.
@@ -604,6 +612,7 @@ async def main_loop_async(
         timezone (str): The timezone to use for the conversation loop.
         response_player (ResponsePlayer): The audio response player for playback.
         emotion_engine (EmotionEngine): Optional emotion detection engine.
+        reminder_notifier (Callable): Optional callback for due reminders.
     """
     dialog_manager = DialogManager(
         button,
@@ -615,5 +624,6 @@ async def main_loop_async(
         timezone,
         response_player,
         emotion_engine,
+        reminder_notifier,
     )
     await dialog_manager.main_loop_async()
