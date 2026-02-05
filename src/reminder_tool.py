@@ -209,7 +209,7 @@ Return concise confirmations and IDs.
             }.get(unit)
             if seconds is None:
                 return "Invalid unit. Use seconds, minutes, hours, or days."
-            now = dt.datetime.now(tz)
+            now = dt.datetime.now(self.timezone)
             when = now + dt.timedelta(seconds=amount_int * seconds)
             reminder = manager.add_reminder(
                 str(message),
