@@ -431,14 +431,14 @@ class ResponsePlayer:
                     self._process_wav_list()
                     continue
 
-            logger.debug(f"({time_string_ms(self.timezone)}) Playing {audio_file} with {light}")
+            logger.info(f"({time_string_ms(self.timezone)}) Playing {audio_file} with {light}")
 
             self.change_light_behavior(light)
             self.current_process = play_wav_async(audio_file)
             self.current_process.wait()
             self.current_process = None
 
-            logger.debug(f"Finished playing {audio_file}")
+            logger.info(f"Finished playing {audio_file}")
 
         logger.debug("_play_sequence ended")
         self.current_process = None
