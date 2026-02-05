@@ -55,9 +55,7 @@ def extract_emotions(text: str) -> List[Tuple[Optional[dict], str]]:
         - str: The associated text following the dictionary or preceding the next dictionary.
     """
 
-    pattern = re.compile(
-        r"(.*?)\$emotion:\s*(\{.*?\})?\$(.*?)(?=\$emotion:|$)", re.DOTALL
-    )
+    pattern = re.compile(r"(.*?)\$emotion:\s*(\{.*?\})?\$(.*?)(?=\$emotion:|$)", re.DOTALL)
 
     results = []
     pos = 0
@@ -205,9 +203,7 @@ class ResponsePlayer:
         condition (threading.Condition): Condition variable for efficient thread synchronization.
     """
 
-    def __init__(
-        self, playlist: List[Tuple[Optional[Dict], str, str]], leds: Leds, timezone: str
-    ):
+    def __init__(self, playlist: List[Tuple[Optional[Dict], str, str]], leds: Leds, timezone: str):
         """
         Initialize the ResponsePlayer.
 
@@ -235,9 +231,11 @@ class ResponsePlayer:
 
         # start with light off
         self.change_light_behavior({})
-        self._playback_completed.set() # Set initially to prevent blocking stop() when no playback has occurred
+        self._playback_completed.set()  # Set initially to prevent blocking stop() when no playback has occurred
 
-        logger.debug(f"ResponsePlayer initialized: _stopped={self._stopped}, _should_play={self._should_play}")
+        logger.debug(
+            f"ResponsePlayer initialized: _stopped={self._stopped}, _should_play={self._should_play}"
+        )
 
         for item in playlist:
             self.add(item)
@@ -266,9 +264,7 @@ class ResponsePlayer:
             emo, file, text = playitem
             light = None if emo is None else emo.get("light", None)
             m_item = MergeItem(light=light, filename=file, text=text)
-            logger.debug(
-                f"({time_string_ms(self.timezone)}) Adding {m_item} to merge queue."
-            )
+            logger.debug(f"({time_string_ms(self.timezone)}) Adding {m_item} to merge queue.")
             self.merge_queue.put(m_item)
 
         with self.condition:
@@ -301,10 +297,10 @@ class ResponsePlayer:
         if not behaviour:
             logger.debug("empty behaviour, LED OFF")
             self.leds.update(Leds.rgb_off())
-        elif "color" not in behaviour or "brightness" not in behaviour or "behavior" not in behaviour:
-            logger.warning(
-                f"Invalid LED behavior: {behaviour}. Skipping LED change."
-            )
+        elif (
+            "color" not in behaviour or "brightness" not in behaviour or "behavior" not in behaviour
+        ):
+            logger.warning(f"Invalid LED behavior: {behaviour}. Skipping LED change.")
         else:
             color = adjust_rgb_brightness(behaviour["color"], behaviour["brightness"])
             if behaviour["behavior"] == "breathing":
@@ -419,14 +415,8 @@ class ResponsePlayer:
         logger.debug("_play_sequence started")
         while True:
             with self.condition:
-                while (
-                    self._should_play
-                    and self.playlist.empty()
-                    and self.merge_queue.empty()
-                ):
-                    logger.debug(
-                        f"({time_string_ms(self.timezone)}) wait for condition"
-                    )
+                while self._should_play and self.playlist.empty() and self.merge_queue.empty():
+                    logger.debug(f"({time_string_ms(self.timezone)}) wait for condition")
                     self.condition.wait()
                 if not self._should_play:
                     logger.debug("_play_sequence: should_play=False, exiting")
@@ -441,9 +431,7 @@ class ResponsePlayer:
                     self._process_wav_list()
                     continue
 
-            logger.debug(
-                f"({time_string_ms(self.timezone)}) Playing {audio_file} with {light}"
-            )
+            logger.debug(f"({time_string_ms(self.timezone)}) Playing {audio_file} with {light}")
 
             self.change_light_behavior(light)
             self.current_process = play_wav_async(audio_file)
@@ -479,7 +467,9 @@ class ResponsePlayer:
                     break
 
         logger.info("Stopping playback and clearing all queues")
-        logger.debug(f"Stop called - current state: _stopped={self._stopped}, _should_play={self._should_play}")
+        logger.debug(
+            f"Stop called - current state: _stopped={self._stopped}, _should_play={self._should_play}"
+        )
         with self.condition:
             self._should_play = False
             self._stopped = True
@@ -500,9 +490,7 @@ class ResponsePlayer:
         if self.merge_thread and self.merge_thread.is_alive():
             self.merge_thread.join(timeout=1.0)
 
-        logger.debug(
-            "Playback stopped, all queues cleared, and player set to stopped state"
-        )
+        logger.debug("Playback stopped, all queues cleared, and player set to stopped state")
 
     def is_playing(self) -> bool:
         """
@@ -512,7 +500,7 @@ class ResponsePlayer:
             bool: True if audio is playing or queued, False otherwise.
         """
         with self.lock:
-            return (
+            playing = (
                 self._should_play
                 and not self._stopped
                 and (
@@ -521,3 +509,11 @@ class ResponsePlayer:
                     or self.current_process is not None
                 )
             )
+            if playing:
+                if not self.playlist.empty():
+                    logger.info("non empty playlist")
+                if not self.merge_queue.empty():
+                    logger.info("non empty merge_queue")
+                if self.current_process is not None:
+                    logger.info("non empty current_process")
+            return playing
