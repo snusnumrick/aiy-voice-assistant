@@ -16,9 +16,12 @@ Dependencies:
     - src.config: For Config class
 """
 
+import json
 import logging
+import os
 import subprocess
-from typing import Dict, List, Optional
+import threading
+from typing import Any, Dict, List, Optional
 
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
@@ -56,7 +59,53 @@ class VolumeControlTool:
         self.step = config.get("volume_step", 10)
         self.available_controls = self._get_available_controls()
         self.current_control = self._select_control()
+        self.volume_state_file = config.get("volume_state_file", "volume_state.json")
+        self.volume_init_delay_sec = float(
+            config.get("volume_init_delay_sec", 2.0)
+        )
         logger.info(f"Using volume control: {self.current_control}")
+        self._schedule_restore_volume()
+
+    def _load_saved_volume(self) -> Optional[int]:
+        if not self.volume_state_file or not os.path.exists(self.volume_state_file):
+            return None
+        try:
+            with open(self.volume_state_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            vol = data.get("volume")
+            if isinstance(vol, int):
+                return max(self.min_volume, min(vol, self.max_volume))
+        except Exception as e:
+            logger.warning(f"Failed to load saved volume: {e}")
+        return None
+
+    def _save_volume(self, volume: int) -> None:
+        try:
+            with open(self.volume_state_file, "w", encoding="utf-8") as f:
+                json.dump({"volume": int(volume)}, f, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"Failed to save volume: {e}")
+
+    def _schedule_restore_volume(self) -> None:
+        if not self.current_control:
+            return
+        saved = self._load_saved_volume()
+        if saved is None:
+            return
+        if self.volume_init_delay_sec <= 0:
+            try:
+                self.set_volume(saved)
+            except Exception:
+                pass
+            return
+        def _restore():
+            try:
+                self.set_volume(saved)
+            except Exception as e:
+                logger.warning(f"Failed to restore saved volume: {e}")
+        timer = threading.Timer(self.volume_init_delay_sec, _restore)
+        timer.daemon = True
+        timer.start()
 
     def _get_available_controls(self) -> List[str]:
         """
@@ -154,7 +203,7 @@ Returns the new volume level after adjustment.
             }
         )
 
-    async def adjust_volume(self, parameters: Dict[str, any]) -> str:
+    async def adjust_volume(self, parameters: Dict[str, Any]) -> str:
         """
         Adjust the volume based on the provided parameters.
 
@@ -189,6 +238,7 @@ Returns the new volume level after adjustment.
                 return f"Invalid action: {action}. Use 'increase', 'decrease', or 'set'. Current volume: {current_volume}%"
 
             self.set_volume(new_volume)
+            self._save_volume(new_volume)
             return f"Volume adjusted to {new_volume}%"
         except Exception as e:
             logger.error(f"An error occurred while adjusting volume: {str(e)}")
@@ -204,6 +254,8 @@ Returns the new volume level after adjustment.
         Raises:
             Exception: If there's an error in fetching the current volume.
         """
+        if not self.current_control:
+            raise ValueError("Volume control is not available on this system.")
         try:
             result = subprocess.run(
                 ["amixer", "get", self.current_control], capture_output=True, text=True
@@ -224,6 +276,8 @@ Returns the new volume level after adjustment.
         Raises:
             subprocess.CalledProcessError: If the 'amixer' command fails.
         """
+        if not self.current_control:
+            raise ValueError("Volume control is not available on this system.")
         try:
             subprocess.run(
                 ["amixer", "set", self.current_control, f"{volume}%"], check=True

@@ -312,7 +312,7 @@ echo "Timezone setup completed. See $TIMEZONE_LOG for details."
 # ==== end of Set System Timezone ====
 
 # set audio volume
-amixer sset 'Master' 90% || amixer sset 'Speaker' 55% || echo "Failed to set volume"
+amixer sset 'Master' 90% || amixer sset 'Speaker' 70% || echo "Failed to set volume"
 
 # Run the Python script with new logging flags
 # Try fast venv activation first, with fallback
