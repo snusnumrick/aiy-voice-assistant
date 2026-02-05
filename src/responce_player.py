@@ -225,7 +225,7 @@ class ResponsePlayer:
         self.condition = threading.Condition(self.lock)
         self._should_play = False
         self._stopped = False
-        self.current_light = None
+        self.current_light: Optional[dict] = None
         self.wav_list: List[Tuple[str, str]] = []
         self.wav_list_light = dict()
 
@@ -433,10 +433,13 @@ class ResponsePlayer:
 
             logger.info(f"({time_string_ms(self.timezone)}) Playing {audio_file} with {light}")
 
+            prev_light = self.current_light
             self.change_light_behavior(light)
             self.current_process = play_wav_async(audio_file)
             self.current_process.wait()
             self.current_process = None
+            if prev_light:
+                self.change_light_behavior(prev_light)
 
             logger.info(f"Finished playing {audio_file}")
 
@@ -512,9 +515,9 @@ class ResponsePlayer:
             )
             if playing:
                 if not self.playlist.empty():
-                    logger.info("non empty playlist")
+                    logger.debug("non empty playlist")
                 if not self.merge_queue.empty():
-                    logger.info("non empty merge_queue")
+                    logger.debug("non empty merge_queue")
                 if self.current_process is not None:
-                    logger.info("non empty current_process")
+                    logger.debug("non empty current_process")
             return playing

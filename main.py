@@ -154,7 +154,7 @@ def main():
             volume_control_tool.tool_definition(),
             weather_tool.tool_definition(),
             image_tool.tool_definition(),
-            reminder_tool.tool_definition(),
+            *reminder_tool.tool_definitions(),
         ] + wizard_tool.tool_definitions()
         if not use_builtin_search:
             tools.append(search_tool.tool_definition())

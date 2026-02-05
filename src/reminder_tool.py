@@ -27,8 +27,8 @@ class ReminderTool:
         self.tz_name = timezone
         self.timezone: dt.tzinfo = pytz.timezone(timezone)
 
-    def tool_definition(self) -> Tool:
-        return Tool(
+    def tool_definitions(self) -> list[Tool]:
+        manage_tool = Tool(
             name="manage_reminders",
             description="""
 Manage reminders stored in reminders.json.
@@ -36,7 +36,6 @@ Manage reminders stored in reminders.json.
 Actions:
 - set_reminder_at: Set a reminder at an absolute ISO timestamp.
 - set_reminder_in: Set a reminder relative to now (amount + unit).
-- list_reminders: List reminders (optionally only active).
 - update_reminder: Update message/time/recurring/done for a reminder by id.
 - delete_reminder: Delete a reminder by id.
 - clear_reminders: Remove all reminders.
@@ -44,13 +43,13 @@ Actions:
 Use set_reminder_at for absolute timestamps, and set_reminder_in for relative durations.
 Return concise confirmations and IDs.
             """,
-            iterative=True,
+            iterative=False,
             parameters=[
                 ToolParameter(
                     name="action",
                     type="string",
                     description=(
-                        "Action to perform: set_reminder_at, set_reminder_in, list_reminders, "
+                        "Action to perform: set_reminder_at, set_reminder_in, "
                         "update_reminder, delete_reminder, clear_reminders"
                     ),
                 ),
@@ -126,11 +125,6 @@ Return concise confirmations and IDs.
                     description="Reminder id for update/delete.",
                 ),
                 ToolParameter(
-                    name="include_done",
-                    type="boolean",
-                    description="When listing, include completed reminders.",
-                ),
-                ToolParameter(
                     name="done",
                     type="boolean",
                     description="Set done flag when updating.",
@@ -139,6 +133,21 @@ Return concise confirmations and IDs.
             processor=self.manage_reminders,
             required=["action"],
         )
+        list_tool = Tool(
+            name="list_reminders",
+            description="List reminders stored in reminders.json.",
+            iterative=True,
+            parameters=[
+                ToolParameter(
+                    name="include_done",
+                    type="boolean",
+                    description="Include completed reminders. Example: true",
+                )
+            ],
+            processor=self.list_reminders,
+            required=[],
+        )
+        return [manage_tool, list_tool]
 
     async def manage_reminders(self, parameters: Dict[str, Any]) -> str:
         action = parameters.get("action")
@@ -225,23 +234,6 @@ Return concise confirmations and IDs.
             )
             return f"Reminder set: id={reminder['id']}, time={reminder['time']}"
 
-        if action == "list_reminders":
-            include_done = parameters.get("include_done", True)
-            reminders = manager.list_reminders(include_done=bool(include_done))
-            if not reminders:
-                return "No reminders."
-            lines = []
-            for reminder in reminders:
-                rid = reminder.get("id")
-                time_value = reminder.get("time")
-                message = reminder.get("message")
-                recurring = reminder.get("recurring")
-                done = reminder.get("done", False)
-                lines.append(
-                    f"id={rid} time={time_value} recurring={recurring} done={done} message={message}"
-                )
-            return "\n".join(lines)
-
         if action == "update_reminder":
             reminder_id = parameters.get("id")
             if not reminder_id:
@@ -292,3 +284,21 @@ Return concise confirmations and IDs.
             return "All reminders cleared."
 
         return "Unknown action."
+
+    async def list_reminders(self, parameters: Dict[str, Any]) -> str:
+        manager = ReminderManager(self.reminders_file, timezone=self.timezone)
+        include_done = parameters.get("include_done", True)
+        reminders = manager.list_reminders(include_done=bool(include_done))
+        if not reminders:
+            return "No reminders."
+        lines = []
+        for reminder in reminders:
+            rid = reminder.get("id")
+            time_value = reminder.get("time")
+            message = reminder.get("message")
+            recurring = reminder.get("recurring")
+            done = reminder.get("done", False)
+            lines.append(
+                f"id={rid} time={time_value} recurring={recurring} done={done} message={message}"
+            )
+        return "\n".join(lines)
