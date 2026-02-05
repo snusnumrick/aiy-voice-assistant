@@ -171,7 +171,7 @@ def adjust_rgb_brightness(rgb: List[int], brightness: str) -> Tuple[int, int, in
 
 @dataclass
 class MergeItem:
-    light: dict
+    light: Optional[dict]
     filename: str
     text: str
 
@@ -478,6 +478,7 @@ class ResponsePlayer:
 
         if self.current_process:
             self.current_process.terminate()
+            self.current_process = None
 
         with self.lock:
             clear_queue(self.merge_queue)
