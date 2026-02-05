@@ -577,8 +577,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     }
                 )
                 async for response in self.get_response_async(message_list):
-                    logger.info(f"ignoring after tool response: {response}")
-                    # yield response
+                    logger.info(f"Yielding after tool response: {response}")
+                    yield response
         except json.JSONDecodeError:
             logger.error(f"{self._time_str()}Failed to decode tool input JSON: {tool_use['input']}")
 

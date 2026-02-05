@@ -44,7 +44,7 @@ Actions:
 Use set_reminder_at for absolute timestamps, and set_reminder_in for relative durations.
 Return concise confirmations and IDs.
             """,
-            iterative=True,
+            iterative=False,
             parameters=[
                 ToolParameter(
                     name="action",
