@@ -150,17 +150,6 @@ class ReminderAnnouncer:
             logger.warning(f"Failed to create silence file: {e}")
             return None
 
-    def _queue_ready_breathing(self) -> None:
-        if self.ready_breathing_duration <= 0:
-            return
-        silence_file = self._get_silence_file(self.ready_breathing_duration)
-        if silence_file:
-            self.response_player.add(
-                ({"light": self._breathing_light()}, silence_file, "reminder_breathing")
-            )
-        if os.path.exists(self.silence_file):
-            self.response_player.add(({}, self.silence_file, "reminder_reset"))
-
     async def _synthesize_speech(self, text: str, tone: Tone, lang: Language) -> Optional[str]:
         audio_file_name = f"/tmp/reminder_{int(asyncio.get_event_loop().time() * 1000)}.wav"
         tts_engine = self.tts_engines.get(lang, self.tts_engines[Language.RUSSIAN])
@@ -182,7 +171,7 @@ class ReminderAnnouncer:
         if not isinstance(fact_text, str) or not fact_text.strip():
             message = reminder.get("message")
             if isinstance(message, str) and message.strip():
-                fact_text = f"Напомнил: {message.strip()}."
+                fact_text = f"Это напоминание уже сработало: {message.strip()}."
         if isinstance(fact_text, str) and fact_text.strip():
             self.conversation_manager.add_ephemeral_fact(fact_text)
 
@@ -198,7 +187,6 @@ class ReminderAnnouncer:
 
         speak_text = self._resolve_speak_text(reminder)
         if not speak_text:
-            self._queue_ready_breathing()
             return
 
         lang = self._resolve_language(reminder)
@@ -213,4 +201,3 @@ class ReminderAnnouncer:
         speech_file = await speech_task
         if speech_file:
             self.response_player.add(({"light": light}, speech_file, speak_text))
-        self._queue_ready_breathing()
