@@ -15,7 +15,7 @@ import sys
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from enum import Enum
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Sequence, Union
 
 import aiohttp
 import requests
@@ -27,6 +27,7 @@ from src.tools import retry_async_generator, time_string_ms, yield_complete_sent
 # Compatibility shim: ensure openai module has attributes used by tests even on older SDKs
 try:
     import openai as _openai  # type: ignore
+
     if not hasattr(_openai, "OpenAI"):
         setattr(_openai, "OpenAI", object)
     if not hasattr(_openai, "AsyncOpenAI"):
@@ -40,7 +41,7 @@ class MessageModel(BaseModel):
     content: str
 
 
-MessageList = List[Union[Dict[str, str], MessageModel]]
+MessageList = Sequence[Union[Dict[str, str], MessageModel]]
 
 
 class ReasoningEffort(Enum):
@@ -51,12 +52,15 @@ class ReasoningEffort(Enum):
     - thorough -> medium
     - comprehensive -> high
     """
+
     QUICK = "quick"
     THOROUGH = "thorough"
     COMPREHENSIVE = "comprehensive"
 
 
-def to_reasoning_effort(value: Optional[Union[str, "ReasoningEffort"]]) -> Optional["ReasoningEffort"]:
+def to_reasoning_effort(
+    value: Optional[Union[str, "ReasoningEffort"]],
+) -> Optional["ReasoningEffort"]:
     """Convert a string ("quick", "thorough", or "comprehensive") into a ReasoningEffort enum.
 
     - Returns the value unchanged if it is already a ReasoningEffort.
@@ -120,11 +124,17 @@ def normalize_messages(messages: MessageList) -> List[Dict[str, str]]:
     Returns:
         List[Dict[str, str]]: A list of normalized message dictionaries.
     """
-    return [
-        (getattr(message, "model_dump", None)() if getattr(message, "model_dump", None) else message.dict())
-        if isinstance(message, MessageModel) else message
-        for message in messages
-    ]
+    normalized = []
+    for message in messages:
+        if isinstance(message, MessageModel):
+            model_dump = getattr(message, "model_dump", None)
+            if callable(model_dump):
+                normalized.append(model_dump())
+            else:
+                normalized.append(message.dict())
+        else:
+            normalized.append(message)
+    return normalized
 
 
 class AIModel(ABC):
@@ -133,7 +143,9 @@ class AIModel(ABC):
     """
 
     @abstractmethod
-    def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
+    def get_response(
+        self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None
+    ) -> str:
         """
         Generate a response based on the conversation history.
 
@@ -147,7 +159,8 @@ class AIModel(ABC):
         pass
 
     async def get_response_async(
-        self, messages: MessageList,
+        self,
+        messages: MessageList,
         reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """
@@ -160,7 +173,9 @@ class AIModel(ABC):
         Yields:
             str: Parts of the generated response.
         """
-        pass
+        if False:
+            yield ""
+        raise NotImplementedError
 
     def get_tokens_number(self, messages: MessageList) -> int:
         """
@@ -183,7 +198,9 @@ class GeminiAIModel(AIModel):
     Implementation of AIModel using Google Gemini model.
     """
 
-    def __init__(self, config: Config, model_id: Optional[str] = None, max_tokens: Optional[int] = None):
+    def __init__(
+        self, config: Config, model_id: Optional[str] = None, max_tokens: Optional[int] = None
+    ):
         sys_path = sys.path
         sys.path = [p for p in sys.path if p != os.getcwd()]
         import google.generativeai as genai
@@ -196,7 +213,9 @@ class GeminiAIModel(AIModel):
         max_tokens = max_tokens or config.get("max_tokens", 4096)
         self.generation_config = genai.GenerationConfig(max_output_tokens=max_tokens)
 
-    def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
+    def get_response(
+        self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None
+    ) -> str:
         """
         Generate a response using Google Gemini model.
 
@@ -206,7 +225,7 @@ class GeminiAIModel(AIModel):
         Returns:
             str: The generated response.
         """
-        from google.generativeai import types
+        from google.generativeai import types  # ty:ignore[unresolved-import]
 
         messages = normalize_messages(messages)
         system_message_combined = " ".join(
@@ -239,7 +258,8 @@ class GeminiAIModel(AIModel):
     @retry_async_generator()
     @yield_complete_sentences
     async def get_response_async(
-        self, messages: MessageList,
+        self,
+        messages: MessageList,
         reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """
@@ -247,11 +267,12 @@ class GeminiAIModel(AIModel):
 
         Args:
             messages (MessageList): A list of message models representing the conversation history.
+            reasoning_effort (Optional[Union[str, ReasoningEffort]])
 
         Yields:
             str: Parts of the generated response.
         """
-        from google.generativeai import types
+        from google.generativeai import types  # ty:ignore[unresolved-import]
 
         messages = normalize_messages(messages)
         system_message_combined = " ".join(
@@ -299,7 +320,7 @@ class OpenAIModel(AIModel):
         reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
         api: Optional[str] = None,
         max_tokens: Optional[int] = None,
-    ): 
+    ):
         """
         Initialize the OpenAI model.
 
@@ -314,6 +335,7 @@ class OpenAIModel(AIModel):
         """
         # Import module to avoid ImportError on old SDKs and allow graceful fallback
         import importlib
+
         openai = importlib.import_module("openai")
 
         self.model = model_id or config.get("openai_model", "gpt-4o")
@@ -366,7 +388,9 @@ class OpenAIModel(AIModel):
                 except Exception:
                     self.client_async = None
 
-    def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
+    def get_response(
+        self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None
+    ) -> str:
         """
         Generate a response using OpenAI's GPT model.
 
@@ -380,7 +404,9 @@ class OpenAIModel(AIModel):
         messages = normalize_messages(messages)
 
         # Per-call override for reasoning effort only; do not fall back to instance/config defaults
-        eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else None
+        eff = (
+            _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else None
+        )
         # logging.info(f"Using reasoning effort: {eff}")
 
         def _messages_to_input(msgs: MessageList):
@@ -418,7 +444,12 @@ class OpenAIModel(AIModel):
         # Branch by API mode
         if self.api_mode == "chat_completions":
             # Prefer SDK Chat Completions API if available
-            if self.client is not None and hasattr(self.client, "chat") and hasattr(self.client.chat, "completions") and hasattr(self.client.chat.completions, "create"):
+            if (
+                self.client is not None
+                and hasattr(self.client, "chat")
+                and hasattr(self.client.chat, "completions")
+                and hasattr(self.client.chat.completions, "create")
+            ):
                 try:
                     response = self.client.chat.completions.create(
                         model=self.model,
@@ -465,7 +496,7 @@ class OpenAIModel(AIModel):
                 if choices:
                     message = choices[0].get("message")
                     if message and message.get("content"):
-                        return str(message["content"]) 
+                        return str(message["content"])
                 return json.dumps(data)
             except Exception as e:
                 logging.error(f"Error in OpenAI REST Chat Completions call: {str(e)}")
@@ -473,7 +504,11 @@ class OpenAIModel(AIModel):
         else:
             # Responses API (default)
             # Prefer SDK Responses API if available
-            if self.client is not None and hasattr(self.client, "responses") and hasattr(self.client.responses, "create"):
+            if (
+                self.client is not None
+                and hasattr(self.client, "responses")
+                and hasattr(self.client.responses, "create")
+            ):
                 try:
                     kwargs = {"model": self.model, "input": _messages_to_input(messages)}
                     if eff:
@@ -523,8 +558,8 @@ class OpenAIModel(AIModel):
         mapping = {
             "minimal": 120,  # quick
             "low": 180,
-            "medium": 300,   # thorough
-            "high": 600,     # comprehensive
+            "medium": 300,  # thorough
+            "high": 600,  # comprehensive
         }
         read_total = mapping.get(eff, 180 if eff else 180)
         return connect, read_total
@@ -532,7 +567,8 @@ class OpenAIModel(AIModel):
     @retry_async_generator()
     @yield_complete_sentences
     async def get_response_async(
-        self, messages: MessageList,
+        self,
+        messages: MessageList,
         reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """
@@ -553,13 +589,20 @@ class OpenAIModel(AIModel):
         messages = normalize_messages(messages)
 
         # Per-call override for reasoning effort only; do not fall back to instance/config defaults
-        eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else None
+        eff = (
+            _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else None
+        )
         # logging.info(f"Using reasoning effort: {eff}")
 
         # Branch by API mode (non-streaming emission)
         if self.api_mode == "chat_completions":
             # Try SDK Chat Completions first
-            if self.client_async is not None and hasattr(self.client_async, "chat") and hasattr(self.client_async.chat, "completions") and hasattr(self.client_async.chat.completions, "create"):
+            if (
+                self.client_async is not None
+                and hasattr(self.client_async, "chat")
+                and hasattr(self.client_async.chat, "completions")
+                and hasattr(self.client_async.chat.completions, "create")
+            ):
                 try:
                     resp_obj = await self.client_async.chat.completions.create(
                         model=self.model,
@@ -603,7 +646,7 @@ class OpenAIModel(AIModel):
                         if choices:
                             message = choices[0].get("message")
                             if message and message.get("content"):
-                                yield str(message["content"]) 
+                                yield str(message["content"])
                                 return
                         yield json.dumps(data)
                         return
@@ -613,7 +656,11 @@ class OpenAIModel(AIModel):
         else:
             # Responses API (default)
             # Try SDK first
-            if self.client_async is not None and hasattr(self.client_async, "responses") and hasattr(self.client_async.responses, "create"):
+            if (
+                self.client_async is not None
+                and hasattr(self.client_async, "responses")
+                and hasattr(self.client_async.responses, "create")
+            ):
                 kwargs = {"model": self.model, "input": messages}
                 if eff:
                     kwargs["reasoning"] = {"effort": eff}
@@ -694,7 +741,13 @@ class ClaudeAIModel(AIModel):
     Implementation of AIModel using Anthropic's Claude model.
     """
 
-    def __init__(self, config: Config, timezone: str = "", model_id: Optional[str] = None, max_tokens: Optional[int] = None):
+    def __init__(
+        self,
+        config: Config,
+        timezone: str = "",
+        model_id: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+    ):
         """
         Initialize the Claude AI model.
 
@@ -784,9 +837,7 @@ class ClaudeAIModel(AIModel):
             data["system"] = system_message_combined
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self.url, headers=self.headers, json=data
-            ) as response:
+            async with session.post(self.url, headers=self.headers, json=data) as response:
                 if response.status in (401, 403):
                     body = await response.text()
                     try:
@@ -800,7 +851,9 @@ class ClaudeAIModel(AIModel):
                 res = await response.text()
                 return json.loads(res)
 
-    def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
+    def get_response(
+        self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None
+    ) -> str:
         """
         Generate a response using Anthropic's Claude model.
 
@@ -821,7 +874,8 @@ class ClaudeAIModel(AIModel):
     @retry_async_generator()
     @yield_complete_sentences
     async def get_response_async(
-        self, messages: MessageList,
+        self,
+        messages: MessageList,
         reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """
@@ -901,9 +955,7 @@ class OpenRouterModel(OpenAIModel):
             model = config.get("openrouter_model_simple", "anthropic/claude-3-haiku")
         else:
             model = config.get("openrouter_model", "anthropic/claude-3.5-sonnet")
-        base_url = config.get(
-            "openrouter_model_base_url", "https://openrouter.ai/api/v1"
-        )
+        base_url = config.get("openrouter_model_base_url", "https://openrouter.ai/api/v1")
         super().__init__(
             config,
             base_url=base_url,
@@ -928,7 +980,9 @@ class PerplexityModel(OpenAIModel):
         model = config.get("perplexity_model", "sonar")
         base_url = "https://api.perplexity.ai"
         api_key = os.getenv("PERPLEXITY_API_KEY")
-        super().__init__(config, base_url=base_url, api_key=api_key, model_id=model, api="chat_completions")
+        super().__init__(
+            config, base_url=base_url, api_key=api_key, model_id=model, api="chat_completions"
+        )
 
 
 class DeepseekModel(OpenAIModel):
@@ -946,7 +1000,9 @@ class DeepseekModel(OpenAIModel):
         model = config.get("deepseek_model", "deepseek-reasoner")
         base_url = "https://api.deepseek.com"
         api_key = os.getenv("DEEPSEEK_API_KEY")
-        super().__init__(config, base_url=base_url, api_key=api_key, model_id=model, api="chat_completions")
+        super().__init__(
+            config, base_url=base_url, api_key=api_key, model_id=model, api="chat_completions"
+        )
 
 
 # Debug functions
@@ -1013,7 +1069,9 @@ with the answer. The reasoning process and answer are enclosed within <think> </
 
     config = Config()
     ai_model = ClaudeAIModel(config)
-    tnum = ai_model.get_tokens_number([{"role": "system", "content": claude_system_prompt},{"role": "user", "content": "a"}])
+    tnum = ai_model.get_tokens_number(
+        [{"role": "system", "content": claude_system_prompt}, {"role": "user", "content": "a"}]
+    )
     print(f"Tokens number: {tnum}")
     # Use OpenAI's high-reasoning model (GPT-5)
     ai_model = OpenAIModel(config)

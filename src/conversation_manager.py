@@ -16,7 +16,7 @@ import sys
 import glob
 from collections import deque
 from pathlib import Path
-from typing import List, Tuple, AsyncGenerator, Deque, Dict, Optional
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -243,7 +243,7 @@ class ConversationManager:
         )
 
         self.default_system_prompt = self.default_system_prompt_russian
-        self.reminder_fact_marker = "Напоминание (ожидает):"
+        self.reminder_fact_marker = "[REMINDER_FACT]"
 
         self.message_history: Deque[dict] = deque(
             [{"role": "system", "content": self.get_system_prompt()}]
@@ -279,8 +279,15 @@ class ConversationManager:
         prompt += emotions_prompt()
         prompt += language_prompt()
 
-        if self.facts:
-            prompt += " Ты уже знаешь факты:" + " ".join(self.facts)
+        facts_for_prompt = self.facts
+        if facts_for_prompt:
+            filtered_facts = []
+            for fact in facts_for_prompt:
+                if self.reminder_fact_marker in fact:
+                    filtered_facts.append(fact.replace(self.reminder_fact_marker, "").strip())
+                else:
+                    filtered_facts.append(fact)
+            prompt += " Ты уже знаешь факты:" + " ".join(filtered_facts)
 
         if self.rules:
             prompt += " Ты уже помнишь правила:" + " ".join(self.rules)
@@ -301,7 +308,7 @@ class ConversationManager:
 
         return prompt
 
-    async def get_response(self, text: str) -> AsyncGenerator[List[Dict[str, any]], None]:
+    async def get_response(self, text: str) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """
         Get an AI response based on the current conversation state and new input.
 
@@ -354,10 +361,10 @@ class ConversationManager:
                 )
 
         # Buffer for combining sentences
-        sentence_buffer: List[Dict[str, any]] = []
+        sentence_buffer: List[Dict[str, Any]] = []
         buffer_chars = 0
 
-        def combine_buffer() -> List[Dict[str, any]]:
+        def combine_buffer() -> List[Dict[str, Any]]:
             """Combine buffered sentences into one."""
             if not sentence_buffer:
                 return []
@@ -624,12 +631,13 @@ class ConversationManager:
         message = reminder.get("message")
         if not isinstance(message, str) or not message.strip():
             return
-        time_value = reminder.get("time")
-        time_part = f" Время: {time_value}." if time_value else ""
-        fact_text = f"{self.reminder_fact_marker} {message.strip()}.{time_part}"
-        if any(fact_text in existing for existing in self.facts):
+        fact_text = reminder.get("fact_text")
+        if not isinstance(fact_text, str) or not fact_text.strip():
+            fact_text = f"Напомнил: {message.strip()}."
+        fact_with_marker = f"{self.reminder_fact_marker} {fact_text}"
+        if any(fact_with_marker in existing for existing in self.facts):
             return
-        fact = get_current_date_time_for_facts(self.timezone) + " : " + fact_text
+        fact = get_current_date_time_for_facts(self.timezone) + " : " + fact_with_marker
         self.facts += [fact]
         self.save_facts(self.facts)
 

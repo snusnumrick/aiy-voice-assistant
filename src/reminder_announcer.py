@@ -8,7 +8,7 @@ import logging
 import math
 import os
 import wave
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import aiohttp
 
@@ -75,7 +75,7 @@ class ReminderAnnouncer:
             logger.warning(f"Failed to read bell duration: {e}")
             return None
 
-    def _resolve_repeat(self, reminder: Dict[str, any]) -> int:
+    def _resolve_repeat(self, reminder: Dict[str, Any]) -> int:
         if "bell_repeat" in reminder:
             try:
                 return max(1, int(reminder.get("bell_repeat")))
@@ -91,7 +91,7 @@ class ReminderAnnouncer:
                 return 1
         return 1
 
-    def _resolve_language(self, reminder: Dict[str, any]) -> Language:
+    def _resolve_language(self, reminder: Dict[str, Any]) -> Language:
         lang_code = reminder.get("language") or self.config.get(
             "reminders_language", "ru"
         )
@@ -101,7 +101,7 @@ class ReminderAnnouncer:
             "de": Language.GERMAN,
         }.get(str(lang_code).lower(), Language.RUSSIAN)
 
-    def _resolve_tone(self, reminder: Dict[str, any]) -> Tone:
+    def _resolve_tone(self, reminder: Dict[str, Any]) -> Tone:
         emotion = reminder.get("emotion")
         if isinstance(emotion, dict):
             voice = emotion.get("voice")
@@ -109,7 +109,7 @@ class ReminderAnnouncer:
                 return Tone.HAPPY
         return Tone.PLAIN
 
-    def _resolve_light(self, reminder: Dict[str, any]) -> dict:
+    def _resolve_light(self, reminder: Dict[str, Any]) -> dict:
         emotion = reminder.get("emotion")
         if isinstance(emotion, dict):
             light = emotion.get("light")
@@ -120,7 +120,7 @@ class ReminderAnnouncer:
             return light
         return self.default_light
 
-    def _resolve_speak_text(self, reminder: Dict[str, any]) -> Optional[str]:
+    def _resolve_speak_text(self, reminder: Dict[str, Any]) -> Optional[str]:
         speak_text = reminder.get("speak_text")
         if isinstance(speak_text, str) and speak_text.strip():
             return speak_text.strip()
@@ -191,7 +191,7 @@ class ReminderAnnouncer:
             logger.error(f"Reminder TTS failed: {e}")
         return None
 
-    async def notify(self, reminder: Dict[str, any]) -> None:
+    async def notify(self, reminder: Dict[str, Any]) -> None:
         self.conversation_manager.add_pending_reminder_fact(reminder)
 
         if not os.path.exists(self.bell_file):

@@ -97,6 +97,7 @@ class ReminderManager:
         speak_text: Optional[str] = None,
         language: Optional[str] = None,
         emotion: Optional[Dict[str, Any]] = None,
+        fact_text: Optional[str] = None,
         light: Optional[Dict[str, Any]] = None,
         bell_repeat: Optional[int] = None,
         bell_duration_sec: Optional[float] = None,
@@ -115,6 +116,8 @@ class ReminderManager:
             reminder["language"] = language
         if isinstance(emotion, dict):
             reminder["emotion"] = emotion
+        if isinstance(fact_text, str):
+            reminder["fact_text"] = fact_text
         if isinstance(light, dict):
             reminder["light"] = light
         if bell_repeat is not None:
@@ -147,6 +150,8 @@ class ReminderManager:
                 reminder["language"] = updates["language"]
             if "emotion" in updates and isinstance(updates["emotion"], dict):
                 reminder["emotion"] = updates["emotion"]
+            if "fact_text" in updates and isinstance(updates["fact_text"], str):
+                reminder["fact_text"] = updates["fact_text"]
             if "light" in updates and isinstance(updates["light"], dict):
                 reminder["light"] = updates["light"]
             if "bell_repeat" in updates and updates["bell_repeat"] is not None:

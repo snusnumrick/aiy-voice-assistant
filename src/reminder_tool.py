@@ -6,7 +6,7 @@ Provides tools to set, list, update, and delete reminders stored in reminders.js
 
 import datetime as dt
 import logging
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import pytz
 
@@ -73,17 +73,22 @@ Return concise confirmations and IDs.
                 ToolParameter(
                     name="speak_text",
                     type="string",
-                    description="Text to speak when reminder fires (optional).",
+                    description="Text to speak when reminder fires (optional). Example: \"Напомнил: позвонить маме\"",
                 ),
                 ToolParameter(
                     name="language",
                     type="string",
-                    description="Language code for spoken reminder (ru/en/de).",
+                    description="Language code for spoken reminder (ru/en/de). Example: \"ru\"",
+                ),
+                ToolParameter(
+                    name="fact_text",
+                    type="string",
+                    description="Text to store in facts when reminder fires (optional). Example: \"Напомнил: позвонить маме.\"",
                 ),
                 ToolParameter(
                     name="time",
                     type="string",
-                    description="ISO timestamp for set/update, e.g. 2026-02-05T14:30:00+03:00",
+                    description="ISO timestamp for set/update. Example: 2026-02-05T14:30:00+03:00",
                 ),
                 ToolParameter(
                     name="amount",
@@ -146,7 +151,7 @@ Return concise confirmations and IDs.
             required=["action"],
         )
 
-    async def manage_reminders(self, parameters: Dict[str, any]) -> str:
+    async def manage_reminders(self, parameters: Dict[str, Any]) -> str:
         action = parameters.get("action")
         tz = self._resolve_timezone()
         manager = ReminderManager(self.reminders_file, timezone=tz)
@@ -155,6 +160,7 @@ Return concise confirmations and IDs.
             message = parameters.get("message")
             speak_text = parameters.get("speak_text")
             language = parameters.get("language")
+            fact_text = parameters.get("fact_text")
             time_value = parameters.get("time")
             recurring = bool(parameters.get("recurring", False))
             light = parameters.get("light")
@@ -175,6 +181,7 @@ Return concise confirmations and IDs.
                 speak_text=str(speak_text) if speak_text is not None else None,
                 language=str(language) if language is not None else None,
                 emotion=emotion if isinstance(emotion, dict) else None,
+                fact_text=str(fact_text) if fact_text is not None else None,
                 light=light if isinstance(light, dict) else None,
                 bell_repeat=bell_repeat,
                 bell_duration_sec=bell_duration_sec,
@@ -185,6 +192,7 @@ Return concise confirmations and IDs.
             message = parameters.get("message")
             speak_text = parameters.get("speak_text")
             language = parameters.get("language")
+            fact_text = parameters.get("fact_text")
             amount = parameters.get("amount")
             unit = parameters.get("unit")
             recurring = bool(parameters.get("recurring", False))
@@ -222,6 +230,7 @@ Return concise confirmations and IDs.
                 speak_text=str(speak_text) if speak_text is not None else None,
                 language=str(language) if language is not None else None,
                 emotion=emotion if isinstance(emotion, dict) else None,
+                fact_text=str(fact_text) if fact_text is not None else None,
                 light=light if isinstance(light, dict) else None,
                 bell_repeat=bell_repeat,
                 bell_duration_sec=bell_duration_sec,
@@ -249,13 +258,15 @@ Return concise confirmations and IDs.
             reminder_id = parameters.get("id")
             if not reminder_id:
                 return "Missing reminder id."
-            updates: Dict[str, Optional[any]] = {}
+            updates: Dict[str, Optional[Any]] = {}
             if "message" in parameters:
                 updates["message"] = parameters.get("message")
             if "speak_text" in parameters:
                 updates["speak_text"] = parameters.get("speak_text")
             if "language" in parameters:
                 updates["language"] = parameters.get("language")
+            if "fact_text" in parameters:
+                updates["fact_text"] = parameters.get("fact_text")
             if "time" in parameters:
                 updates["time"] = parameters.get("time")
             if "recurring" in parameters:
