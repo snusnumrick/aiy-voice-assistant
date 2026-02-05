@@ -243,7 +243,7 @@ class ConversationManager:
         )
 
         self.default_system_prompt = self.default_system_prompt_russian
-        self.reminder_fact_marker = "[REMINDER_FACT]"
+        self.ephemeral_facts: List[str] = []
 
         self.message_history: Deque[dict] = deque(
             [{"role": "system", "content": self.get_system_prompt()}]
@@ -281,13 +281,9 @@ class ConversationManager:
 
         facts_for_prompt = self.facts
         if facts_for_prompt:
-            filtered_facts = []
-            for fact in facts_for_prompt:
-                if self.reminder_fact_marker in fact:
-                    filtered_facts.append(fact.replace(self.reminder_fact_marker, "").strip())
-                else:
-                    filtered_facts.append(fact)
-            prompt += " Ты уже знаешь факты:" + " ".join(filtered_facts)
+            prompt += " Ты уже знаешь факты:" + " ".join(facts_for_prompt)
+        if self.ephemeral_facts:
+            prompt += " " + " ".join(self.ephemeral_facts)
 
         if self.rules:
             prompt += " Ты уже помнишь правила:" + " ".join(self.rules)
@@ -514,8 +510,6 @@ class ConversationManager:
         for line in self.facts:
             if "/tmp/" in line:
                 continue
-            if self.reminder_fact_marker in line:
-                continue
             pre_optimized_facts.append(line)
 
         # Asynchronously optimize facts
@@ -590,6 +584,8 @@ class ConversationManager:
             self.message_history: Deque[dict] = deque(
                 [{"role": "system", "content": self.get_system_prompt()}]
             )
+            # Clear ephemeral facts during nightly cleanup.
+            self.ephemeral_facts = []
 
         # process existing facts and rules (run both operations concurrently)
         existing_facts = set(self.facts)
@@ -642,6 +638,14 @@ class ConversationManager:
         fact = get_current_date_time_for_facts(self.timezone) + " : " + fact_with_marker
         self.facts += [fact]
         self.save_facts(self.facts)
+
+    def add_ephemeral_fact(self, text: str) -> None:
+        if not isinstance(text, str) or not text.strip():
+            return
+        fact = text.strip()
+        if fact in self.ephemeral_facts:
+            return
+        self.ephemeral_facts.append(fact)
 
     @staticmethod
     def load_facts():

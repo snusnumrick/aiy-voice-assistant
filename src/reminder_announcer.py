@@ -37,9 +37,7 @@ class ReminderAnnouncer:
         self.tts_engines = tts_engines
         self.fallback_tts_engine = fallback_tts_engine
         self.bell_file = config.get("reminder_bell_file", "assets/bell.wav")
-        self.silence_file = config.get(
-            "reminder_silence_file", "assets/silence_250ms.wav"
-        )
+        self.silence_file = config.get("reminder_silence_file", "assets/silence_250ms.wav")
         self.speech_delay_sec = float(config.get("reminder_speech_delay_sec", 0.25))
         self.default_light = config.get(
             "reminder_default_light",
@@ -52,13 +50,9 @@ class ReminderAnnouncer:
         )
         self._bell_duration_sec = self._load_bell_duration_sec(self.bell_file)
         self._silence_cache: Dict[float, str] = {}
-        self.ready_breathing_period_ms = float(
-            config.get("ready_breathing_period_ms", 10000)
-        )
+        self.ready_breathing_period_ms = float(config.get("ready_breathing_period_ms", 10000))
         self.ready_breathing_color = config.get("ready_breathing_color", (0, 1, 0))
-        self.ready_breathing_duration = float(
-            config.get("ready_breathing_duration", 60)
-        )
+        self.ready_breathing_duration = float(config.get("ready_breathing_duration", 60))
 
     def _load_bell_duration_sec(self, path: str) -> Optional[float]:
         if not os.path.exists(path):
@@ -77,24 +71,18 @@ class ReminderAnnouncer:
 
     def _resolve_repeat(self, reminder: Dict[str, Any]) -> int:
         if "bell_repeat" in reminder:
-            try:
-                return max(1, int(reminder.get("bell_repeat")))
-            except Exception:
-                return 1
+            return max(1, int(reminder.get("bell_repeat", 1)))
+
         if "bell_duration_sec" in reminder and self._bell_duration_sec:
-            try:
-                duration = float(reminder.get("bell_duration_sec"))
-                if duration <= 0:
-                    return 1
-                return max(1, int(math.ceil(duration / self._bell_duration_sec)))
-            except Exception:
+            duration = float(reminder.get("bell_duration_sec", 1))
+            if duration <= 0:
                 return 1
+            return max(1, int(math.ceil(duration / self._bell_duration_sec)))
+
         return 1
 
     def _resolve_language(self, reminder: Dict[str, Any]) -> Language:
-        lang_code = reminder.get("language") or self.config.get(
-            "reminders_language", "ru"
-        )
+        lang_code = reminder.get("language") or self.config.get("reminders_language", "ru")
         return {
             "ru": Language.RUSSIAN,
             "en": Language.ENGLISH,
@@ -178,9 +166,7 @@ class ReminderAnnouncer:
         tts_engine = self.tts_engines.get(lang, self.tts_engines[Language.RUSSIAN])
         try:
             async with aiohttp.ClientSession() as session:
-                ok = await tts_engine.synthesize_async(
-                    session, text, audio_file_name, tone, lang
-                )
+                ok = await tts_engine.synthesize_async(session, text, audio_file_name, tone, lang)
                 if not ok:
                     ok = await self.fallback_tts_engine.synthesize_async(
                         session, text, audio_file_name, tone, lang
@@ -192,7 +178,13 @@ class ReminderAnnouncer:
         return None
 
     async def notify(self, reminder: Dict[str, Any]) -> None:
-        self.conversation_manager.add_pending_reminder_fact(reminder)
+        fact_text = reminder.get("fact_text")
+        if not isinstance(fact_text, str) or not fact_text.strip():
+            message = reminder.get("message")
+            if isinstance(message, str) and message.strip():
+                fact_text = f"Напомнил: {message.strip()}."
+        if isinstance(fact_text, str) and fact_text.strip():
+            self.conversation_manager.add_ephemeral_fact(fact_text)
 
         if not os.path.exists(self.bell_file):
             logger.warning("Bell file missing; skipping bell playback")
@@ -211,9 +203,7 @@ class ReminderAnnouncer:
 
         lang = self._resolve_language(reminder)
         tone = self._resolve_tone(reminder)
-        speech_task = asyncio.create_task(
-            self._synthesize_speech(speak_text, tone, lang)
-        )
+        speech_task = asyncio.create_task(self._synthesize_speech(speak_text, tone, lang))
 
         if os.path.exists(self.silence_file):
             self.response_player.add((None, self.silence_file, "reminder_silence"))
