@@ -15,7 +15,7 @@ import sys
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from enum import Enum
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 import aiohttp
 import requests
@@ -41,7 +41,8 @@ class MessageModel(BaseModel):
     content: str
 
 
-MessageList = Sequence[Union[Dict[str, str], MessageModel]]
+Message = Union[Dict[str, Any], MessageModel]
+MessageList = Sequence[Message]
 
 
 class ReasoningEffort(Enum):
@@ -114,7 +115,7 @@ def _to_openai_reasoning_effort(value: Optional[Union[str, ReasoningEffort]]) ->
     return mapping.get(key)
 
 
-def normalize_messages(messages: MessageList) -> List[Dict[str, str]]:
+def normalize_messages(messages: MessageList) -> List[Dict[str, Any]]:
     """
     Normalize messages to ensure they are in the correct format for API calls.
 
@@ -859,6 +860,7 @@ class ClaudeAIModel(AIModel):
 
         Args:
             messages (MessageList): A list of message models representing the conversation history.
+            reasoning_effort: (Optional[Union[str, ReasoningEffort]])
 
         Returns:
             str: The generated response.

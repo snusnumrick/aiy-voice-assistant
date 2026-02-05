@@ -51,7 +51,7 @@ def estimate_tokens(text: str) -> int:
     return int(words * 1.5 + punctuation)
 
 
-def get_token_count(messages: List[Dict[str, Union[str, Dict]]]) -> int:
+def get_token_count(messages: List[Dict[str, Any]]) -> int:
     """
     Get the total token count for a list of messages.
 
@@ -124,11 +124,12 @@ def get_timezone(set_system_tz: bool = True) -> str:
             return
         try:
             import subprocess
+
             result = subprocess.run(
                 ["sudo", "timedatectl", "set-timezone", tz],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
             )
             if result.returncode == 0:
                 logger.info(f"System timezone set to: {tz}")
@@ -224,12 +225,11 @@ def get_timezone(set_system_tz: bool = True) -> str:
     _set_system_timezone(fallback)
     return fallback
 
+
 def time_string_ms(timezone_string: str) -> str:
     # 07:00.989
     return (
-        datetime.now(pytz.utc)
-        .astimezone(pytz.timezone(timezone_string))
-        .strftime("%M:%S.%f")[:-3]
+        datetime.now(pytz.utc).astimezone(pytz.timezone(timezone_string)).strftime("%M:%S.%f")[:-3]
     )
 
 
@@ -250,11 +250,7 @@ def get_location_string() -> str:
     """
     g = geocoder.ip("me")
     location_parts = [g.city, g.state, g.country]
-    location = (
-        ", ".join([part for part in location_parts if part])
-        if any(location_parts)
-        else ""
-    )
+    location = ", ".join([part for part in location_parts if part]) if any(location_parts) else ""
     return location
 
 
@@ -347,11 +343,7 @@ def get_location() -> str:
     """
     g = geocoder.ip("me")
     location_parts = [g.city, g.state, g.country]
-    location = (
-        ", ".join([part for part in location_parts if part])
-        if any(location_parts)
-        else ""
-    )
+    location = ", ".join([part for part in location_parts if part]) if any(location_parts) else ""
 
     return f"In {location}."
 
@@ -482,9 +474,7 @@ def indent_content(content, max_width=120):
     return "    " + "\n    ".join(formatted_lines)
 
 
-def format_message_history(
-    message_history: Iterable[Dict[str, str]], max_width=120
-) -> str:
+def format_message_history(message_history: Iterable[Dict[str, str]], max_width=120) -> str:
     """
     Format the message history into a formatted string with a specified maximum width.
 
@@ -493,10 +483,7 @@ def format_message_history(
     :return: The formatted message history as a string.
     """
     return "\n\n".join(
-        [
-            f'{msg["role"]}:\n{indent_content(msg["content"], max_width)}'
-            for msg in message_history
-        ]
+        [f"{msg['role']}:\n{indent_content(msg['content'], max_width)}" for msg in message_history]
     )
 
 
@@ -504,7 +491,9 @@ async def save_to_conversation(role: str, message: str, timezone: str, max_width
     """Saves the given message to the conversation file."""
     date_str, time_str = get_current_date_time_tuple(timezone)
     indented_msg = indent_content(message.replace("+", ""), max_width)
-    formatted = f'{role if role == "assistant" else date_str + ", " + time_str}:\n{indented_msg}\n\n'
+    formatted = (
+        f"{role if role == 'assistant' else date_str + ', ' + time_str}:\n{indented_msg}\n\n"
+    )
     async with aiofiles.open("conversation.txt", "a", encoding="utf-8") as f:
         await f.write(formatted)
 
@@ -694,9 +683,7 @@ def retry_async_generator(
     return decorator
 
 
-def extract_sentences(
-    text: str, expected_enumeration: Optional[List[int]] = None
-) -> List[str]:
+def extract_sentences(text: str, expected_enumeration: Optional[List[int]] = None) -> List[str]:
     """
     Extracts sentences from the given text while preserving special patterns and numbered lists.
 
@@ -759,9 +746,7 @@ def extract_sentences(
             current_sentence += segment
         else:
             # Split the non-special segment by sentence endings and numbered list items
-            parts = re.split(
-                f"({sentence_end_pattern})|({numbered_list_pattern})", segment
-            )
+            parts = re.split(f"({sentence_end_pattern})|({numbered_list_pattern})", segment)
             parts = [p for p in parts if p is not None]
             for i, part in enumerate(parts):
                 if re.match(sentence_end_pattern, part) or (

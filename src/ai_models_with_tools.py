@@ -12,9 +12,9 @@ import logging
 import os
 import sys
 from collections.abc import AsyncGenerator, Coroutine
-from typing import Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
-import aiohttp
+import aiohttp  # ty:ignore[unresolved-import]
 from pydantic import BaseModel, Field
 
 from src.ai_models import (
@@ -53,7 +53,7 @@ class Tool(BaseModel):
     description: str
     iterative: bool
     parameters: List[ToolParameter]
-    processor: Callable[[Dict[str, any]], Coroutine[any, any, str]]
+    processor: Callable[[Dict[str, Any]], Coroutine[Any, Any, str]]
     required: List[str] = Field(default_factory=list)
     rule_instructions: Dict[str, str] = Field(default_factory=dict)
 
@@ -62,9 +62,7 @@ class Tool(BaseModel):
         parameter_names = {p.name for p in self.parameters}
         for required in self.required:
             if required not in parameter_names:
-                raise ValueError(
-                    f'Required field "{required}" does not exist in parameters'
-                )
+                raise ValueError(f'Required field "{required}" does not exist in parameters')
 
 
 class ClaudeAIModelWithTools(ClaudeAIModel):
@@ -95,6 +93,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             def _build_user_location(timezone: str) -> Dict:
                 try:
                     import geocoder  # lazy import to avoid test import issues
+
                     g = geocoder.ip("me")
                     country_code = getattr(g, "country_code", None)
                     country = country_code or getattr(g, "country", None) or ""
@@ -110,12 +109,14 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     return {"type": "approximate", "timezone": timezone or ""}
 
             user_location = _build_user_location(timezone)
-            self.tools_description.append({
-                "type": "web_search_20250305",
-                "name": "web_search",
-                "max_uses": config.get("claude_max_search_use", 5),
-                "user_location": user_location,
-            })
+            self.tools_description.append(
+                {
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": config.get("claude_max_search_use", 5),
+                    "user_location": user_location,
+                }
+            )
 
     @staticmethod
     def _create_tools_description(tools: List[Tool]) -> List[Dict]:
@@ -135,8 +136,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        p.name: {"type": p.type, "description": p.description}
-                        for p in t.parameters
+                        p.name: {"type": p.type, "description": p.description} for p in t.parameters
                     },
                     "required": t.required,
                 },
@@ -144,7 +144,9 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             for t in tools
         ]
 
-    def get_response(self, messages: MessageList) -> str:
+    def get_response(
+        self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None
+    ) -> str:
         """
         Generate a response using the AI model with tool capabilities.
 
@@ -166,7 +168,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 response_text += self._process_tool_use(content, messages)
         return response_text
 
-    def _process_tool_use(self, content: Dict, messages: List[Dict[str, str]]) -> str:
+    def _process_tool_use(self, content: Dict, messages: List[Dict[str, Any]]) -> str:
         """Process a tool use request and generate a response."""
         tool_name = content["name"]
         tool_use_id = content["id"]
@@ -191,7 +193,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
     @retry_async_generator()
     async def _get_response_async(
-        self, messages: List[Dict[str, str]], streaming=False
+        self, messages: List[Dict[str, Any]], streaming=False
     ) -> AsyncGenerator[dict, None]:
         """
         Asynchronously get responses from the AI model.
@@ -221,9 +223,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             data["system"] = system_message_combined
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self.url, headers=self.headers, json=data
-            ) as response:
+            async with session.post(self.url, headers=self.headers, json=data) as response:
                 # Check for immediate HTTP errors (e.g., authentication)
                 if response.status in (401, 403):
                     body = await response.text()
@@ -240,7 +240,10 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     body = await response.text()
                     try:
                         err = json.loads(body)
-                        yield {"type": "error", "error": {"message": err.get("error", {}).get("message", body)}}
+                        yield {
+                            "type": "error",
+                            "error": {"message": err.get("error", {}).get("message", body)},
+                        }
                     except Exception:
                         yield {"type": "error", "error": {"message": body}}
                     return
@@ -259,7 +262,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
     @retry_async_generator()
     async def get_response_async(
-        self, messages: MessageList
+        self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None
     ) -> AsyncGenerator[str, None]:
         """
         Asynchronously process responses from the AI model and yield sentences.
@@ -269,6 +272,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
         Args:
            messages (MessageList): List of message dictionaries to send to the model.
+           reasoning_effort (Optional[Union[str, ReasoningEffort]])
 
         Yields:
            str: Complete sentences from the AI model's response.
@@ -299,9 +303,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         """Generate a plain (non-streaming) response asynchronously."""
         message_list = [m for m in messages]
 
-        async for response_dict in self._get_response_async(
-            message_list, streaming=False
-        ):
+        async for response_dict in self._get_response_async(message_list, streaming=False):
             logger.debug(
                 f"get_response_async: {json.dumps(response_dict, indent=2, ensure_ascii=False)}"
             )
@@ -319,20 +321,16 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     ]
                 else:
                     return
-            message_list.append(
-                {"role": "assistant", "content": response_dict["content"]}
-            )
+            message_list.append({"role": "assistant", "content": response_dict["content"]})
             for content in response_dict["content"]:
                 if content["type"] == "text":
                     yield content["text"]
                 elif content["type"] == "tool_use":
-                    async for response in self._process_tool_use_async(
-                        content, message_list
-                    ):
+                    async for response in self._process_tool_use_async(content, message_list):
                         yield response
 
     async def _process_tool_use_async(
-        self, content: Dict, message_list: List[Dict[str, str]]
+        self, content: Dict, message_list: List[Dict[str, Any]]
     ) -> AsyncGenerator[str, None]:
         """Process a tool use request asynchronously and generate a response."""
         tool_name = content["name"]
@@ -357,7 +355,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 yield response
 
     async def _get_response_async_streaming(
-        self, messages: List[Dict[str, str]]
+        self, messages: List[Dict[str, Any]]
     ) -> AsyncGenerator[str, None]:
         """
         Generate a streaming response asynchronously.
@@ -452,9 +450,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             if _current_tool_use:
                 if not _current_tool_use.get("input", ""):
                     _current_tool_use["input"] = {}
-                async for r in self._process_tool_use_streaming(
-                    _current_tool_use, _message_list
-                ):
+                async for r in self._process_tool_use_streaming(_current_tool_use, _message_list):
                     yield r
 
         async def process_message_stop(
@@ -489,24 +485,33 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 event_type = event.get("type")
 
                 if event_type == "error":
-                    msg = event.get('error', {}).get('message', '')
+                    msg = event.get("error", {}).get("message", "")
                     from src.tools import NonRetryableError
+
                     # Treat auth-related messages as non-retryable
-                    if any(k in msg.lower() for k in ["invalid x-api-key", "authentication", "unauthorized", "forbidden"]):
+                    if any(
+                        k in msg.lower()
+                        for k in [
+                            "invalid x-api-key",
+                            "authentication",
+                            "unauthorized",
+                            "forbidden",
+                        ]
+                    ):
                         raise NonRetryableError(f"Claude error: {msg}")
                     raise Exception(f"Claude error: {msg}")
 
                 if event_type == "content_block_delta":
-                    async for sentence in process_content_block_delta(
-                        event, current_tool_use
-                    ):
+                    async for sentence in process_content_block_delta(event, current_tool_use):
                         if sentence:
                             yield sentence
 
                 elif event_type == "content_block_start":
                     content = event.get("content_block", {})
                     if content.get("type") == "tool_use":
-                        logger.info(f"{self._time_str()}Processing tool use: {event['content_block']['name']}")
+                        logger.info(
+                            f"{self._time_str()}Processing tool use: {event['content_block']['name']}"
+                        )
                         # Signal that a tool is about to be used
                         yield "[[TOOL_USE]]"
                         current_tool_use = process_content_block_start(event)
@@ -521,21 +526,15 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     current_tool_use = None
 
                 elif event_type == "message_stop":
-                    async for sentence in process_message_stop(
-                        message_list, assistant_message
-                    ):
+                    async for sentence in process_message_stop(message_list, assistant_message):
                         if sentence:
-                            logger.debug(
-                                f"{self._time_str()}Yielding on message stop: {sentence}"
-                            )
+                            logger.debug(f"{self._time_str()}Yielding on message stop: {sentence}")
                             yield sentence
                     current_text = ""
                     assistant_message = ""
 
             if current_text:
-                logger.debug(
-                    f"{self._time_str()}Yielding remaining text: {current_text}"
-                )
+                logger.debug(f"{self._time_str()}Yielding remaining text: {current_text}")
                 yield current_text
 
         except StopAsyncIteration:
@@ -545,7 +544,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             raise
 
     async def _process_tool_use_streaming(
-        self, tool_use: Dict, message_list: List[Dict[str, str]]
+        self, tool_use: Dict, message_list: List[Dict[str, Any]]
     ) -> AsyncGenerator[str, None]:
         """Process a tool use request in streaming mode and generate a response."""
 
@@ -558,9 +557,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             message_list.append({"role": "assistant", "content": [tool_use]})
             tool_name = tool_use["name"]
             tool_use_id = tool_use["id"]
-            logger.debug(
-                f"{self._time_str()}Processing tool use: {tool_name}, {tool_use_id}"
-            )
+            logger.debug(f"{self._time_str()}Processing tool use: {tool_name}, {tool_use_id}")
             tool_processor = self.tools_processors[tool_name]
             tool_result = await tool_processor(tool_input)
             logger.debug(
@@ -580,12 +577,10 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     }
                 )
                 async for response in self.get_response_async(message_list):
-                    logger.debug(f"Yielding after tool response: {response}")
+                    logger.info(f"Yielding after tool response: {response}")
                     yield response
         except json.JSONDecodeError:
-            logger.error(
-                f"{self._time_str()}Failed to decode tool input JSON: {tool_use['input']}"
-            )
+            logger.error(f"{self._time_str()}Failed to decode tool input JSON: {tool_use['input']}")
 
 
 class ToolCall(BaseModel):
@@ -617,9 +612,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
         model_id = model_id or config.get("gemini_model_id", "gemini-1.5-pro-latest")
 
         self.tools = {t.name: t for t in tools} if tools else {}
-        self.tools_description = (
-            self._create_tools_description(tools) if tools else None
-        )
+        self.tools_description = self._create_tools_description(tools) if tools else None
         self.tools_processors = {t.name: t.processor for t in tools} if tools else {}
         self.model = genai.GenerativeModel(model_id, tools=self.tools_description)
         max_tokens = config.get("max_tokens", 4096)
@@ -633,8 +626,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
             return {
                 "type": "object",
                 "properties": {
-                    p.name: {"type": p.type, "description": p.description}
-                    for p in t.parameters
+                    p.name: {"type": p.type, "description": p.description} for p in t.parameters
                 },
                 "required": t.required,
             }
@@ -646,7 +638,9 @@ class GeminiAIModeWithTools(GeminiAIModel):
             ]
         }
 
-    def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
+    def get_response(
+        self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None
+    ) -> str:
         """
         Generate a response using Google Gemini model.
 
@@ -656,7 +650,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
         Returns:
             str: The generated response.
         """
-        from google.generativeai import types
+        from google.generativeai import types  # ty:ignore[unresolved-import]
 
         messages = normalize_messages(messages)
         system_message_combined = " ".join(
@@ -677,9 +671,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
                 self.model._system_instruction = types.content_types.to_content(
                     system_message_combined
                 )
-            chat = self.model.start_chat(
-                history=history, enable_automatic_function_calling=True
-            )
+            chat = self.model.start_chat(history=history, enable_automatic_function_calling=True)
             response = chat.send_message(
                 adapted_messages[-1], generation_config=self.generation_config
             )
@@ -715,9 +707,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
 
     @retry_async_generator()
     @yield_complete_sentences
-    async def get_response_async(
-        self, messages: MessageList
-    ) -> AsyncGenerator[str, None]:
+    async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
         """
         Asynchronously generate a response using Google gemini model.
 
@@ -727,7 +717,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
         Yields:
             str: Parts of the generated response.
         """
-        from google.generativeai import types
+        from google.generativeai import types  # ty:ignore[unresolved-import]
 
         messages = normalize_messages(messages)
         system_message_combined = " ".join(
@@ -748,9 +738,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
                 self.model._system_instruction = types.content_types.to_content(
                     system_message_combined
                 )
-            chat = self.model.start_chat(
-                history=history, enable_automatic_function_calling=True
-            )
+            chat = self.model.start_chat(history=history, enable_automatic_function_calling=True)
             response = chat.send_message(
                 adapted_messages[-1], generation_config=self.generation_config
             )
@@ -812,25 +800,33 @@ class OpenAIModelWithTools(OpenAIModel):
             def _build_user_location() -> Dict:
                 try:
                     import geocoder  # lazy import to avoid import issues in tests
+
                     g = geocoder.ip("me")
                     return {
                         "type": "approximate",
-                        "country": getattr(g, "country", None) or getattr(g, "country_code", "") or "",
+                        "country": getattr(g, "country", None)
+                        or getattr(g, "country_code", "")
+                        or "",
                         "region": getattr(g, "state", None) or "",
                         "city": getattr(g, "city", None) or "",
                     }
                 except Exception:
                     # Fallback minimal approximate location
                     return {"type": "approximate"}
+
             search_ctx_size = config.get("openai_search_context_size", "high")
-            self.tools_description.append({
-                "type": "web_search_preview",
-                "user_location": _build_user_location(),
-                "search_context_size": str(search_ctx_size).lower(),
-            })
+            self.tools_description.append(
+                {
+                    "type": "web_search_preview",
+                    "user_location": _build_user_location(),
+                    "search_context_size": str(search_ctx_size).lower(),
+                }
+            )
             # Default text/verbosity/reasoning/store preferences for Responses API
             self._openai_text_verbosity = str(config.get("openai_text_verbosity", "medium")).lower()
-            self._openai_reasoning_effort = str(config.get("openai_reasoning_effort", "medium")).lower()
+            self._openai_reasoning_effort = str(
+                config.get("openai_reasoning_effort", "medium")
+            ).lower()
             self._openai_store = bool(config.get("openai_store", True))
 
     @classmethod
@@ -841,8 +837,7 @@ class OpenAIModelWithTools(OpenAIModel):
             return {
                 "type": "object",
                 "properties": {
-                    p.name: {"type": p.type, "description": p.description}
-                    for p in t.parameters
+                    p.name: {"type": p.type, "description": p.description} for p in t.parameters
                 },
                 "required": t.required,
             }
@@ -860,7 +855,9 @@ class OpenAIModelWithTools(OpenAIModel):
             for t in tools
         ]
 
-    def get_response(self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None) -> str:
+    def get_response(
+        self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None
+    ) -> str:
         """
         Generate a response using the OpenAI model with tool capabilities.
 
@@ -874,8 +871,12 @@ class OpenAIModelWithTools(OpenAIModel):
         messages = normalize_messages(messages)
 
         # If built-in web search is enabled, use the Responses API with the requested schema
-        use_builtin_search = any(isinstance(t, dict) and t.get("type") == "web_search_preview" for t in self.tools_description)
+        use_builtin_search = any(
+            isinstance(t, dict) and t.get("type") == "web_search_preview"
+            for t in self.tools_description
+        )
         if use_builtin_search:
+
             def _extract_responses_output(resp_obj) -> str:
                 out_text = []
                 try:
@@ -900,12 +901,21 @@ class OpenAIModelWithTools(OpenAIModel):
                 return "".join(out_text).strip()
 
             # Normalize effort: include only if provided per-call
-            eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else None
+            eff = (
+                _to_openai_reasoning_effort(reasoning_effort)
+                if reasoning_effort is not None
+                else None
+            )
 
             payload = {
                 "model": self.model,
                 "input": messages,
-                "text": {"format": {"type": "text"}, "verbosity": self._openai_text_verbosity if hasattr(self, "_openai_text_verbosity") else "medium"},
+                "text": {
+                    "format": {"type": "text"},
+                    "verbosity": self._openai_text_verbosity
+                    if hasattr(self, "_openai_text_verbosity")
+                    else "medium",
+                },
                 "tools": self.tools_description,
                 "store": getattr(self, "_openai_store", True),
             }
@@ -913,7 +923,11 @@ class OpenAIModelWithTools(OpenAIModel):
                 payload["reasoning"] = {"effort": eff}
             # Prefer SDK if available
             try:
-                if getattr(self, "client", None) is not None and hasattr(self.client, "responses") and hasattr(self.client.responses, "create"):
+                if (
+                    getattr(self, "client", None) is not None
+                    and hasattr(self.client, "responses")
+                    and hasattr(self.client.responses, "create")
+                ):
                     resp = self.client.responses.create(**payload)
                     text = _extract_responses_output(resp)
                     if text:
@@ -923,6 +937,7 @@ class OpenAIModelWithTools(OpenAIModel):
                 # fall through to REST
             # REST fallback
             import requests
+
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
@@ -971,7 +986,8 @@ class OpenAIModelWithTools(OpenAIModel):
 
     @retry_async_generator()
     async def get_response_async(
-        self, messages: MessageList,
+        self,
+        messages: MessageList,
         reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """
@@ -986,20 +1002,34 @@ class OpenAIModelWithTools(OpenAIModel):
         messages = normalize_messages(messages)
 
         # If built-in web search is enabled, use the Responses API (non-streaming minimal implementation)
-        use_builtin_search = any(isinstance(t, dict) and t.get("type") == "web_search_preview" for t in self.tools_description)
+        use_builtin_search = any(
+            isinstance(t, dict) and t.get("type") == "web_search_preview"
+            for t in self.tools_description
+        )
         if use_builtin_search:
-            eff = _to_openai_reasoning_effort(reasoning_effort) if reasoning_effort is not None else None
+            eff = (
+                _to_openai_reasoning_effort(reasoning_effort)
+                if reasoning_effort is not None
+                else None
+            )
             payload = {
                 "model": self.model,
                 "input": messages,
-                "text": {"format": {"type": "text"}, "verbosity": getattr(self, "_openai_text_verbosity", "medium")},
+                "text": {
+                    "format": {"type": "text"},
+                    "verbosity": getattr(self, "_openai_text_verbosity", "medium"),
+                },
                 "tools": self.tools_description,
                 "store": getattr(self, "_openai_store", True),
             }
             if eff:
                 payload["reasoning"] = {"effort": eff}
             try:
-                if getattr(self, "client_async", None) is not None and hasattr(self.client_async, "responses") and hasattr(self.client_async.responses, "create"):
+                if (
+                    getattr(self, "client_async", None) is not None
+                    and hasattr(self.client_async, "responses")
+                    and hasattr(self.client_async.responses, "create")
+                ):
                     resp_obj = await self.client_async.responses.create(**payload)
                     # Extract text
                     text_out = ""
@@ -1073,9 +1103,7 @@ class OpenAIModelWithTools(OpenAIModel):
         async for chunk in stream:
             choice = chunk.choices[0]
             delta = choice.delta
-            logger.debug(
-                f"reason: {choice.finish_reason}; tools: {choice.delta.tool_calls}"
-            )
+            logger.debug(f"reason: {choice.finish_reason}; tools: {choice.delta.tool_calls}")
             if choice.finish_reason is None and choice.delta.tool_calls:
                 for tool_call in delta.tool_calls:
                     tool_name = tool_call.function.name or tool_name
@@ -1099,9 +1127,7 @@ class OpenAIModelWithTools(OpenAIModel):
                 text = chunk.choices[0].delta.content or ""
                 current_text += text
                 sentences = extract_sentences(current_text)
-                logger.debug(
-                    f"text: {text}; current text: {current_text}; sentences: {sentences}"
-                )
+                logger.debug(f"text: {text}; current text: {current_text}; sentences: {sentences}")
                 # If we have any complete sentences, yield them
                 if len(sentences) > 1:
                     for sentence in sentences[:-1]:
@@ -1124,9 +1150,7 @@ class OpenAIModelWithTools(OpenAIModel):
             tool_parameters = json.loads(tool_call.arguments)
             tool_processor = self.tools_processors[tool_name]
             tool_result = await tool_processor(tool_parameters)
-            _messages.append(
-                {"role": "tool", "content": tool_result, "tool_call_id": tool_use_id}
-            )
+            _messages.append({"role": "tool", "content": tool_result, "tool_call_id": tool_use_id})
             if self.tools[tool_name].iterative:
                 iterate = True
         if iterate:
@@ -1175,15 +1199,19 @@ async def main_async():
     interpreter_tool = InterpreterTool(config)
     wizard_tool = WizardTool(config)
     search_tool = WebSearchTool(config)
-    model = ClaudeAIModelWithTools(config, tools=[
-    # model = OpenAIModelWithTools(config, tools=[
-        search_tool.tool_definition(),
-        interpreter_tool.tool_definition(),
-    ] + wizard_tool.tool_definitions())
+    model = ClaudeAIModelWithTools(
+        config,
+        tools=[
+            # model = OpenAIModelWithTools(config, tools=[
+            search_tool.tool_definition(),
+            interpreter_tool.tool_definition(),
+        ]
+        + wizard_tool.tool_definitions(),
+    )
     # ], timezone=timezone)
     language = "russian"
     for t in wizard_tool.tool_definitions():
-        if hasattr(t, 'rule_instructions') and language in t.rule_instructions:
+        if hasattr(t, "rule_instructions") and language in t.rule_instructions:
             system += t.rule_instructions[language].strip()
     # model = ClaudeAIModel(config)
     messages = [

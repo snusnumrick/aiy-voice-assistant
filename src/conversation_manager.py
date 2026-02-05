@@ -413,6 +413,8 @@ class ConversationManager:
                     yield combine_buffer()
                     sentence_buffer.clear()
                     buffer_chars = 0
+                # remove from history
+                self.message_history.pop()
                 # Don't process further
                 continue
 
