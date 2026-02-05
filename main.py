@@ -65,9 +65,7 @@ def setup_logging(log_level, log_dir=None):
     console_handler.setLevel(numeric_level)
 
     # Create formatter
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     console_handler.setFormatter(formatter)
 
     # Add console handler to logger
@@ -134,7 +132,9 @@ def main():
     with Board() as board, Leds() as leds:
         # Decide whether to use our custom WebSearchTool or the provider's built-in
         ai_model_api = config.get("ai_model_api", "claude")
-        use_openai_search = config.get("openai_use_search", False) if ai_model_api == "openai" else False
+        use_openai_search = (
+            config.get("openai_use_search", False) if ai_model_api == "openai" else False
+        )
         use_builtin_search = use_claude_search if ai_model_api == "claude" else use_openai_search
         if not use_builtin_search:
             search_tool = WebSearchTool(config)
@@ -145,7 +145,7 @@ def main():
         weather_tool = EnhancedWeatherTool(config)
         wizard_tool = WizardTool(config)
         image_tool = GeminiImageTool(config)
-        reminder_tool = ReminderTool(config)
+        reminder_tool = ReminderTool(config, timezone)
 
         tools = [
             send_email_tool.tool_definition(),
@@ -167,10 +167,7 @@ def main():
         response_player = ResponsePlayer([], leds, timezone)
 
         # Create MiniMax music tool (requires response_player and button_state)
-        minimax_tool = MiniMaxMusicTool(
-            config=config,
-            response_player=response_player
-        )
+        minimax_tool = MiniMaxMusicTool(config=config, response_player=response_player)
 
         # Add MiniMax music tool to tools list
         tools.append(minimax_tool.tool_definition())
@@ -198,7 +195,7 @@ def main():
 
         ai_model = None
         ai_model_api = config.get("ai_model_api", "claude")
-        if  ai_model_api == "openai":
+        if ai_model_api == "openai":
             logger.info("Using OpenAI model")
             ai_model = OpenAIModelWithTools(config, tools=tools)
         if not ai_model:

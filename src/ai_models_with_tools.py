@@ -577,8 +577,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     }
                 )
                 async for response in self.get_response_async(message_list):
-                    logger.info(f"Yielding after tool response: {response}")
-                    yield response
+                    logger.info(f"ignoring after tool response: {response}")
+                    # yield response
         except json.JSONDecodeError:
             logger.error(f"{self._time_str()}Failed to decode tool input JSON: {tool_use['input']}")
 
@@ -604,7 +604,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
         super().__init__(config, model_id)
         sys_path = sys.path
         sys.path = [p for p in sys.path if p != os.getcwd()]
-        import google.generativeai as genai
+        import google.generativeai as genai  # ty:ignore[unresolved-import]
 
         sys.path = sys_path
 
@@ -709,7 +709,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
     @yield_complete_sentences
     async def get_response_async(self, messages: MessageList) -> AsyncGenerator[str, None]:
         """
-        Asynchronously generate a response using Google gemini model.
+        Asynchronously generate a response using Google Gemini model.
 
         Args:
             messages (MessageList): A list of message models representing the conversation history.

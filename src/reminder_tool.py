@@ -21,22 +21,11 @@ logger = logging.getLogger(__name__)
 class ReminderTool:
     """Tool for managing reminders via tool calls."""
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, timezone: str):
         self.config = config
         self.reminders_file = config.get("reminders_file", "reminders.json")
-
-    def _resolve_timezone(self) -> dt.tzinfo:
-        tz_name = self.config.get("timezone")
-        if isinstance(tz_name, str) and tz_name:
-            try:
-                return pytz.timezone(tz_name)
-            except Exception:
-                logger.warning(f"Invalid timezone in config: {tz_name}")
-        try:
-            tz_name = get_timezone(set_system_tz=False)
-            return pytz.timezone(tz_name)
-        except Exception:
-            return dt.datetime.now().astimezone().tzinfo  # type: ignore[return-value]
+        self.tz_name = timezone
+        self.timezone: dt.tzinfo = pytz.timezone(timezone)
 
     def tool_definition(self) -> Tool:
         return Tool(
@@ -73,17 +62,17 @@ Return concise confirmations and IDs.
                 ToolParameter(
                     name="speak_text",
                     type="string",
-                    description="Text to speak when reminder fires (optional). Example: \"Напомнил: позвонить маме\"",
+                    description='Text to speak when reminder fires (optional). Example: "Напомнил: позвонить маме"',
                 ),
                 ToolParameter(
                     name="language",
                     type="string",
-                    description="Language code for spoken reminder (ru/en/de). Example: \"ru\"",
+                    description='Language code for spoken reminder (ru/en/de). Example: "ru"',
                 ),
                 ToolParameter(
                     name="fact_text",
                     type="string",
-                    description="Text to store in facts when reminder fires (optional). Example: \"Напомнил: позвонить маме.\"",
+                    description='Text to store in facts when reminder fires (optional). Example: "Напомнил: позвонить маме."',
                 ),
                 ToolParameter(
                     name="time",
@@ -153,8 +142,7 @@ Return concise confirmations and IDs.
 
     async def manage_reminders(self, parameters: Dict[str, Any]) -> str:
         action = parameters.get("action")
-        tz = self._resolve_timezone()
-        manager = ReminderManager(self.reminders_file, timezone=tz)
+        manager = ReminderManager(self.reminders_file, timezone=self.timezone)
 
         if action == "set_reminder_at":
             message = parameters.get("message")
