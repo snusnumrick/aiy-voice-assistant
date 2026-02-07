@@ -8,14 +8,43 @@ including Hume AI's Expression Measurement API for voice emotion detection.
 import asyncio
 import base64
 import io
+import inspect
 import json
 import logging
 import os
+import random
 import wave
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from functools import wraps
 from typing import Dict, List, Optional, Tuple
+
+try:
+    from src.tools import retry_async
+except Exception:
+    def retry_async(
+        max_retries: int = 5,
+        initial_retry_delay: float = 1,
+        backoff_factor: float = 2,
+        jitter_factor: float = 0.1,
+    ):
+        def decorator(func):
+            @wraps(func)
+            async def wrapper(*args, **kwargs):
+                for attempt in range(max_retries):
+                    try:
+                        return await func(*args, **kwargs)
+                    except Exception:
+                        if attempt == (max_retries - 1):
+                            raise
+                        retry_time = initial_retry_delay * (backoff_factor**attempt)
+                        jitter = random.uniform(0, jitter_factor * retry_time)
+                        await asyncio.sleep(retry_time + jitter)
+
+            return wrapper
+
+        return decorator
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +154,26 @@ class HumeEmotionEngine(EmotionEngine):
             f"min_score={self.min_score}, timeout={self.timeout}"
         )
 
+    @retry_async()
+    async def _connect_websocket_with_retry(self, websockets):
+        connection = websockets.connect(
+            self.websocket_url,
+            extra_headers={"X-Hume-Api-Key": self.api_key},
+        )
+        if inspect.isawaitable(connection):
+            return await connection
+        if hasattr(connection, "__aenter__"):
+            return await connection.__aenter__()
+        return connection
+
+    async def _close_websocket(self, ws) -> None:
+        close_method = getattr(ws, "close", None)
+        if close_method is None:
+            return
+        close_result = close_method()
+        if inspect.isawaitable(close_result):
+            await close_result
+
     async def detect(self, audio_file: str) -> Optional[EmotionResult]:
         """
         Send audio file to Hume WebSocket API, get emotion predictions.
@@ -145,10 +194,8 @@ class HumeEmotionEngine(EmotionEngine):
             return None
 
         try:
-            async with websockets.connect(
-                self.websocket_url,
-                extra_headers={"X-Hume-Api-Key": self.api_key}
-            ) as ws:
+            ws = await self._connect_websocket_with_retry(websockets)
+            try:
                 # Read and encode audio file
                 with open(audio_file, "rb") as f:
                     audio_data = f.read()
@@ -168,6 +215,8 @@ class HumeEmotionEngine(EmotionEngine):
                 logger.debug(f"Received Hume API response: {response.keys()}")
 
                 return self._parse_response(response)
+            finally:
+                await self._close_websocket(ws)
 
         except asyncio.TimeoutError:
             logger.warning(f"Emotion detection timed out after {self.timeout}s")
@@ -201,10 +250,8 @@ class HumeEmotionEngine(EmotionEngine):
             return None
 
         try:
-            async with websockets.connect(
-                self.websocket_url,
-                extra_headers={"X-Hume-Api-Key": self.api_key}
-            ) as ws:
+            ws = await self._connect_websocket_with_retry(websockets)
+            try:
                 # Accumulate chunks and send periodically for better predictions
                 accumulated_data = bytearray()
                 chunk_count = 0
@@ -243,6 +290,8 @@ class HumeEmotionEngine(EmotionEngine):
                     last_result = self._parse_response(response)
 
                 return last_result
+            finally:
+                await self._close_websocket(ws)
 
         except asyncio.TimeoutError:
             logger.warning(f"Emotion detection stream timed out after {self.timeout}s")

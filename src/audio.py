@@ -34,7 +34,12 @@ from src.background_tasks import BackgroundTaskManager
 from src.config import Config
 from src.emotion_engine import EmotionEngine, format_annotation
 from src.responce_player import ResponsePlayer
-from src.tools import combine_audio_files, get_timezone, time_string_ms
+from src.tools import (
+    combine_audio_files,
+    get_timezone,
+    retry_async,
+    time_string_ms,
+)
 from src.tts_engine import TTSEngine
 
 logger = logging.getLogger(__name__)
@@ -279,6 +284,10 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
             logger.error(traceback.format_exc())
             return ""
 
+    @retry_async()
+    async def _connect_websocket_with_retry(self, uri: str, extra_headers: dict):
+        return await self.websockets.connect(uri, extra_headers=extra_headers)
+
     async def _transcribe_stream_async(self, audio_generator: Iterator[bytes]) -> str:
         """
         Async implementation of stream transcription.
@@ -319,12 +328,11 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
         audio_chunk_count = 0
 
         try:
-            async with websockets.connect(
+            websocket = await self._connect_websocket_with_retry(
                 uri,
-                extra_headers={
-                    "Authorization": f"Bearer {self.api_key}"
-                }
-            ) as websocket:
+                extra_headers={"Authorization": f"Bearer {self.api_key}"},
+            )
+            try:
                 # Send session configuration
                 session_config = {
                     "type": "session.update",
@@ -482,6 +490,8 @@ class OpenAISpeechRecognition(SpeechRecognitionService):
                 logger.debug(f"Final transcript: '{full_transcript}'")
 
                 return full_transcript.strip()
+            finally:
+                await websocket.close()
 
         except websockets.exceptions.WebSocketException as e:
             logger.error(f"WebSocket error: {str(e)}")
@@ -646,6 +656,12 @@ class ElevenLabsSpeechRecognition(SpeechRecognitionService):
             logger.error(traceback.format_exc())
             return ""
 
+    @retry_async()
+    async def _connect_websocket_with_retry(
+        self, uri: str, extra_headers: Optional[dict] = None
+    ):
+        return await self.websockets.connect(uri, extra_headers=extra_headers)
+
     async def _transcribe_stream_async(self, audio_generator: Iterator[bytes]) -> str:
         import urllib.parse
 
@@ -662,10 +678,11 @@ class ElevenLabsSpeechRecognition(SpeechRecognitionService):
         full_transcript = []
 
         try:
-            async with self.websockets.connect(
+            websocket = await self._connect_websocket_with_retry(
                 uri,
                 extra_headers=extra_headers if extra_headers else None,
-            ) as websocket:
+            )
+            try:
                 send_task = self.asyncio.create_task(
                     self._send_audio(websocket, audio_generator, send_done, commit_sent)
                 )
@@ -678,6 +695,8 @@ class ElevenLabsSpeechRecognition(SpeechRecognitionService):
                 await send_task
                 result = await receive_task
                 return result.strip() if result else ""
+            finally:
+                await websocket.close()
 
         except self.ConnectionClosed as e:
             logger.error(f"ElevenLabs WebSocket closed: {str(e)}")
@@ -978,6 +997,10 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
             logger.error(traceback.format_exc())
             return ""
 
+    @retry_async()
+    async def _connect_websocket_with_retry(self, uri: str):
+        return await self.websockets.connect(uri)
+
     async def _transcribe_stream_async(
         self, audio_generator: Iterator[bytes], context: Optional[str]
     ) -> str:
@@ -990,7 +1013,8 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
 
         # Transcribes audio stream; handles connection and exceptions
         try:
-            async with self.websockets.connect(uri) as websocket:
+            websocket = await self._connect_websocket_with_retry(uri)
+            try:
                 config_message = self._build_config_message(context)
                 logger.debug("Sending Soniox config message: %s", config_message)
                 await websocket.send(self.json.dumps(config_message))
@@ -1007,6 +1031,8 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
                 await send_task
                 result = await receive_task
                 return result.strip() if result else ""
+            finally:
+                await websocket.close()
 
         except self.ConnectionClosed as e:
             logger.error(f"Soniox WebSocket closed: {str(e)}")
