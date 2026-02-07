@@ -57,7 +57,7 @@ if __name__ == "__main__":
     sys.path.append(os.getcwd())
 
 from src.config import Config
-from src.tools import retry_async
+from src.tools import NonRetryableError, retry_async
 
 # Set up TTS usage logger
 TTS_USAGE_LOG = os.environ.get('APP_LOG_DIR', 'logs') + '/tts_usage.log'
@@ -457,6 +457,8 @@ class YandexTTSEngine(TTSEngine):
 
         self.use_async = HTTP_CLIENT_AVAILABLE
         self.timezone = timezone
+        self._sync_speechkit_initialized = False
+        self.yandex_tts_unsafe_mode = bool(config.get("yandex_tts_unsafe_mode", False))
 
         # Create dedicated thread pool for TTS to avoid competition with search
         import concurrent.futures
@@ -470,11 +472,7 @@ class YandexTTSEngine(TTSEngine):
             self.iam_token = None
         else:
             logger.info("Using synchronous speechkit for TTS")
-            from speechkit import configure_credentials, creds
-            # Configure SDK credentials
-            configure_credentials(
-                yandex_credentials=creds.YandexCredentials(api_key=self.api_key)
-            )
+            self._ensure_sync_speechkit_ready()
 
         # Language and voice settings
         self.langs = {
@@ -493,34 +491,43 @@ class YandexTTSEngine(TTSEngine):
         }
         self.speed = config.get("yandex_tts_speed", 1.0)
 
-        # Only initialize voice_models in sync mode to avoid gRPC conflicts
+        # Pre-warm sync model cache only in sync mode.
         if not self.use_async:
-            from speechkit import model_repository
-            self.voice_models: Dict[
-                Language : Dict[Tone, model_repository.SynthesisModel]
-            ] = {}
             self.voice_model(tone=Tone.PLAIN, lang=Language.RUSSIAN)
             self.voice_model(tone=Tone.HAPPY, lang=Language.RUSSIAN)
 
+    def _ensure_sync_speechkit_ready(self) -> None:
+        """Lazily initialize speechkit for sync fallback paths."""
+        if self._sync_speechkit_initialized and hasattr(self, "voice_models"):
+            return
+
+        from speechkit import configure_credentials, creds
+
+        configure_credentials(
+            yandex_credentials=creds.YandexCredentials(api_key=self.api_key)
+        )
+        self.voice_models = {}
+        self._sync_speechkit_initialized = True
+
     def voice_model(self, tone=Tone.PLAIN, lang=Language.RUSSIAN):
-        """Get voice model (only used in sync mode)."""
-        if not self.use_async and hasattr(self, 'voice_models'):
-            if lang in self.voice_models and tone in self.voice_models[lang]:
-                return self.voice_models[lang][tone]
-            from speechkit import model_repository
-            model = model_repository.synthesis_model()
-            model.voice = self.lang_voices[lang]
-            if lang == Language.RUSSIAN:
-                model.role = self.roles[tone]
-            model.language = self.langs[lang]
-            model.speed = self.speed
-            if lang in self.voice_models:
-                self.voice_models[lang][tone] = model
-            else:
-                self.voice_models[lang] = {tone: model}
-            return model
-        # In async mode, we don't need cached models
-        return None
+        """Get speechkit voice model for sync synthesis and fallback paths."""
+        self._ensure_sync_speechkit_ready()
+        if lang in self.voice_models and tone in self.voice_models[lang]:
+            return self.voice_models[lang][tone]
+
+        from speechkit import model_repository
+
+        model = model_repository.synthesis_model()
+        model.voice = self.lang_voices[lang]
+        if lang == Language.RUSSIAN:
+            model.role = self.roles[tone]
+        model.language = self.langs[lang]
+        model.speed = self.speed
+        if lang in self.voice_models:
+            self.voice_models[lang][tone] = model
+        else:
+            self.voice_models[lang] = {tone: model}
+        return model
 
     def synthesize(
         self, text: str, filename: str, tone: Tone = Tone.PLAIN, lang=Language.RUSSIAN
@@ -562,7 +569,7 @@ class YandexTTSEngine(TTSEngine):
             raise
 
     def max_text_length(self) -> int:
-        return -1
+        return 5000 if self.yandex_tts_unsafe_mode else 250
 
     @retry_async()
     async def synthesize_async(
@@ -589,6 +596,12 @@ class YandexTTSEngine(TTSEngine):
         if not text:
             logger.warning("Empty text to synthesize, skipping")
             return True
+
+        max_len = self.max_text_length()
+        if max_len > 0 and len(text) > max_len:
+            raise NonRetryableError(
+                f"Text exceeds maximum length of {max_len} characters for Yandex TTS"
+            )
 
         # Log TTS usage
         try:
@@ -675,6 +688,8 @@ class YandexTTSEngine(TTSEngine):
                     {"role": role}
                 ]
             }
+            if self.yandex_tts_unsafe_mode:
+                data["unsafe_mode"] = True
 
             # Make HTTP request
             async with aiohttp.ClientSession() as session:
@@ -690,9 +705,18 @@ class YandexTTSEngine(TTSEngine):
                         raise Exception(f"HTTP TTS failed: {response.status} - {error_text}")
 
         except Exception as e:
+            error_text = str(e)
+            too_long_text = "HTTP TTS failed: 400" in error_text and "Too long text" in error_text
             logger.error(f"HTTP TTS synthesis failed: {str(e)}")
             logger.warning("Falling back to synchronous speechkit")
-            return await self._synthesize_sync_wrapper(text, tone, lang)
+            try:
+                return await self._synthesize_sync_wrapper(text, tone, lang)
+            except Exception as fallback_error:
+                if too_long_text:
+                    raise NonRetryableError(
+                        f"Yandex TTS text is too long and fallback synthesis failed: {fallback_error}"
+                    ) from fallback_error
+                raise
 
     async def _synthesize_sync_wrapper(
         self,
@@ -721,6 +745,8 @@ class YandexTTSEngine(TTSEngine):
         """
         logger.debug(f"Using synchronous speechkit SDK: {text[:50]}...")
         model = self.voice_model(tone=tone, lang=lang)
+        if model is None:
+            raise RuntimeError("Yandex speechkit model is not initialized")
 
         # Create a temporary file to capture audio
         import tempfile
