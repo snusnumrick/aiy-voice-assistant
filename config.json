@@ -51,8 +51,8 @@
     "stress_marker"
   ],
   "cost_per_turn_logging_enabled": false,
-  "claude_cost_input_per_million": 0.0,
-  "claude_cost_output_per_million": 0.0,
-  "claude_cost_cache_write_per_million": 0.0,
-  "claude_cost_cache_read_per_million": 0.0
+  "claude_cost_input_per_million":3.0,
+  "claude_cost_output_per_million":15.0,
+  "claude_cost_cache_write_per_million":3.75,
+  "claude_cost_cache_read_per_million":0.3
 }
