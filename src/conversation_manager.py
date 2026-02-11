@@ -497,6 +497,36 @@ class ConversationManager:
             logger.warning(f"Direct volume route failed: {e}")
             return None
 
+    def _log_turn_cost_metrics(self) -> None:
+        if not self.config.get("cost_per_turn_logging_enabled", False):
+            return
+        usage_getter = getattr(self.ai_model, "get_last_turn_usage", None)
+        if not callable(usage_getter):
+            return
+        usage = usage_getter()
+        if not usage:
+            return
+        cost_getter = getattr(self.ai_model, "get_last_turn_cost_usd", None)
+        cost = cost_getter() if callable(cost_getter) else None
+        if cost is None:
+            logger.info(
+                "LLM turn usage tokens: input=%s output=%s cache_write=%s cache_read=%s; "
+                "cost unavailable (configure claude_cost_*_per_million).",
+                usage.get("input_tokens", 0),
+                usage.get("output_tokens", 0),
+                usage.get("cache_creation_input_tokens", 0),
+                usage.get("cache_read_input_tokens", 0),
+            )
+            return
+        logger.info(
+            "LLM turn cost: $%.6f (input=%s, output=%s, cache_write=%s, cache_read=%s)",
+            cost,
+            usage.get("input_tokens", 0),
+            usage.get("output_tokens", 0),
+            usage.get("cache_creation_input_tokens", 0),
+            usage.get("cache_read_input_tokens", 0),
+        )
+
     async def get_response(self, text: str) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """
         Get an AI response based on the current conversation state and new input.
@@ -676,6 +706,7 @@ class ConversationManager:
                     f"({buffer_chars} chars)"
                 )
                 yield combine_buffer()
+            self._log_turn_cost_metrics()
         finally:
             if hasattr(self.ai_model, "clear_request_options"):
                 self.ai_model.clear_request_options()

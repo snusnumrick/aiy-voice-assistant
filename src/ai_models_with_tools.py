@@ -90,11 +90,16 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self.tools_description = self._create_tools_description(tools) if tools else []
         self.tools_processors = {t.name: t.processor for t in tools} if tools else {}
         self.tool_usage_stats = get_tool_usage_stats(config)
+        self.cost_per_turn_logging_enabled = bool(config.get("cost_per_turn_logging_enabled", False))
 
         # Per-request runtime overrides (set by ConversationManager).
         self._runtime_tool_names: Optional[set] = None
         self._runtime_response_max_tokens: Optional[int] = None
         self._runtime_system_blocks: Optional[List[Dict[str, Any]]] = None
+        self._usage_depth = 0
+        self._turn_usage_accumulator: Dict[str, int] = self._new_usage_totals()
+        self._last_turn_usage: Optional[Dict[str, int]] = None
+        self._last_turn_cost_usd: Optional[float] = None
 
         # Optional prompt caching header; default off.
         if config.get("claude_enable_prompt_caching", False):
@@ -164,6 +169,66 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             if desc_name and desc_name in allowed:
                 filtered.append(desc)
         return filtered
+
+    @staticmethod
+    def _new_usage_totals() -> Dict[str, int]:
+        return {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+        }
+
+    def _merge_usage(self, usage: Dict[str, Any]) -> None:
+        if not isinstance(usage, dict):
+            return
+        for key in self._turn_usage_accumulator.keys():
+            value = usage.get(key)
+            if value is None:
+                continue
+            try:
+                self._turn_usage_accumulator[key] += int(value)
+            except Exception:
+                continue
+
+    def _record_usage_from_event(self, event: Dict[str, Any]) -> None:
+        if not isinstance(event, dict):
+            return
+        self._merge_usage(event.get("usage", {}))
+        message = event.get("message")
+        if isinstance(message, dict):
+            self._merge_usage(message.get("usage", {}))
+        delta = event.get("delta")
+        if isinstance(delta, dict):
+            self._merge_usage(delta.get("usage", {}))
+
+    def _get_claude_cost_rates(self) -> Dict[str, float]:
+        return {
+            "input_tokens": float(self.config.get("claude_cost_input_per_million", 0.0)),
+            "output_tokens": float(self.config.get("claude_cost_output_per_million", 0.0)),
+            "cache_creation_input_tokens": float(
+                self.config.get("claude_cost_cache_write_per_million", 0.0)
+            ),
+            "cache_read_input_tokens": float(self.config.get("claude_cost_cache_read_per_million", 0.0)),
+        }
+
+    def _compute_turn_cost_usd(self, usage: Dict[str, int]) -> Optional[float]:
+        rates = self._get_claude_cost_rates()
+        if not any(v > 0 for v in rates.values()):
+            return None
+        scale = 1_000_000.0
+        total = 0.0
+        for key, rate_per_million in rates.items():
+            total += (float(usage.get(key, 0)) / scale) * rate_per_million
+        return total
+
+    def get_last_turn_usage(self) -> Optional[Dict[str, int]]:
+        if self._last_turn_usage is None:
+            return None
+        return dict(self._last_turn_usage)
+
+    def get_last_turn_cost_usd(self) -> Optional[float]:
+        return self._last_turn_cost_usd
 
     @staticmethod
     def _create_tools_description(tools: List[Tool]) -> List[Dict]:
@@ -313,6 +378,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                         if line.startswith("{"):
                             try:
                                 event_data = json.loads(line)
+                                self._record_usage_from_event(event_data)
                                 yield event_data
                             except json.JSONDecodeError:
                                 logger.error(f"Failed to decode JSON: {line}")
@@ -340,6 +406,12 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         """
         messages = normalize_messages(messages)
         logger.debug(f"{self._time_str()}AI get_response_async: {messages[-2:]}")
+        self._usage_depth += 1
+        is_outer_call = self._usage_depth == 1
+        if is_outer_call:
+            self._turn_usage_accumulator = self._new_usage_totals()
+            self._last_turn_usage = None
+            self._last_turn_cost_usd = None
 
         streaming = self.config.get("llm_streaming", False)
         try:
@@ -354,6 +426,11 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         except Exception as e:
             logger.error(f"Error in get_response_async: {str(e)}")
             raise
+        finally:
+            self._usage_depth = max(0, self._usage_depth - 1)
+            if is_outer_call:
+                self._last_turn_usage = dict(self._turn_usage_accumulator)
+                self._last_turn_cost_usd = self._compute_turn_cost_usd(self._last_turn_usage)
 
     async def _get_response_async_plain(
         self, messages: List[Dict[str, str]]

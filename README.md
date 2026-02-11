@@ -197,6 +197,8 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
     * `optimize_response_length_control`: use per-turn `max_tokens` caps (`optimize_response_max_tokens_default` / `optimize_response_max_tokens_detailed`).
     * `optimize_tool_usage_tracking_enabled`: persist per-tool usage stats to `optimize_tool_usage_stats_file`.
     * `optimize_tool_rules_prune_by_usage`: shorten system prompt by omitting low-usage tool rules after warmup (`optimize_tool_rules_usage_*`).
+    * `cost_per_turn_logging_enabled`: logs per-turn Claude usage/cost in app logs.
+    * `claude_cost_*_per_million`: pricing inputs used for cost calculation (set to your current model pricing).
     * Inspect collected stats with: `python scripts/show_tool_usage_stats.py`.
 
 12. **Set up environment variables:**

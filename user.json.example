@@ -16,5 +16,6 @@
   "optimize_volume_router_enabled": false,
   "optimize_response_length_control": false,
   "optimize_tool_usage_tracking_enabled": false,
-  "optimize_tool_rules_prune_by_usage": false
+  "optimize_tool_rules_prune_by_usage": false,
+  "cost_per_turn_logging_enabled": false
 }
