@@ -7,5 +7,14 @@
   "stt_context_max_age_sec": 0,
   "stt_context_enabled": true,
   "stt_context_prefix": "",
-  "stt_context_max_length": 600
+  "stt_context_max_length": 600,
+  "optimize_prompt_split_dynamic": false,
+  "optimize_prompt_compact": false,
+  "optimize_prompt_internal_language": "ru",
+  "claude_enable_prompt_caching": false,
+  "optimize_dynamic_tool_profiles": false,
+  "optimize_volume_router_enabled": false,
+  "optimize_response_length_control": false,
+  "optimize_tool_usage_tracking_enabled": false,
+  "optimize_tool_rules_prune_by_usage": false
 }

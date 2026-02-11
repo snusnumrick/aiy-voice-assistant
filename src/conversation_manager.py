@@ -22,8 +22,21 @@ if __name__ == "__main__":
     # add current directory to python path
     sys.path.append(os.getcwd())
 
-from src.llm_tools import optimize_rules, optimize_facts
+from src.ai_models import AIModel, ClaudeAIModel
+from src.llm_tools import (
+    optimize_facts,
+    optimize_rules,
+    summarize_and_compress_history,
+)
+from src.llm_optimization import (
+    PROFILE_CHAT_ONLY,
+    classify_tool_profile,
+    parse_volume_intent,
+    resolve_tools_for_profile,
+    wants_detailed_response,
+)
 from src.responce_player import extract_emotions, extract_language
+from src.tool_usage_stats import get_tool_usage_stats
 from src.tools import (
     format_message_history,
     clean_response,
@@ -172,6 +185,26 @@ def _get_base_rules_english() -> str:
     )
 
 
+def _get_base_rules_russian_compact() -> str:
+    """Compact base rules to reduce prompt tokens."""
+    return (
+        "Если время указано без часового пояса, считай EST. "
+        "Для новых фактов используй: $remember: <текст>$. "
+        "Для новых постоянных правил используй: $rule: <текст>$. "
+        "Знак ударения '+' ставь только перед ударной гласной и только в русском языке."
+    )
+
+
+def _get_base_rules_english_compact() -> str:
+    """Compact English base rules for lower token usage."""
+    return (
+        "If time is provided without timezone, assume EST. "
+        "To store memory use: $remember: <text>$. "
+        "To store a new persistent rule use: $rule: <text>$. "
+        "Use '+' before stressed vowel only for Russian words."
+    )
+
+
 def _combine_rules(base_rules: str, dynamic_rules: str) -> str:
     """Combine base rules with dynamic tool rules"""
     if dynamic_rules:
@@ -211,14 +244,16 @@ class ConversationManager:
         self.timezone = timezone
         self.current_language_code = "ru"
         self.enabled_tools = enabled_tools or []
+        self.enabled_tools_by_name = {t.name: t for t in self.enabled_tools if hasattr(t, "name")}
         self.emotion_detection_enabled = config.get("emotion_detection_enabled", False)
-
-        # hard rules
-        base_rules = _get_base_rules_russian()
-        if self.emotion_detection_enabled:
-            base_rules += _get_emotion_awareness_rule_russian()
-
-        self.hard_rules = _combine_rules(base_rules, self._generate_tool_rules("russian"))
+        self.tool_usage_stats = get_tool_usage_stats(config)
+        self.optimize_prompt_compact = bool(config.get("optimize_prompt_compact", False))
+        self.optimize_prompt_split_dynamic = bool(config.get("optimize_prompt_split_dynamic", False))
+        self.optimize_prompt_internal_language = str(
+            config.get("optimize_prompt_internal_language", "ru")
+        ).strip().lower()
+        if self.optimize_prompt_internal_language not in {"ru", "en"}:
+            self.optimize_prompt_internal_language = "ru"
 
         self.default_system_prompt_russian = (
             "Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным. "
@@ -242,7 +277,33 @@ class ConversationManager:
             "Assume EST if timezone unspecified. Treat responses as spoken."
         )
 
-        self.default_system_prompt = self.default_system_prompt_russian
+        self.compact_system_prompt_russian = (
+            "Тебя зовут Кубик. Ты друг и помощник. Говори естественно, коротко и просто, "
+            "как в устной речи. Без markdown и без списков. Если не знаешь, так и скажи."
+        )
+
+        self.compact_system_prompt_english = (
+            "You are Kubik, a friendly voice assistant. Speak naturally, briefly, and simply. "
+            "No markdown, no list formatting. If unsure, say so."
+        )
+
+        use_english_meta = self.optimize_prompt_internal_language == "en"
+        if use_english_meta:
+            self.default_system_prompt = (
+                self.compact_system_prompt_english
+                if self.optimize_prompt_compact
+                else self.default_system_prompt_english
+            )
+            self.tool_rules_language = "english"
+        else:
+            self.default_system_prompt = (
+                self.compact_system_prompt_russian
+                if self.optimize_prompt_compact
+                else self.default_system_prompt_russian
+            )
+            self.tool_rules_language = "russian"
+
+        self.hard_rules = self._build_hard_rules()
         self.ephemeral_facts: List[str] = []
 
         self.message_history: Deque[dict] = deque(
@@ -259,22 +320,74 @@ class ConversationManager:
         Returns:
             Combined natural language rules for all tools that provide them
         """
+        prune = bool(self.config.get("optimize_tool_rules_prune_by_usage", False))
+        min_calls = int(self.config.get("optimize_tool_rules_usage_min_calls", 3))
+        keep_top_n = int(self.config.get("optimize_tool_rules_usage_keep_top_n", 6))
+        warmup_calls = int(self.config.get("optimize_tool_rules_usage_warmup_calls", 30))
+        never_prune = set(self.config.get("optimize_tool_rules_never_prune", []))
+
+        top_tools = set()
+        total_calls = 0
+        if prune and self.tool_usage_stats:
+            total_calls = self.tool_usage_stats.total_calls()
+            top_tools = set(self.tool_usage_stats.top_tools(keep_top_n))
+
+        pruned_tools = []
         rules = []
         for tool in self.enabled_tools:
+            tool_name = getattr(tool, "name", "")
+
+            if prune and self.tool_usage_stats and total_calls >= warmup_calls:
+                tool_count = self.tool_usage_stats.get_count(tool_name)
+                include = (
+                    tool_name in never_prune
+                    or tool_count >= min_calls
+                    or tool_name in top_tools
+                )
+                if not include:
+                    pruned_tools.append(tool_name)
+                    continue
+
             if hasattr(tool, "rule_instructions") and language in tool.rule_instructions:
                 rule_text = tool.rule_instructions[language].strip()
                 if rule_text:
                     rules.append(rule_text)
 
+        if pruned_tools:
+            logger.info(f"Tool rules pruned by usage: {pruned_tools}")
         logger.debug(f"Generated tool rules: {rules}")
-
         return "".join(rules)
 
-    def get_system_prompt(self):
+    def _build_hard_rules(self) -> str:
+        use_english_meta = self.optimize_prompt_internal_language == "en"
+        if use_english_meta:
+            base_rules = (
+                _get_base_rules_english_compact()
+                if self.optimize_prompt_compact
+                else _get_base_rules_english()
+            )
+            if self.emotion_detection_enabled:
+                base_rules += _get_emotion_awareness_rule_english()
+            return _combine_rules(base_rules, self._generate_tool_rules("english"))
+
+        base_rules = (
+            _get_base_rules_russian_compact()
+            if self.optimize_prompt_compact
+            else _get_base_rules_russian()
+        )
+        if self.emotion_detection_enabled:
+            base_rules += _get_emotion_awareness_rule_russian()
+        return _combine_rules(base_rules, self._generate_tool_rules("russian"))
+
+    def _system_prompt_context_prefix(self) -> str:
+        return f"{get_current_datetime_english(self.timezone)} {self.location} "
+
+    def _system_prompt_body(self) -> str:
         from src.responce_player import emotions_prompt, language_prompt
 
-        prompt = f"{get_current_datetime_english(self.timezone)} {self.location} "
-        prompt += self.config.get("system_prompt", self.default_system_prompt)
+        prompt = self.config.get("system_prompt", self.default_system_prompt)
+        # Refresh hard rules because optional usage-based pruning is time-dependent.
+        self.hard_rules = self._build_hard_rules()
         prompt += self.hard_rules
         prompt += emotions_prompt()
         prompt += language_prompt()
@@ -310,6 +423,80 @@ class ConversationManager:
 
         return prompt
 
+    def get_system_prompt(self):
+        return self._system_prompt_context_prefix() + self._system_prompt_body()
+
+    def get_system_prompt_parts(self) -> Tuple[str, str]:
+        """
+        Return (static_body, dynamic_context).
+        """
+        return self._system_prompt_body(), self._system_prompt_context_prefix()
+
+    def _build_runtime_system_blocks(self) -> Optional[List[Dict[str, Any]]]:
+        if not self.optimize_prompt_split_dynamic:
+            return None
+        static_body, dynamic_context = self.get_system_prompt_parts()
+        if not static_body and not dynamic_context:
+            return None
+        cache_enabled = bool(self.config.get("claude_enable_prompt_caching", False))
+        if cache_enabled:
+            return [
+                {
+                    "type": "text",
+                    "text": static_body,
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {"type": "text", "text": dynamic_context},
+            ]
+        return [{"type": "text", "text": dynamic_context + static_body}]
+
+    def _select_tool_names_for_text(self, text: str) -> Optional[set]:
+        if not self.config.get("optimize_dynamic_tool_profiles", False):
+            return None
+        default_profile = str(
+            self.config.get("optimize_default_tool_profile", PROFILE_CHAT_ONLY)
+        ).strip()
+        profile = classify_tool_profile(text, default_profile=default_profile)
+        available_tool_names = set(self.enabled_tools_by_name.keys())
+        if self.config.get("claude_use_search", False):
+            available_tool_names.add("web_search")
+        if self.config.get("openai_use_search", False):
+            available_tool_names.add("web_search")
+        selected = resolve_tools_for_profile(profile, available_tool_names)
+        logger.info(f"Tool profile selected: {profile}, tools={sorted(selected)}")
+        return selected
+
+    def _select_max_tokens_for_text(self, text: str) -> Optional[int]:
+        if not self.config.get("optimize_response_length_control", False):
+            return None
+        detailed = wants_detailed_response(text)
+        default_limit = int(self.config.get("optimize_response_max_tokens_default", 180))
+        detailed_limit = int(self.config.get("optimize_response_max_tokens_detailed", 360))
+        chosen = detailed_limit if detailed else default_limit
+        logger.info(f"Response token cap selected: {chosen} (detailed={detailed})")
+        return chosen
+
+    async def _maybe_route_volume_command(self, text: str) -> Optional[str]:
+        if not self.config.get("optimize_volume_router_enabled", False):
+            return None
+        intent = parse_volume_intent(text)
+        if not intent:
+            return None
+        tool = self.enabled_tools_by_name.get("control_speaker_volume")
+        if not tool:
+            return None
+        params: Dict[str, Any] = {"action": intent.action}
+        if intent.value is not None:
+            params["value"] = intent.value
+        try:
+            result = await tool.processor(params)
+            if self.tool_usage_stats:
+                self.tool_usage_stats.record_call("control_speaker_volume")
+            return result if isinstance(result, str) else str(result)
+        except Exception as e:
+            logger.warning(f"Direct volume route failed: {e}")
+            return None
+
     async def get_response(self, text: str) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """
         Get an AI response based on the current conversation state and new input.
@@ -338,11 +525,8 @@ class ConversationManager:
                 f"Sentence buffer: enabled, timeout={buffer_timeout}s, max_length={buffer_max_length}"
             )
 
-        # update system message
-        self.message_history[0] = {
-            "role": "system",
-            "content": self.get_system_prompt(),
-        }
+        system_prompt = self.get_system_prompt()
+        self.message_history[0] = {"role": "system", "content": system_prompt}
 
         # cleanup in case of previous errors
         if self.message_history[-1]["role"] == "user":
@@ -350,6 +534,25 @@ class ConversationManager:
             self.message_history.pop()
 
         self.message_history.append({"role": "user", "content": text})
+
+        # Optional direct route for obvious volume commands to avoid LLM round-trip.
+        direct_volume_response = await self._maybe_route_volume_command(text)
+        if direct_volume_response:
+            self.message_history.append({"role": "assistant", "content": direct_volume_response})
+            lang = self.current_language_code or "ru"
+            yield [{"emotion": None, "language": lang, "text": direct_volume_response}]
+            return
+
+        tool_names = self._select_tool_names_for_text(text)
+        max_tokens = self._select_max_tokens_for_text(text)
+        system_blocks = self._build_runtime_system_blocks()
+        request_options = {
+            "tool_names": tool_names,
+            "response_max_tokens": max_tokens,
+            "system_blocks": system_blocks,
+        }
+        if hasattr(self.ai_model, "set_request_options"):
+            self.ai_model.set_request_options(**request_options)
 
         if get_token_count(list(self.message_history)) > self.config.get("token_threshold", 2500):
             new_message_history = await summarize_and_compress_history(
@@ -381,98 +584,101 @@ class ConversationManager:
                 }
             ]
 
-        async for response_text in self.ai_model.get_response_async(list(self.message_history)):
-            crt = clean_response(response_text)
+        try:
+            async for response_text in self.ai_model.get_response_async(list(self.message_history)):
+                crt = clean_response(response_text)
 
-            if self.message_history[-1]["role"] != "assistant":
-                self.message_history.append({"role": "assistant", "content": crt})
-            else:
-                self.message_history[-1]["content"] += " " + crt
+                if self.message_history[-1]["role"] != "assistant":
+                    self.message_history.append({"role": "assistant", "content": crt})
+                else:
+                    self.message_history[-1]["content"] += " " + crt
 
-            response_text, facts = extract_facts(response_text, self.timezone)
-            self.facts += facts
-            self.save_facts(self.facts)
+                response_text, facts = extract_facts(response_text, self.timezone)
+                if facts:
+                    self.facts += facts
+                    self.save_facts(self.facts)
+                    logger.debug(f"Extracted facts: {facts}")
 
-            if facts:
-                logger.debug(f"Extracted facts: {facts}")
+                response_text, rules = extract_rules(response_text)
+                self.rules += rules
+                self.save_rules(self.rules)
 
-            response_text, rules = extract_rules(response_text)
-            self.rules += rules
-            self.save_rules(self.rules)
+                if rules:
+                    logger.debug(f"Extracted rules: {rules}")
 
-            if rules:
-                logger.debug(f"Extracted rules: {rules}")
+                # Check if this is a tool use signal
+                if response_text.strip() == "[[TOOL_USE]]":
+                    logger.debug("Received tool use signal, flushing sentence buffer")
+                    # Flush buffer immediately when tool is about to be used
+                    if buffer_enabled and sentence_buffer:
+                        logger.debug(
+                            f"Sentence buffer: tool use detected, flushing {len(sentence_buffer)} sentences "
+                            f"({buffer_chars} chars)"
+                        )
+                        yield combine_buffer()
+                        sentence_buffer.clear()
+                        buffer_chars = 0
+                    # remove from history
+                    self.message_history.pop()
+                    # Don't process further
+                    continue
 
-            # Check if this is a tool use signal
-            if response_text.strip() == "[[TOOL_USE]]":
-                logger.debug("Received tool use signal, flushing sentence buffer")
-                # Flush buffer immediately when tool is about to be used
-                if buffer_enabled and sentence_buffer:
-                    logger.debug(
-                        f"Sentence buffer: tool use detected, flushing {len(sentence_buffer)} sentences "
-                        f"({buffer_chars} chars)"
-                    )
-                    yield combine_buffer()
-                    sentence_buffer.clear()
-                    buffer_chars = 0
-                # remove from history
-                self.message_history.pop()
-                # Don't process further
-                continue
+                # Process emotions and language for this sentence
+                for emo, t in extract_emotions(response_text):
+                    logger.debug(f"Emotion: {emo} -> {t}")
+                    for lang, clean_text in extract_language(
+                        t, default_lang=self.current_language_code
+                    ):
+                        logger.debug(f"Language: {lang} -> {clean_text}")
+                        self.current_language_code = lang
+                        if text and clean_text:
+                            clean_text = fix_stress_marks_russian(clean_text)
+                            sentence = {"emotion": emo, "language": lang, "text": clean_text}
 
-            # Process emotions and language for this sentence
-            for emo, t in extract_emotions(response_text):
-                logger.debug(f"Emotion: {emo} -> {t}")
-                for lang, clean_text in extract_language(
-                    t, default_lang=self.current_language_code
-                ):
-                    logger.debug(f"Language: {lang} -> {clean_text}")
-                    self.current_language_code = lang
-                    if text and clean_text:
-                        clean_text = fix_stress_marks_russian(clean_text)
-                        sentence = {"emotion": emo, "language": lang, "text": clean_text}
+                            if not buffer_enabled:
+                                # No buffering, yield immediately
+                                yield [sentence]
+                            else:
+                                sentence_len = len(clean_text)
 
-                        if not buffer_enabled:
-                            # No buffering, yield immediately
-                            yield [sentence]
-                        else:
-                            sentence_len = len(clean_text)
-
-                            # Check if adding this sentence would cross a billing unit boundary
-                            # (Yandex v3 charges per 250-char unit)
-                            would_cross_unit = (
-                                buffer_chars > 0 and buffer_chars + sentence_len > 250
-                            )
-
-                            # Also flush if max_length exceeded (safety check)
-                            would_exceed_max = buffer_chars + sentence_len > buffer_max_length
-
-                            # Flush if we should cross a unit boundary or exceed max_length
-                            if (would_cross_unit or would_exceed_max) and buffer_chars > 0:
-                                logger.debug(
-                                    f"Sentence buffer: optimizing for billing units "
-                                    f"({buffer_chars}/{sentence_len}={buffer_chars + sentence_len} chars), "
-                                    f"yielding {len(sentence_buffer)} sentences"
+                                # Check if adding this sentence would cross a billing unit boundary
+                                # (Yandex v3 charges per 250-char unit)
+                                would_cross_unit = (
+                                    buffer_chars > 0 and buffer_chars + sentence_len > 250
                                 )
-                                yield combine_buffer()
-                                sentence_buffer.clear()
-                                buffer_chars = 0
 
-                            # Add sentence to buffer
-                            sentence_buffer.append(sentence)
-                            buffer_chars += sentence_len
-                            logger.debug(
-                                f"Sentence buffer: added ({sentence_len} chars, "
-                                f"total: {buffer_chars}, count: {len(sentence_buffer)})"
-                            )
+                                # Also flush if max_length exceeded (safety check)
+                                would_exceed_max = buffer_chars + sentence_len > buffer_max_length
 
-        # Flush remaining buffer at the end
-        if buffer_enabled and sentence_buffer:
-            logger.debug(
-                f"Sentence buffer: end of response, yielding {len(sentence_buffer)} sentences "
-                f"({buffer_chars} chars)"
-            )
-            yield combine_buffer()
+                                # Flush if we should cross a unit boundary or exceed max_length
+                                if (would_cross_unit or would_exceed_max) and buffer_chars > 0:
+                                    logger.debug(
+                                        f"Sentence buffer: optimizing for billing units "
+                                        f"({buffer_chars}/{sentence_len}={buffer_chars + sentence_len} chars), "
+                                        f"yielding {len(sentence_buffer)} sentences"
+                                    )
+                                    yield combine_buffer()
+                                    sentence_buffer.clear()
+                                    buffer_chars = 0
+
+                                # Add sentence to buffer
+                                sentence_buffer.append(sentence)
+                                buffer_chars += sentence_len
+                                logger.debug(
+                                    f"Sentence buffer: added ({sentence_len} chars, "
+                                    f"total: {buffer_chars}, count: {len(sentence_buffer)})"
+                                )
+
+            # Flush remaining buffer at the end
+            if buffer_enabled and sentence_buffer:
+                logger.debug(
+                    f"Sentence buffer: end of response, yielding {len(sentence_buffer)} sentences "
+                    f"({buffer_chars} chars)"
+                )
+                yield combine_buffer()
+        finally:
+            if hasattr(self.ai_model, "clear_request_options"):
+                self.ai_model.clear_request_options()
 
     def formatted_message_history(self, max_width=120) -> str:
         """

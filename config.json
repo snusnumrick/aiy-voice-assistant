@@ -28,5 +28,26 @@
   "sentence_buffer_enabled": true,
   "sentence_buffer_timeout": 1.5,
   "sentence_buffer_max_length": 240,
-  "soniox_send_finalize":true
+  "soniox_send_finalize": true,
+  "optimize_prompt_split_dynamic": false,
+  "optimize_prompt_compact": false,
+  "optimize_prompt_internal_language": "ru",
+  "claude_enable_prompt_caching": false,
+  "claude_prompt_caching_beta_header": "prompt-caching-2024-07-31",
+  "optimize_dynamic_tool_profiles": false,
+  "optimize_default_tool_profile": "chat_only",
+  "optimize_volume_router_enabled": false,
+  "optimize_response_length_control": false,
+  "optimize_response_max_tokens_default": 180,
+  "optimize_response_max_tokens_detailed": 360,
+  "optimize_tool_usage_tracking_enabled": false,
+  "optimize_tool_usage_stats_file": "tool_usage_stats.json",
+  "optimize_tool_rules_prune_by_usage": false,
+  "optimize_tool_rules_usage_min_calls": 3,
+  "optimize_tool_rules_usage_keep_top_n": 6,
+  "optimize_tool_rules_usage_warmup_calls": 30,
+  "optimize_tool_rules_never_prune": [
+    "control_speaker_volume",
+    "stress_marker"
+  ]
 }

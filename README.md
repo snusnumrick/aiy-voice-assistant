@@ -187,6 +187,18 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
     * Optional config keys: `reminders_enabled`, `reminders_check_interval_sec`, `reminders_file`,
       `reminder_bell_file`, `reminder_silence_file`, `reminder_speech_delay_sec`.
 
+    LLM cost optimization flags (all optional, safe defaults are `false`):
+    * `optimize_prompt_split_dynamic`: split system prompt into static + dynamic parts (for cache-friendly payloads).
+    * `claude_enable_prompt_caching`: send Claude prompt-caching headers and cacheable system blocks.
+    * `optimize_prompt_compact`: use shorter built-in instruction text.
+    * `optimize_prompt_internal_language`: `ru` or `en` for meta-instructions (responses still follow `$lang` tags).
+    * `optimize_dynamic_tool_profiles`: attach only tool subsets per message intent (`chat_only`, `home_control`, `creative`, `research`, `organizer`, `memory`).
+    * `optimize_volume_router_enabled`: directly handle obvious volume commands without an LLM turn.
+    * `optimize_response_length_control`: use per-turn `max_tokens` caps (`optimize_response_max_tokens_default` / `optimize_response_max_tokens_detailed`).
+    * `optimize_tool_usage_tracking_enabled`: persist per-tool usage stats to `optimize_tool_usage_stats_file`.
+    * `optimize_tool_rules_prune_by_usage`: shorten system prompt by omitting low-usage tool rules after warmup (`optimize_tool_rules_usage_*`).
+    * Inspect collected stats with: `python scripts/show_tool_usage_stats.py`.
+
 12. **Set up environment variables:**
     Create a `.env` file in the project root (Environment variables will override settings from both config files) 
     and  add the following (replace with your actual API keys and sensitive information):

@@ -27,6 +27,7 @@ from src.ai_models import (
     normalize_messages,
 )
 from src.config import Config
+from src.tool_usage_stats import get_tool_usage_stats
 from src.tools import (
     extract_sentences,
     get_timezone,
@@ -88,6 +89,18 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self.tools = {t.name: t for t in tools} if tools else {}
         self.tools_description = self._create_tools_description(tools) if tools else []
         self.tools_processors = {t.name: t.processor for t in tools} if tools else {}
+        self.tool_usage_stats = get_tool_usage_stats(config)
+
+        # Per-request runtime overrides (set by ConversationManager).
+        self._runtime_tool_names: Optional[set] = None
+        self._runtime_response_max_tokens: Optional[int] = None
+        self._runtime_system_blocks: Optional[List[Dict[str, Any]]] = None
+
+        # Optional prompt caching header; default off.
+        if config.get("claude_enable_prompt_caching", False):
+            beta_header = config.get("claude_prompt_caching_beta_header", "prompt-caching-2024-07-31")
+            self.headers["anthropic-beta"] = beta_header
+
         if config.get("claude_use_search", False):
             # Build user_location for Claude web_search tool
             def _build_user_location(timezone: str) -> Dict:
@@ -117,6 +130,40 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     "user_location": user_location,
                 }
             )
+
+    def set_request_options(
+        self,
+        tool_names: Optional[set] = None,
+        response_max_tokens: Optional[int] = None,
+        system_blocks: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """Set one-turn runtime options."""
+        self._runtime_tool_names = tool_names
+        self._runtime_response_max_tokens = response_max_tokens
+        self._runtime_system_blocks = system_blocks
+
+    def clear_request_options(self) -> None:
+        """Clear one-turn runtime options."""
+        self._runtime_tool_names = None
+        self._runtime_response_max_tokens = None
+        self._runtime_system_blocks = None
+
+    def _get_runtime_tools_description(self) -> List[Dict]:
+        if self._runtime_tool_names is None:
+            return self.tools_description
+        allowed = set(self._runtime_tool_names)
+        filtered: List[Dict] = []
+        for desc in self.tools_description:
+            desc_name = desc.get("name")
+            desc_type = desc.get("type")
+            if desc_type == "web_search_20250305":
+                # Treat built-in Claude search as selected by either explicit web_search or internet_search.
+                if "web_search" in allowed or "internet_search" in allowed:
+                    filtered.append(desc)
+                continue
+            if desc_name and desc_name in allowed:
+                filtered.append(desc)
+        return filtered
 
     @staticmethod
     def _create_tools_description(tools: List[Tool]) -> List[Dict]:
@@ -173,6 +220,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         tool_name = content["name"]
         tool_use_id = content["id"]
         tool_parameters = content["input"]
+        if self.tool_usage_stats:
+            self.tool_usage_stats.record_call(tool_name)
         tool_processor = self.tools_processors[tool_name]
         tool_result = asyncio.run(tool_processor(tool_parameters))
         if self.tools[tool_name].iterative:
@@ -211,15 +260,24 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             [m["content"] for m in messages if m["role"] == "system"]
         )
         non_system_message = [m for m in messages if m["role"] != "system"]
+        selected_tools = self._get_runtime_tools_description()
+        max_tokens = (
+            self._runtime_response_max_tokens
+            if self._runtime_response_max_tokens is not None
+            else self.max_tokens
+        )
 
         data = {
             "model": self.model,
-            "max_tokens": self.max_tokens,
-            "tools": self.tools_description,
+            "max_tokens": max_tokens,
             "messages": non_system_message,
             "stream": streaming,
         }
-        if system_message_combined:
+        if selected_tools:
+            data["tools"] = selected_tools
+        if self._runtime_system_blocks:
+            data["system"] = self._runtime_system_blocks
+        elif system_message_combined:
             data["system"] = system_message_combined
 
         async with aiohttp.ClientSession() as session:
@@ -336,6 +394,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         tool_name = content["name"]
         tool_use_id = content["id"]
         tool_parameters = content["input"]
+        if self.tool_usage_stats:
+            self.tool_usage_stats.record_call(tool_name)
         tool_processor = self.tools_processors[tool_name]
         tool_result = await tool_processor(tool_parameters)
         if self.tools[tool_name].iterative:
@@ -558,6 +618,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             tool_name = tool_use["name"]
             tool_use_id = tool_use["id"]
             logger.debug(f"{self._time_str()}Processing tool use: {tool_name}, {tool_use_id}")
+            if self.tool_usage_stats:
+                self.tool_usage_stats.record_call(tool_name)
             tool_processor = self.tools_processors[tool_name]
             tool_result = await tool_processor(tool_input)
             logger.debug(
@@ -614,6 +676,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
         self.tools = {t.name: t for t in tools} if tools else {}
         self.tools_description = self._create_tools_description(tools) if tools else None
         self.tools_processors = {t.name: t.processor for t in tools} if tools else {}
+        self.tool_usage_stats = get_tool_usage_stats(config)
         self.model = genai.GenerativeModel(model_id, tools=self.tools_description)
         max_tokens = config.get("max_tokens", 4096)
         self.generation_config = genai.GenerationConfig(max_output_tokens=max_tokens)
@@ -686,6 +749,8 @@ class GeminiAIModeWithTools(GeminiAIModel):
                         for p in self.tools[fc.name].parameters
                         if p.name in fc.args
                     }
+                    if self.tool_usage_stats:
+                        self.tool_usage_stats.record_call(fc.name)
                     result = asyncio.run(self.tools_processors[fc.name](args))
                     if self.tools[fc.name].iterative:
                         response = chat.send_message(
@@ -752,6 +817,8 @@ class GeminiAIModeWithTools(GeminiAIModel):
                     for p in self.tools[fc.name].parameters
                     if p.name in fc.args
                 }
+                if self.tool_usage_stats:
+                    self.tool_usage_stats.record_call(fc.name)
                 result = await self.tools_processors[fc.name](args)
                 if self.tools[fc.name].iterative:
                     response = await chat.send_message_async(
@@ -794,6 +861,7 @@ class OpenAIModelWithTools(OpenAIModel):
         self.tools_processors = {t.name: t.processor for t in tools} if tools else {}
         self.tools = {t.name: t for t in tools} if tools else {}
         self.tools_description = self._create_tools_description(tools) if tools else []
+        self.tool_usage_stats = get_tool_usage_stats(config)
         # Enable OpenAI built-in web search (Responses API) if requested via config
         if config.get("openai_use_search", False):
             # Build approximate user location (best-effort, optional)
@@ -968,6 +1036,8 @@ class OpenAIModelWithTools(OpenAIModel):
                 tool_name = tool_call.function.name
                 tool_use_id = tool_call.id
                 tool_parameters = json.loads(tool_call.function.arguments)
+                if self.tool_usage_stats:
+                    self.tool_usage_stats.record_call(tool_name)
                 tool_processor = self.tools_processors[tool_name]
                 tool_result = asyncio.run(tool_processor(tool_parameters))
                 if self.tools[tool_name].iterative:
@@ -1148,6 +1218,8 @@ class OpenAIModelWithTools(OpenAIModel):
         for tool_name, tool_call in tools.items():
             tool_use_id = tool_call.id
             tool_parameters = json.loads(tool_call.arguments)
+            if self.tool_usage_stats:
+                self.tool_usage_stats.record_call(tool_name)
             tool_processor = self.tools_processors[tool_name]
             tool_result = await tool_processor(tool_parameters)
             _messages.append({"role": "tool", "content": tool_result, "tool_call_id": tool_use_id})
