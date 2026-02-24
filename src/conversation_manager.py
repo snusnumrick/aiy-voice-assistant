@@ -16,7 +16,7 @@ import sys
 import glob
 from collections import deque
 from pathlib import Path
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator, Deque, Dict, List, Optional, Tuple
 
 if __name__ == "__main__":
     # add current directory to python path
