@@ -7,6 +7,10 @@ from src.conversation_manager import ConversationManager
 
 
 class TestHybridPromptCaching(unittest.TestCase):
+    class _DummyModelWithOptions:
+        def set_request_options(self, **kwargs):
+            return None
+
     def _config(self, **kwargs):
         return Config(
             config_file="__missing_config__.json",
@@ -77,6 +81,34 @@ class TestHybridPromptCaching(unittest.TestCase):
         self.assertEqual(p1, "T1 In Test. ")
         self.assertEqual(p2, "T1 In Test. ")
         self.assertEqual(p3, "T2 In Test. ")
+
+    def test_split_mode_initializes_structured_system_payload_for_dialog(self):
+        cfg = self._config(
+            optimize_prompt_split_dynamic=True,
+            claude_enable_prompt_caching=True,
+        )
+        with patch("src.conversation_manager.get_location", return_value="In Test."):
+            with patch(
+                "src.conversation_manager.get_current_datetime_english",
+                return_value="Today is T.",
+            ):
+                cm = ConversationManager(
+                    cfg,
+                    self._DummyModelWithOptions(),
+                    timezone="UTC",
+                    enabled_tools=[],
+                )
+
+        self.assertIsInstance(cm.last_system_payload_for_dialog, list)
+        self.assertEqual(cm.last_system_payload_for_dialog[0]["type"], "text")
+        self.assertEqual(
+            cm.last_system_payload_for_dialog[0]["cache_control"],
+            {"type": "ephemeral"},
+        )
+        self.assertTrue(
+            cm.last_system_payload_for_dialog[1]["text"].startswith("Today is T.")
+        )
+        self.assertFalse(cm.message_history[0]["content"].startswith("Today is "))
 
 
 if __name__ == "__main__":

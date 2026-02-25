@@ -321,10 +321,22 @@ class ConversationManager:
         self.hard_rules = self._build_hard_rules()
         self.ephemeral_facts: List[str] = []
 
-        self.message_history: Deque[dict] = deque(
-            [{"role": "system", "content": self.get_system_prompt()}]
+        use_structured_system_payload = (
+            self.optimize_prompt_split_dynamic and hasattr(self.ai_model, "set_request_options")
         )
-        self.last_system_payload_for_dialog: Any = self.message_history[0]["content"]
+        initial_system_for_history = (
+            self._system_prompt_body() if use_structured_system_payload else self.get_system_prompt()
+        )
+        self.message_history: Deque[dict] = deque(
+            [{"role": "system", "content": initial_system_for_history}]
+        )
+        if use_structured_system_payload:
+            initial_payload = self._build_runtime_system_blocks()
+            self.last_system_payload_for_dialog = (
+                initial_payload if initial_payload is not None else initial_system_for_history
+            )
+        else:
+            self.last_system_payload_for_dialog = initial_system_for_history
 
     def _generate_tool_rules(self, language: str) -> str:
         """
@@ -770,6 +782,15 @@ class ConversationManager:
         message_history_for_dialog = list(self.message_history)
         if message_history_for_dialog and message_history_for_dialog[0].get("role") == "system":
             payload = self.last_system_payload_for_dialog
+            if (
+                self.optimize_prompt_split_dynamic
+                and hasattr(self.ai_model, "set_request_options")
+                and not isinstance(payload, (list, dict))
+            ):
+                fallback_payload = self._build_runtime_system_blocks()
+                if fallback_payload is not None:
+                    payload = fallback_payload
+                    self.last_system_payload_for_dialog = fallback_payload
             if isinstance(payload, (list, dict)):
                 payload_text = json.dumps(payload, ensure_ascii=False, indent=2)
             else:
