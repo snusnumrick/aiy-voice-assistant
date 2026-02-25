@@ -92,6 +92,16 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self.tools_processors = {t.name: t.processor for t in tools} if tools else {}
         self.tool_usage_stats = get_tool_usage_stats(config)
         self.cost_per_turn_logging_enabled = bool(config.get("cost_per_turn_logging_enabled", False))
+        self.programmatic_tool_calling_enabled = bool(
+            config.get("claude_enable_programmatic_tool_calling", False)
+        )
+        self.programmatic_append_followup_text = bool(
+            config.get("claude_programmatic_append_followup_text", True)
+        )
+        self.programmatic_tool_followup_text = str(
+            config.get("claude_programmatic_tool_followup_text", "Continue.")
+        ).strip() or "Continue."
+        self._always_enabled_runtime_tool_names: set[str] = set()
 
         # Per-request runtime overrides (set by ConversationManager).
         self._runtime_tool_names: Optional[set] = None
@@ -102,9 +112,47 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self._last_turn_usage: Optional[Dict[str, int]] = None
         self._last_turn_cost_usd: Optional[float] = None
 
-        # Optional prompt caching header; default off.
+        # Optional prompt caching/programmatic beta headers; default off.
+        beta_values = []
         if config.get("claude_enable_prompt_caching", False):
-            beta_header = config.get("claude_prompt_caching_beta_header", "prompt-caching-2024-07-31")
+            beta_values.append(
+                str(
+                    config.get(
+                        "claude_prompt_caching_beta_header",
+                        "prompt-caching-2024-07-31",
+                    )
+                ).strip()
+            )
+
+        if self.programmatic_tool_calling_enabled:
+            programmatic_beta = str(
+                config.get("claude_programmatic_tool_beta_header", "")
+            ).strip()
+            if programmatic_beta:
+                beta_values.append(programmatic_beta)
+
+            code_execution_type = str(
+                config.get("claude_programmatic_code_execution_type", "code_execution_20260120")
+            ).strip() or "code_execution_20260120"
+            code_execution_name = str(
+                config.get("claude_programmatic_code_execution_name", "code_execution")
+            ).strip() or "code_execution"
+            code_execution_tool: Dict[str, Any] = {
+                "type": code_execution_type,
+                "name": code_execution_name,
+            }
+            allowed_callers = config.get("claude_programmatic_allowed_callers", [])
+            if isinstance(allowed_callers, list):
+                normalized_callers = [
+                    str(caller).strip() for caller in allowed_callers if str(caller).strip()
+                ]
+                if normalized_callers:
+                    code_execution_tool["allowed_callers"] = normalized_callers
+            self.tools_description.append(code_execution_tool)
+            self._always_enabled_runtime_tool_names.add(code_execution_name)
+
+        beta_header = self._merge_beta_headers(beta_values)
+        if beta_header:
             self.headers["anthropic-beta"] = beta_header
 
         if config.get("claude_use_search", False):
@@ -154,6 +202,21 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self._runtime_response_max_tokens = None
         self._runtime_system_blocks = None
 
+    @staticmethod
+    def _merge_beta_headers(values: List[str]) -> str:
+        merged: List[str] = []
+        seen = set()
+        for value in values:
+            if not value:
+                continue
+            for token in str(value).split(","):
+                normalized = token.strip()
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                merged.append(normalized)
+        return ",".join(merged)
+
     def _get_runtime_tools_description(self) -> List[Dict]:
         if self._runtime_tool_names is None:
             return self.tools_description
@@ -162,6 +225,9 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         for desc in self.tools_description:
             desc_name = desc.get("name")
             desc_type = desc.get("type")
+            if desc_name and desc_name in self._always_enabled_runtime_tool_names:
+                filtered.append(desc)
+                continue
             if desc_type == "web_search_20250305":
                 # Treat built-in Claude search as selected by either explicit web_search or internet_search.
                 if "web_search" in allowed or "internet_search" in allowed:
@@ -170,6 +236,30 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             if desc_name and desc_name in allowed:
                 filtered.append(desc)
         return filtered
+
+    def _append_programmatic_tool_followup_message(self, message_list: List[Dict[str, Any]]) -> None:
+        """
+        Programmatic tool calling requires the final input message to be user text
+        after tool_result. Add a short follow-up user message when enabled.
+        """
+        if not (
+            self.programmatic_tool_calling_enabled
+            and self.programmatic_append_followup_text
+            and message_list
+        ):
+            return
+        last_message = message_list[-1]
+        if last_message.get("role") != "user":
+            return
+        content = last_message.get("content")
+        if not isinstance(content, list):
+            return
+        has_tool_result = any(
+            isinstance(block, dict) and block.get("type") == "tool_result" for block in content
+        )
+        if not has_tool_result:
+            return
+        message_list.append({"role": "user", "content": self.programmatic_tool_followup_text})
 
     def _apply_hybrid_message_cache_breakpoint(
         self, non_system_message: List[Dict[str, Any]]
@@ -375,6 +465,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     ],
                 }
             )
+            self._append_programmatic_tool_followup_message(messages)
             return self.get_response(messages)
         return ""
 
@@ -562,6 +653,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     ],
                 }
             )
+            self._append_programmatic_tool_followup_message(message_list)
             async for response in self.get_response_async(message_list):
                 yield response
 
@@ -789,6 +881,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                         ],
                     }
                 )
+                self._append_programmatic_tool_followup_message(message_list)
                 async for response in self.get_response_async(message_list):
                     logger.info(f"Yielding after tool response: {response}")
                     yield response
