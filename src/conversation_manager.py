@@ -309,6 +309,7 @@ class ConversationManager:
         self.message_history: Deque[dict] = deque(
             [{"role": "system", "content": self.get_system_prompt()}]
         )
+        self.last_system_payload_for_dialog: Any = self.message_history[0]["content"]
 
     def _generate_tool_rules(self, language: str) -> str:
         """
@@ -555,8 +556,15 @@ class ConversationManager:
                 f"Sentence buffer: enabled, timeout={buffer_timeout}s, max_length={buffer_max_length}"
             )
 
-        system_prompt = self.get_system_prompt()
-        self.message_history[0] = {"role": "system", "content": system_prompt}
+        # Keep history/debug prompt aligned with the actual split payload mode.
+        # In split mode, dynamic datetime/location is sent separately via system blocks.
+        if self.optimize_prompt_split_dynamic and hasattr(self.ai_model, "set_request_options"):
+            system_prompt_for_history = self._system_prompt_body()
+        else:
+            system_prompt_for_history = self.get_system_prompt()
+        self.message_history[0] = {"role": "system", "content": system_prompt_for_history}
+        # Default payload snapshot for dialog/debug (overridden below when split blocks are used).
+        self.last_system_payload_for_dialog = system_prompt_for_history
 
         # cleanup in case of previous errors
         if self.message_history[-1]["role"] == "user":
@@ -576,6 +584,8 @@ class ConversationManager:
         tool_names = self._select_tool_names_for_text(text)
         max_tokens = self._select_max_tokens_for_text(text)
         system_blocks = self._build_runtime_system_blocks()
+        if system_blocks is not None:
+            self.last_system_payload_for_dialog = system_blocks
         request_options = {
             "tool_names": tool_names,
             "response_max_tokens": max_tokens,
@@ -723,8 +733,18 @@ class ConversationManager:
     def save_dialog(self):
         # save message history to dialog.txt
         dialog_file_name = "dialog.txt"
+        message_history_for_dialog = list(self.message_history)
+        if message_history_for_dialog and message_history_for_dialog[0].get("role") == "system":
+            payload = self.last_system_payload_for_dialog
+            if isinstance(payload, (list, dict)):
+                payload_text = json.dumps(payload, ensure_ascii=False, indent=2)
+            else:
+                payload_text = str(payload)
+            message_history_for_dialog[0] = {"role": "system", "content": payload_text}
         with open(dialog_file_name, "w", encoding="utf-8") as dialog_file:
-            dialog_file.write("\n\n" + self.formatted_message_history(150) + "\n\n")
+            dialog_file.write(
+                "\n\n" + format_message_history(message_history_for_dialog, 150) + "\n\n"
+            )
 
     async def _run_sync_in_thread(self, func, *args):
         loop = asyncio.get_event_loop()
