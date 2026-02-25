@@ -190,6 +190,10 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
     LLM cost optimization flags (all optional, safe defaults are `false`):
     * `optimize_prompt_split_dynamic`: split system prompt into static + dynamic parts (for cache-friendly payloads).
     * `claude_enable_prompt_caching`: send Claude prompt-caching headers and cacheable system blocks.
+    * `claude_prompt_caching_hybrid_enabled`: keep explicit system caching and also add a message-history cache breakpoint for longer conversations.
+    * `claude_hybrid_cache_min_messages` / `claude_hybrid_cache_recent_uncached_messages`: tune where the history breakpoint is placed.
+    * `claude_prompt_cache_window_seconds`: freeze dynamic time/location prefix for this duration to improve cache reuse.
+    * `claude_prompt_cache_freeze_dynamic_context`: enable/disable time/location freezing while caching.
     * `optimize_prompt_compact`: use shorter built-in instruction text.
     * `optimize_prompt_internal_language`: `ru` or `en` for meta-instructions (responses still follow `$lang` tags).
     * `optimize_dynamic_tool_profiles`: attach only tool subsets per message intent (`chat_only`, `home_control`, `creative`, `research`, `organizer`, `memory`).

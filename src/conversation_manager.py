@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import glob
+import time
 from collections import deque
 from pathlib import Path
 from typing import Any, AsyncGenerator, Deque, Dict, List, Optional, Tuple
@@ -249,6 +250,20 @@ class ConversationManager:
         self.tool_usage_stats = get_tool_usage_stats(config)
         self.optimize_prompt_compact = bool(config.get("optimize_prompt_compact", False))
         self.optimize_prompt_split_dynamic = bool(config.get("optimize_prompt_split_dynamic", False))
+        self.hybrid_prompt_caching_enabled = bool(
+            config.get("claude_prompt_caching_hybrid_enabled", False)
+        )
+        self.prompt_cache_window_seconds = int(
+            config.get("claude_prompt_cache_window_seconds", 300)
+        )
+        self.freeze_dynamic_context_for_cache = bool(
+            config.get(
+                "claude_prompt_cache_freeze_dynamic_context",
+                self.hybrid_prompt_caching_enabled,
+            )
+        )
+        self._cached_dynamic_context_prefix: Optional[str] = None
+        self._cached_dynamic_context_expires_at: float = 0.0
         self.optimize_prompt_internal_language = str(
             config.get("optimize_prompt_internal_language", "ru")
         ).strip().lower()
@@ -381,7 +396,26 @@ class ConversationManager:
         return _combine_rules(base_rules, self._generate_tool_rules("russian"))
 
     def _system_prompt_context_prefix(self) -> str:
-        return f"{get_current_datetime_english(self.timezone)} {self.location} "
+        should_freeze = (
+            self.optimize_prompt_split_dynamic
+            and bool(self.config.get("claude_enable_prompt_caching", False))
+            and self.freeze_dynamic_context_for_cache
+        )
+        if not should_freeze:
+            return f"{get_current_datetime_english(self.timezone)} {self.location} "
+
+        now_ts = time.time()
+        if (
+            self._cached_dynamic_context_prefix is not None
+            and now_ts < self._cached_dynamic_context_expires_at
+        ):
+            return self._cached_dynamic_context_prefix
+
+        prefix = f"{get_current_datetime_english(self.timezone)} {self.location} "
+        ttl = max(1, int(self.prompt_cache_window_seconds))
+        self._cached_dynamic_context_prefix = prefix
+        self._cached_dynamic_context_expires_at = now_ts + ttl
+        return prefix
 
     def _system_prompt_body(self) -> str:
         from src.responce_player import emotions_prompt, language_prompt

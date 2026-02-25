@@ -7,6 +7,7 @@ Claude AI and OpenAI models with tool-using capabilities.
 """
 
 import asyncio
+import copy
 import json
 import logging
 import os
@@ -170,6 +171,78 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 filtered.append(desc)
         return filtered
 
+    def _apply_hybrid_message_cache_breakpoint(
+        self, non_system_message: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Add a cache breakpoint in message history for long conversations.
+
+        Hybrid mode keeps explicit system caching and adds one message-level
+        breakpoint so Claude can auto-reuse older user/assistant turns.
+        """
+        if not (
+            self.config.get("claude_enable_prompt_caching", False)
+            and self.config.get("claude_prompt_caching_hybrid_enabled", False)
+        ):
+            return non_system_message
+
+        min_messages = int(self.config.get("claude_hybrid_cache_min_messages", 6))
+        recent_uncached = int(self.config.get("claude_hybrid_cache_recent_uncached_messages", 2))
+        if len(non_system_message) < max(1, min_messages):
+            return non_system_message
+
+        messages = copy.deepcopy(non_system_message)
+
+        # Keep the latest messages mutable; place breakpoint before that tail.
+        start_index = len(messages) - 1 - max(0, recent_uncached)
+        if start_index < 0:
+            return messages
+
+        breakpoint_index: Optional[int] = None
+        for idx in range(start_index, -1, -1):
+            content = messages[idx].get("content")
+            if isinstance(content, str):
+                breakpoint_index = idx
+                break
+            if isinstance(content, list):
+                has_text_block = any(
+                    isinstance(block, dict) and block.get("type") == "text" and "text" in block
+                    for block in content
+                )
+                if has_text_block:
+                    breakpoint_index = idx
+                    break
+
+        if breakpoint_index is None:
+            return messages
+
+        content = messages[breakpoint_index].get("content")
+        if isinstance(content, str):
+            messages[breakpoint_index]["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+            return messages
+
+        if isinstance(content, list):
+            # Respect any existing cache breakpoint.
+            if any(
+                isinstance(block, dict) and "cache_control" in block
+                for block in content
+            ):
+                return messages
+            for block_idx in range(len(content) - 1, -1, -1):
+                block = content[block_idx]
+                if isinstance(block, dict) and block.get("type") == "text" and "text" in block:
+                    updated = dict(block)
+                    updated["cache_control"] = {"type": "ephemeral"}
+                    content[block_idx] = updated
+                    break
+        return messages
+
     @staticmethod
     def _new_usage_totals() -> Dict[str, int]:
         return {
@@ -325,6 +398,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             [m["content"] for m in messages if m["role"] == "system"]
         )
         non_system_message = [m for m in messages if m["role"] != "system"]
+        non_system_message = self._apply_hybrid_message_cache_breakpoint(non_system_message)
         selected_tools = self._get_runtime_tools_description()
         max_tokens = (
             self._runtime_response_max_tokens
