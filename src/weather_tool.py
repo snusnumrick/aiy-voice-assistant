@@ -184,6 +184,7 @@ class WeatherTool:
             name="weather_info",
             description="Get weather information for a specific location",
             iterative=True,
+            programmatic_code_execution_candidate=True,
             parameters=[
                 ToolParameter(
                     name="location",
@@ -455,6 +456,7 @@ class EnhancedWeatherTool:
             name="enhanced_weather_info",
             description="Get comprehensive weather information including UV index, air quality, lunar phase, and solar data",
             iterative=True,
+            programmatic_code_execution_candidate=True,
             parameters=[
                 ToolParameter(
                     name="location",

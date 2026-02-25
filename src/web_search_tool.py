@@ -41,6 +41,7 @@ class WebSearchTool:
             name="internet_search",
             description="Search Internet for actual information",
             iterative=True,
+            programmatic_code_execution_candidate=True,
             parameters=[
                 ToolParameter(
                     name="query",

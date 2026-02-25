@@ -1,10 +1,31 @@
 import unittest
 
-from src.ai_models_with_tools import ClaudeAIModelWithTools
+from src.ai_models_with_tools import ClaudeAIModelWithTools, Tool, ToolParameter
 from src.config import Config
 
 
 class TestClaudeProgrammaticToolCalling(unittest.TestCase):
+    @staticmethod
+    async def _noop_processor(parameters):
+        return "ok"
+
+    def _tool(self, name: str, candidate: bool) -> Tool:
+        return Tool(
+            name=name,
+            description=f"Tool {name}",
+            iterative=True,
+            parameters=[
+                ToolParameter(
+                    name="x",
+                    type="string",
+                    description="placeholder",
+                )
+            ],
+            required=[],
+            processor=self._noop_processor,
+            programmatic_code_execution_candidate=candidate,
+        )
+
     def _config(self, **kwargs):
         return Config(
             config_file="__missing_config__.json",
@@ -12,26 +33,70 @@ class TestClaudeProgrammaticToolCalling(unittest.TestCase):
             **kwargs,
         )
 
-    def test_programmatic_tool_is_added_and_forced_in_runtime_filter(self):
+    def test_programmatic_tool_is_added_only_for_active_candidate_tools(self):
         cfg = self._config(
             claude_enable_programmatic_tool_calling=True,
             claude_programmatic_code_execution_type="code_execution_20260120",
             claude_programmatic_code_execution_name="code_execution",
         )
-        model = ClaudeAIModelWithTools(cfg, tools=[])
+        model = ClaudeAIModelWithTools(
+            cfg,
+            tools=[
+                self._tool("enhanced_weather_info", candidate=True),
+                self._tool("stress_marker", candidate=False),
+            ],
+        )
+
+        # Candidate tool selected -> code execution tool is included.
+        model.set_request_options(
+            tool_names={"enhanced_weather_info"},
+            response_max_tokens=None,
+            system_blocks=None,
+        )
+        selected = model._get_runtime_tools_description()
         self.assertTrue(
             any(
                 tool.get("type") == "code_execution_20260120"
                 and tool.get("name") == "code_execution"
-                for tool in model.tools_description
+                and tool.get("allowed_callers") == ["enhanced_weather_info"]
+                for tool in selected
             )
         )
 
-        model.set_request_options(tool_names=set(), response_max_tokens=None, system_blocks=None)
+        # Non-candidate tool selected -> no code execution tool.
+        model.set_request_options(
+            tool_names={"stress_marker"},
+            response_max_tokens=None,
+            system_blocks=None,
+        )
+        filtered = model._get_runtime_tools_description()
+        self.assertFalse(any(tool.get("name") == "code_execution" for tool in filtered))
+
+    def test_programmatic_tool_respects_configured_allowed_callers_override(self):
+        cfg = self._config(
+            claude_enable_programmatic_tool_calling=True,
+            claude_programmatic_allowed_callers=["internet_search"],
+        )
+        model = ClaudeAIModelWithTools(cfg, tools=[self._tool("stress_marker", candidate=False)])
+        model.set_request_options(
+            tool_names={"stress_marker"},
+            response_max_tokens=None,
+            system_blocks=None,
+        )
         filtered = model._get_runtime_tools_description()
         self.assertTrue(
-            any(tool.get("name") == "code_execution" for tool in filtered)
+            any(
+                tool.get("name") == "code_execution"
+                and tool.get("allowed_callers") == ["internet_search"]
+                for tool in filtered
+            )
         )
+
+    def test_programmatic_tool_not_added_when_no_candidates_and_no_overrides(self):
+        cfg = self._config(claude_enable_programmatic_tool_calling=True)
+        model = ClaudeAIModelWithTools(cfg, tools=[self._tool("stress_marker", candidate=False)])
+        filtered = model._get_runtime_tools_description()
+        self.assertFalse(any(tool.get("name") == "code_execution" for tool in filtered))
 
     def test_programmatic_and_caching_beta_headers_are_merged(self):
         cfg = self._config(

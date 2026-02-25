@@ -58,6 +58,8 @@ class Tool(BaseModel):
     processor: Callable[[Dict[str, Any]], Coroutine[Any, Any, str]]
     required: List[str] = Field(default_factory=list)
     rule_instructions: Dict[str, str] = Field(default_factory=dict)
+    # When true, this tool is eligible to call Claude code_execution in programmatic mode.
+    programmatic_code_execution_candidate: bool = False
 
     def __post_init__(self):
         """Validate that all required fields exist in parameters."""
@@ -101,7 +103,26 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self.programmatic_tool_followup_text = str(
             config.get("claude_programmatic_tool_followup_text", "Continue.")
         ).strip() or "Continue."
-        self._always_enabled_runtime_tool_names: set[str] = set()
+        self.programmatic_code_execution_type = str(
+            config.get("claude_programmatic_code_execution_type", "code_execution_20260120")
+        ).strip() or "code_execution_20260120"
+        self.programmatic_code_execution_name = str(
+            config.get("claude_programmatic_code_execution_name", "code_execution")
+        ).strip() or "code_execution"
+        self.programmatic_require_eligible_tools = bool(
+            config.get("claude_programmatic_require_eligible_tools", True)
+        )
+        configured_callers = config.get("claude_programmatic_allowed_callers", [])
+        self.programmatic_configured_callers = {
+            str(caller).strip()
+            for caller in (configured_callers or [])
+            if str(caller).strip()
+        }
+        self.programmatic_candidate_tool_names = {
+            name
+            for name, tool in self.tools.items()
+            if getattr(tool, "programmatic_code_execution_candidate", False)
+        }
 
         # Per-request runtime overrides (set by ConversationManager).
         self._runtime_tool_names: Optional[set] = None
@@ -130,26 +151,6 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             ).strip()
             if programmatic_beta:
                 beta_values.append(programmatic_beta)
-
-            code_execution_type = str(
-                config.get("claude_programmatic_code_execution_type", "code_execution_20260120")
-            ).strip() or "code_execution_20260120"
-            code_execution_name = str(
-                config.get("claude_programmatic_code_execution_name", "code_execution")
-            ).strip() or "code_execution"
-            code_execution_tool: Dict[str, Any] = {
-                "type": code_execution_type,
-                "name": code_execution_name,
-            }
-            allowed_callers = config.get("claude_programmatic_allowed_callers", [])
-            if isinstance(allowed_callers, list):
-                normalized_callers = [
-                    str(caller).strip() for caller in allowed_callers if str(caller).strip()
-                ]
-                if normalized_callers:
-                    code_execution_tool["allowed_callers"] = normalized_callers
-            self.tools_description.append(code_execution_tool)
-            self._always_enabled_runtime_tool_names.add(code_execution_name)
 
         beta_header = self._merge_beta_headers(beta_values)
         if beta_header:
@@ -217,15 +218,39 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 merged.append(normalized)
         return ",".join(merged)
 
+    def _resolve_programmatic_allowed_callers(
+        self, active_custom_tool_names: Optional[set]
+    ) -> List[str]:
+        callers = set(self.programmatic_configured_callers)
+        candidate_callers = set(self.programmatic_candidate_tool_names)
+        if active_custom_tool_names is not None:
+            candidate_callers.intersection_update(active_custom_tool_names)
+        callers.update(candidate_callers)
+        return sorted(callers)
+
+    def _build_programmatic_code_execution_tool(
+        self, active_custom_tool_names: Optional[set]
+    ) -> Optional[Dict[str, Any]]:
+        if not self.programmatic_tool_calling_enabled:
+            return None
+        allowed_callers = self._resolve_programmatic_allowed_callers(active_custom_tool_names)
+        if not allowed_callers and self.programmatic_require_eligible_tools:
+            return None
+        code_execution_tool: Dict[str, Any] = {
+            "type": self.programmatic_code_execution_type,
+            "name": self.programmatic_code_execution_name,
+        }
+        if allowed_callers:
+            code_execution_tool["allowed_callers"] = allowed_callers
+        return code_execution_tool
+
     def _get_runtime_tools_description(self) -> List[Dict]:
-        if self._runtime_tool_names is None:
-            return self.tools_description
-        allowed = set(self._runtime_tool_names)
+        allowed = set(self._runtime_tool_names) if self._runtime_tool_names is not None else None
         filtered: List[Dict] = []
         for desc in self.tools_description:
             desc_name = desc.get("name")
             desc_type = desc.get("type")
-            if desc_name and desc_name in self._always_enabled_runtime_tool_names:
+            if allowed is None:
                 filtered.append(desc)
                 continue
             if desc_type == "web_search_20250305":
@@ -235,6 +260,22 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 continue
             if desc_name and desc_name in allowed:
                 filtered.append(desc)
+
+        active_custom_tool_names = (
+            set(self.tools.keys())
+            if allowed is None
+            else set(self.tools.keys()).intersection(allowed)
+        )
+        programmatic_tool = self._build_programmatic_code_execution_tool(active_custom_tool_names)
+        if programmatic_tool is not None:
+            already_present = any(
+                isinstance(tool, dict)
+                and tool.get("name") == programmatic_tool.get("name")
+                and tool.get("type") == programmatic_tool.get("type")
+                for tool in filtered
+            )
+            if not already_present:
+                filtered.append(programmatic_tool)
         return filtered
 
     def _append_programmatic_tool_followup_message(self, message_list: List[Dict[str, Any]]) -> None:

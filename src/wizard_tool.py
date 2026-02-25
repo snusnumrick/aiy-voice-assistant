@@ -390,6 +390,7 @@ class WizardTool:
                 description="Analyzes complex questions requiring deep thinking and provides "
                             "comprehensive, well-reasoned answers with detailed explanations. ",
                 iterative=True,
+                programmatic_code_execution_candidate=True,
                 parameters=[
                     ToolParameter(
                         name="question",
@@ -441,6 +442,7 @@ class WizardTool:
                 description="Retrieves the full content of a specific wizard report by filename. "
                             "Returns the complete markdown content of the saved analysis.",
                 iterative=True,
+                programmatic_code_execution_candidate=True,
                 parameters=[
                     ToolParameter(
                         name="filename",
