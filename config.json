@@ -43,7 +43,9 @@
   "claude_programmatic_tool_beta_header": "",
   "claude_programmatic_code_execution_type": "code_execution_20260120",
   "claude_programmatic_code_execution_name": "code_execution",
-  "claude_programmatic_allowed_callers": [],
+  "claude_programmatic_allowed_callers": [
+    "code_execution_20260120"
+  ],
   "claude_programmatic_require_eligible_tools": true,
   "claude_programmatic_append_followup_text": true,
   "claude_programmatic_tool_followup_text": "Continue.",
