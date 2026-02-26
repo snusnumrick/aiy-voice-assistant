@@ -38,6 +38,11 @@ from src.tools import (
 )
 
 logger = logging.getLogger(__name__)
+VALID_PROGRAMMATIC_ALLOWED_CALLERS = {
+    "direct",
+    "code_execution_20250825",
+    "code_execution_20260120",
+}
 DEFAULT_PROGRAMMATIC_ALLOWED_CALLERS = ["direct"]
 
 
@@ -113,6 +118,31 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self.programmatic_require_eligible_tools = bool(
             config.get("claude_programmatic_require_eligible_tools", True)
         )
+        configured_callers = config.get("claude_programmatic_allowed_callers", [])
+        configured_items: List[str]
+        if isinstance(configured_callers, list):
+            configured_items = [str(caller).strip() for caller in configured_callers]
+        elif configured_callers is None:
+            configured_items = []
+        else:
+            configured_items = [str(configured_callers).strip()]
+        invalid_callers = [
+            caller
+            for caller in configured_items
+            if caller and caller not in VALID_PROGRAMMATIC_ALLOWED_CALLERS
+        ]
+        if invalid_callers:
+            logger.warning(
+                "Ignoring invalid claude_programmatic_allowed_callers values: %s. "
+                "Allowed values: %s",
+                invalid_callers,
+                sorted(VALID_PROGRAMMATIC_ALLOWED_CALLERS),
+            )
+        self.programmatic_configured_callers = {
+            caller
+            for caller in configured_items
+            if caller and caller in VALID_PROGRAMMATIC_ALLOWED_CALLERS
+        }
         self.programmatic_candidate_tool_names = {
             name
             for name, tool in self.tools.items()
@@ -227,13 +257,23 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         if not self.programmatic_tool_calling_enabled:
             return None
         has_candidate = self._has_active_programmatic_candidate(active_custom_tool_names)
-        if self.programmatic_require_eligible_tools and not has_candidate:
+        if (
+            self.programmatic_require_eligible_tools
+            and not has_candidate
+            and not self.programmatic_configured_callers
+        ):
             return None
+        allowed_callers = (
+            sorted(self.programmatic_configured_callers)
+            if self.programmatic_configured_callers
+            else list(DEFAULT_PROGRAMMATIC_ALLOWED_CALLERS)
+        )
         code_execution_tool: Dict[str, Any] = {
             "type": self.programmatic_code_execution_type,
             "name": self.programmatic_code_execution_name,
-            "allowed_callers": list(DEFAULT_PROGRAMMATIC_ALLOWED_CALLERS),
         }
+        if allowed_callers:
+            code_execution_tool["allowed_callers"] = allowed_callers
         return code_execution_tool
 
     def _get_runtime_tools_description(self) -> List[Dict]:
