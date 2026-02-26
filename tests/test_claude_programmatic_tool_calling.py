@@ -56,6 +56,13 @@ class TestClaudeProgrammaticToolCalling(unittest.TestCase):
         selected = model._get_runtime_tools_description()
         self.assertTrue(
             any(
+                tool.get("name") == "enhanced_weather_info"
+                and tool.get("allowed_callers") == ["code_execution_20260120"]
+                for tool in selected
+            )
+        )
+        self.assertTrue(
+            any(
                 tool.get("type") == "code_execution_20260120"
                 and tool.get("name") == "code_execution"
                 and tool.get("allowed_callers") == ["direct"]
@@ -77,16 +84,19 @@ class TestClaudeProgrammaticToolCalling(unittest.TestCase):
             claude_enable_programmatic_tool_calling=True,
             claude_programmatic_allowed_callers=["direct"],
         )
-        model = ClaudeAIModelWithTools(cfg, tools=[self._tool("stress_marker", candidate=False)])
+        model = ClaudeAIModelWithTools(
+            cfg,
+            tools=[self._tool("enhanced_weather_info", candidate=True)],
+        )
         model.set_request_options(
-            tool_names={"stress_marker"},
+            tool_names={"enhanced_weather_info"},
             response_max_tokens=None,
             system_blocks=None,
         )
         filtered = model._get_runtime_tools_description()
         self.assertTrue(
             any(
-                tool.get("name") == "code_execution"
+                tool.get("name") == "enhanced_weather_info"
                 and tool.get("allowed_callers") == ["direct"]
                 for tool in filtered
             )
@@ -109,8 +119,8 @@ class TestClaudeProgrammaticToolCalling(unittest.TestCase):
         filtered = model._get_runtime_tools_description()
         self.assertTrue(
             any(
-                tool.get("name") == "code_execution"
-                and tool.get("allowed_callers") == ["direct"]
+                tool.get("name") == "enhanced_weather_info"
+                and tool.get("allowed_callers") == ["code_execution_20260120"]
                 for tool in filtered
             )
         )

@@ -43,7 +43,7 @@ VALID_PROGRAMMATIC_ALLOWED_CALLERS = {
     "code_execution_20250825",
     "code_execution_20260120",
 }
-DEFAULT_PROGRAMMATIC_ALLOWED_CALLERS = ["direct"]
+DEFAULT_PROGRAMMATIC_CODE_EXECUTION_ALLOWED_CALLERS = ["direct"]
 
 
 class ToolParameter(BaseModel):
@@ -118,7 +118,10 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self.programmatic_require_eligible_tools = bool(
             config.get("claude_programmatic_require_eligible_tools", True)
         )
-        configured_callers = config.get("claude_programmatic_allowed_callers", [])
+        configured_callers = config.get(
+            "claude_programmatic_allowed_callers",
+            [self.programmatic_code_execution_type],
+        )
         configured_items: List[str]
         if isinstance(configured_callers, list):
             configured_items = [str(caller).strip() for caller in configured_callers]
@@ -138,11 +141,23 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 invalid_callers,
                 sorted(VALID_PROGRAMMATIC_ALLOWED_CALLERS),
             )
-        self.programmatic_configured_callers = {
-            caller
-            for caller in configured_items
-            if caller and caller in VALID_PROGRAMMATIC_ALLOWED_CALLERS
-        }
+        self.programmatic_candidate_allowed_callers: List[str] = []
+        seen_valid_callers = set()
+        for caller in configured_items:
+            if (
+                caller
+                and caller in VALID_PROGRAMMATIC_ALLOWED_CALLERS
+                and caller not in seen_valid_callers
+            ):
+                self.programmatic_candidate_allowed_callers.append(caller)
+                seen_valid_callers.add(caller)
+        if not self.programmatic_candidate_allowed_callers:
+            fallback_caller = (
+                self.programmatic_code_execution_type
+                if self.programmatic_code_execution_type in VALID_PROGRAMMATIC_ALLOWED_CALLERS
+                else "code_execution_20260120"
+            )
+            self.programmatic_candidate_allowed_callers = [fallback_caller]
         self.programmatic_candidate_tool_names = {
             name
             for name, tool in self.tools.items()
@@ -257,24 +272,27 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         if not self.programmatic_tool_calling_enabled:
             return None
         has_candidate = self._has_active_programmatic_candidate(active_custom_tool_names)
-        if (
-            self.programmatic_require_eligible_tools
-            and not has_candidate
-            and not self.programmatic_configured_callers
-        ):
+        if self.programmatic_require_eligible_tools and not has_candidate:
             return None
-        allowed_callers = (
-            sorted(self.programmatic_configured_callers)
-            if self.programmatic_configured_callers
-            else list(DEFAULT_PROGRAMMATIC_ALLOWED_CALLERS)
-        )
         code_execution_tool: Dict[str, Any] = {
             "type": self.programmatic_code_execution_type,
             "name": self.programmatic_code_execution_name,
+            "allowed_callers": list(DEFAULT_PROGRAMMATIC_CODE_EXECUTION_ALLOWED_CALLERS),
         }
-        if allowed_callers:
-            code_execution_tool["allowed_callers"] = allowed_callers
         return code_execution_tool
+
+    def _decorate_programmatic_candidate_tool(self, tool_desc: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Constrain candidate tools to preferred callers in programmatic mode.
+        """
+        if not self.programmatic_tool_calling_enabled:
+            return tool_desc
+        tool_name = tool_desc.get("name")
+        if not tool_name or tool_name not in self.programmatic_candidate_tool_names:
+            return tool_desc
+        updated = dict(tool_desc)
+        updated["allowed_callers"] = list(self.programmatic_candidate_allowed_callers)
+        return updated
 
     def _get_runtime_tools_description(self) -> List[Dict]:
         allowed = set(self._runtime_tool_names) if self._runtime_tool_names is not None else None
@@ -283,7 +301,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             desc_name = desc.get("name")
             desc_type = desc.get("type")
             if allowed is None:
-                filtered.append(desc)
+                filtered.append(self._decorate_programmatic_candidate_tool(desc))
                 continue
             if desc_type == "web_search_20250305":
                 # Treat built-in Claude search as selected by either explicit web_search or internet_search.
@@ -291,7 +309,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     filtered.append(desc)
                 continue
             if desc_name and desc_name in allowed:
-                filtered.append(desc)
+                filtered.append(self._decorate_programmatic_candidate_tool(desc))
 
         active_custom_tool_names = (
             set(self.tools.keys())
