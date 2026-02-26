@@ -58,7 +58,7 @@ class TestClaudeProgrammaticToolCalling(unittest.TestCase):
             any(
                 tool.get("type") == "code_execution_20260120"
                 and tool.get("name") == "code_execution"
-                and tool.get("allowed_callers") == ["enhanced_weather_info"]
+                and tool.get("allowed_callers") == ["direct"]
                 for tool in selected
             )
         )
@@ -75,7 +75,7 @@ class TestClaudeProgrammaticToolCalling(unittest.TestCase):
     def test_programmatic_tool_respects_configured_allowed_callers_override(self):
         cfg = self._config(
             claude_enable_programmatic_tool_calling=True,
-            claude_programmatic_allowed_callers=["internet_search"],
+            claude_programmatic_allowed_callers=["direct"],
         )
         model = ClaudeAIModelWithTools(cfg, tools=[self._tool("stress_marker", candidate=False)])
         model.set_request_options(
@@ -87,7 +87,30 @@ class TestClaudeProgrammaticToolCalling(unittest.TestCase):
         self.assertTrue(
             any(
                 tool.get("name") == "code_execution"
-                and tool.get("allowed_callers") == ["internet_search"]
+                and tool.get("allowed_callers") == ["direct"]
+                for tool in filtered
+            )
+        )
+
+    def test_invalid_configured_allowed_callers_are_ignored(self):
+        cfg = self._config(
+            claude_enable_programmatic_tool_calling=True,
+            claude_programmatic_allowed_callers=["internet_search", "not_valid"],
+        )
+        model = ClaudeAIModelWithTools(
+            cfg,
+            tools=[self._tool("enhanced_weather_info", candidate=True)],
+        )
+        model.set_request_options(
+            tool_names={"enhanced_weather_info"},
+            response_max_tokens=None,
+            system_blocks=None,
+        )
+        filtered = model._get_runtime_tools_description()
+        self.assertTrue(
+            any(
+                tool.get("name") == "code_execution"
+                and tool.get("allowed_callers") == ["direct"]
                 for tool in filtered
             )
         )
