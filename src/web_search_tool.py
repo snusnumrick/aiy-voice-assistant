@@ -41,7 +41,7 @@ class WebSearchTool:
             name="internet_search",
             description="Search Internet for actual information",
             iterative=True,
-            programmatic_code_execution_candidate=True,
+            programmatic_code_execution_candidate=False,
             parameters=[
                 ToolParameter(
                     name="query",
@@ -77,31 +77,23 @@ class WebSearchTool:
         pass
 
     def do_search(self, parameters: Dict[str, any]) -> str:
-        query = str(parameters.get("query", "")).strip() if isinstance(parameters, dict) else ""
-        if not query:
-            logger.error(f"missing parameter query: {parameters}")
-            return (
-                "Tool input error for 'internet_search': missing required parameter 'query'. "
-                "Ask the user what exactly to search for and retry."
-            )
-        logger.info(f"searching for {query}")
-        self._start_processing()
-        result = self.web_searcher.search(query)
-        self._stop_processing()
-        return result
+        logger.info(f"searching for {parameters['query']}")
+        if "query" in parameters:
+            self._start_processing()
+            result = self.web_searcher.search(parameters["query"])
+            self._stop_processing()
+            return result
+        logger.error(f"missing  parameter  query:  {parameters}")
+        return ""
 
     async def do_search_async(self, parameters: Dict[str, any]) -> str:
-        query = str(parameters.get("query", "")).strip() if isinstance(parameters, dict) else ""
-        if not query:
-            logger.error(f"missing parameter query: {parameters}")
-            return (
-                "Tool input error for 'internet_search': missing required parameter 'query'. "
-                "Ask the user what exactly to search for and retry."
-            )
-        logger.info(f"searching async for {query}")
-        self._start_processing()
-        logger.info(f"searching for {query}")
-        result = await self.web_searcher.search_async(query)
-        logger.info(f"search result: {result}")
-        self._stop_processing()
-        return result
+        logger.info(f"searching async for {parameters['query']}")
+        if "query" in parameters:
+            self._start_processing()
+            logger.info(f"searching for {parameters['query']}")
+            result = await self.web_searcher.search_async(parameters["query"])
+            logger.info(f"search result: {result}")
+            self._stop_processing()
+            return result
+        logger.error(f"missing  parameter  query:  {parameters}")
+        return ""

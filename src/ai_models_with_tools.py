@@ -13,7 +13,7 @@ import logging
 import os
 import sys
 from collections.abc import AsyncGenerator, Coroutine
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import aiohttp  # ty:ignore[unresolved-import]
 from pydantic import BaseModel, Field
@@ -352,85 +352,6 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             return
         message_list.append({"role": "user", "content": self.programmatic_tool_followup_text})
 
-    @staticmethod
-    def _format_tool_input_error(tool_name: str, reason: str) -> str:
-        return (
-            f"Tool input error for '{tool_name}': {reason}. "
-            "Ask the user for any missing details and retry."
-        )
-
-    def _prepare_tool_parameters(
-        self, tool_name: str, raw_input: Any
-    ) -> Tuple[Dict[str, Any], Optional[str]]:
-        parameters: Dict[str, Any]
-        if raw_input is None:
-            parameters = {}
-        elif isinstance(raw_input, dict):
-            parameters = raw_input
-        elif isinstance(raw_input, str):
-            stripped = raw_input.strip()
-            if not stripped:
-                parameters = {}
-            else:
-                try:
-                    parsed = json.loads(stripped)
-                except json.JSONDecodeError as exc:
-                    return {}, self._format_tool_input_error(
-                        tool_name, f"invalid JSON input ({exc.msg})"
-                    )
-                if not isinstance(parsed, dict):
-                    return {}, self._format_tool_input_error(
-                        tool_name, "input JSON must decode to an object"
-                    )
-                parameters = parsed
-        else:
-            return {}, self._format_tool_input_error(
-                tool_name, f"unsupported input type '{type(raw_input).__name__}'"
-            )
-
-        required = list(getattr(self.tools.get(tool_name), "required", []) or [])
-        missing: List[str] = []
-        for field in required:
-            value = parameters.get(field)
-            if value is None:
-                missing.append(field)
-                continue
-            if isinstance(value, str) and not value.strip():
-                missing.append(field)
-        if missing:
-            return parameters, self._format_tool_input_error(
-                tool_name,
-                f"missing required parameter(s): {', '.join(missing)}",
-            )
-        return parameters, None
-
-    async def _execute_tool_async(self, tool_name: str, raw_input: Any) -> Tuple[Dict[str, Any], Any]:
-        parameters, input_error = self._prepare_tool_parameters(tool_name, raw_input)
-        if input_error:
-            logger.warning(
-                "%sSkipping tool call due to invalid input. tool=%s input=%s error=%s",
-                self._time_str(),
-                tool_name,
-                raw_input,
-                input_error,
-            )
-            return parameters, input_error
-        tool_processor = self.tools_processors.get(tool_name)
-        if tool_processor is None:
-            error_result = f"Tool routing error: unknown tool '{tool_name}'."
-            logger.error("%s%s", self._time_str(), error_result)
-            return parameters, error_result
-        try:
-            return parameters, await tool_processor(parameters)
-        except Exception as exc:
-            logger.exception(
-                "%sTool execution failed. tool=%s input=%s",
-                self._time_str(),
-                tool_name,
-                parameters,
-            )
-            return parameters, f"Tool execution error for '{tool_name}': {exc}"
-
     def _apply_hybrid_message_cache_breakpoint(
         self, non_system_message: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
@@ -617,14 +538,12 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         """Process a tool use request and generate a response."""
         tool_name = content["name"]
         tool_use_id = content["id"]
+        tool_parameters = content["input"]
         if self.tool_usage_stats:
             self.tool_usage_stats.record_call(tool_name)
-        tool_parameters, tool_result = asyncio.run(
-            self._execute_tool_async(tool_name, content.get("input"))
-        )
-        content["input"] = tool_parameters
-        tool_meta = self.tools.get(tool_name)
-        if tool_meta is None or tool_meta.iterative:
+        tool_processor = self.tools_processors[tool_name]
+        tool_result = asyncio.run(tool_processor(tool_parameters))
+        if self.tools[tool_name].iterative:
             messages.append(
                 {
                     "role": "user",
@@ -807,14 +726,12 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         """Process a tool use request asynchronously and generate a response."""
         tool_name = content["name"]
         tool_use_id = content["id"]
+        tool_parameters = content["input"]
         if self.tool_usage_stats:
             self.tool_usage_stats.record_call(tool_name)
-        tool_parameters, tool_result = await self._execute_tool_async(
-            tool_name, content.get("input")
-        )
-        content["input"] = tool_parameters
-        tool_meta = self.tools.get(tool_name)
-        if tool_meta is None or tool_meta.iterative:
+        tool_processor = self.tools_processors[tool_name]
+        tool_result = await tool_processor(tool_parameters)
+        if self.tools[tool_name].iterative:
             message_list.append(
                 {
                     "role": "user",
@@ -1025,35 +942,42 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
     ) -> AsyncGenerator[str, None]:
         """Process a tool use request in streaming mode and generate a response."""
 
-        tool_name = tool_use["name"]
-        tool_use_id = tool_use["id"]
-        if self.tool_usage_stats:
-            self.tool_usage_stats.record_call(tool_name)
-        tool_input, tool_result = await self._execute_tool_async(tool_name, tool_use.get("input"))
-        tool_use["input"] = tool_input
-        message_list.append({"role": "assistant", "content": [tool_use]})
-        logger.debug(f"{self._time_str()}Processing tool use: {tool_name}, {tool_use_id}")
-        logger.debug(
-            f"{self._time_str()}tool result: {json.dumps(tool_result, indent=2, ensure_ascii=False)}"
-        )
-        tool_meta = self.tools.get(tool_name)
-        if tool_meta is None or tool_meta.iterative:
-            message_list.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "content": tool_result,
-                            "tool_use_id": tool_use_id,
-                        }
-                    ],
-                }
+        try:
+            if tool_use["input"]:
+                tool_input = json.loads(tool_use["input"])
+                tool_use["input"] = tool_input
+            else:
+                tool_input = {}
+            message_list.append({"role": "assistant", "content": [tool_use]})
+            tool_name = tool_use["name"]
+            tool_use_id = tool_use["id"]
+            logger.debug(f"{self._time_str()}Processing tool use: {tool_name}, {tool_use_id}")
+            if self.tool_usage_stats:
+                self.tool_usage_stats.record_call(tool_name)
+            tool_processor = self.tools_processors[tool_name]
+            tool_result = await tool_processor(tool_input)
+            logger.debug(
+                f"{self._time_str()}tool result: {json.dumps(tool_result, indent=2, ensure_ascii=False)}"
             )
-            self._append_programmatic_tool_followup_message(message_list)
-            async for response in self.get_response_async(message_list):
-                logger.info(f"Yielding after tool response: {response}")
-                yield response
+            if self.tools[tool_name].iterative:
+                message_list.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "content": tool_result,
+                                "tool_use_id": tool_use_id,
+                            }
+                        ],
+                    }
+                )
+                self._append_programmatic_tool_followup_message(message_list)
+                async for response in self.get_response_async(message_list):
+                    logger.info(f"Yielding after tool response: {response}")
+                    yield response
+        except json.JSONDecodeError:
+            logger.error(f"{self._time_str()}Failed to decode tool input JSON: {tool_use['input']}")
 
 
 class ToolCall(BaseModel):

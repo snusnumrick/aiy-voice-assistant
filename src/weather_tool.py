@@ -184,7 +184,7 @@ class WeatherTool:
             name="weather_info",
             description="Get weather information for a specific location",
             iterative=True,
-            programmatic_code_execution_candidate=True,
+            programmatic_code_execution_candidate=False,
             parameters=[
                 ToolParameter(
                     name="location",
@@ -301,18 +301,12 @@ class WeatherTool:
 
     async def get_weather_async(self, parameters: Dict[str, any]) -> str:
         """Asynchronous weather data fetch"""
-        requested_location = (
-            str(parameters.get("location", "")).strip() if isinstance(parameters, dict) else ""
-        )
-        if not requested_location:
-            return (
-                "Tool input error for 'weather_info': missing required parameter 'location'. "
-                "Ask the user for a location and retry."
-            )
+        if "location" not in parameters:
+            raise ValueError(f"Missing required parameter location: {parameters}")
 
         weather_api_failed = False
         try:
-            lat, lon = await self.get_lat_lng(requested_location)
+            lat, lon = await self.get_lat_lng(parameters["location"])
             location = f"{lat},{lon}"
             self._start_processing()
 
@@ -331,7 +325,7 @@ class WeatherTool:
         finally:
             self._stop_processing()
 
-        query = f"Current weather and forecast for {requested_location}"
+        query = f"Current weather and forecast for {parameters['location']}"
         logger.warning(f"Fallback to web search: {query}")
         return await self.web_searcher.search_async(query)
 
@@ -361,15 +355,9 @@ class EnhancedWeatherTool:
             str: Formatted weather information including all available data
         """
         logger.info(f"get_weather_async parameters: {parameters}")
-        location = str(parameters.get("location", "")).strip() if isinstance(parameters, dict) else ""
-        if not location:
-            return (
-                "Tool input error for 'enhanced_weather_info': missing required parameter 'location'. "
-                "Ask the user for a location and retry."
-            )
         try:
             # Get coordinates
-            lat, lon = await self.base_weather_tool.get_lat_lng(location)
+            lat, lon = await self.base_weather_tool.get_lat_lng(parameters["location"])
             logger.info(f"Latitude: {lat}, Longitude: {lon}")
 
             # Get moon phase (local calculation, no API call needed)
@@ -384,7 +372,7 @@ class EnhancedWeatherTool:
             try:
                 # Make concurrent API calls
                 weather_data, uv_data, air_quality, solar_data = await asyncio.gather(
-                    self.base_weather_tool.get_weather_async({"location": location}),
+                    self.base_weather_tool.get_weather_async(parameters),
                     get_uv_index_async(lat, lon, self.openuv_api_key),
                     get_air_quality_async(lat, lon, self.waqi_token),
                     get_solar_data_async(
@@ -468,7 +456,7 @@ class EnhancedWeatherTool:
             name="enhanced_weather_info",
             description="Get comprehensive weather information including UV index, air quality, lunar phase, and solar data",
             iterative=True,
-            programmatic_code_execution_candidate=True,
+            programmatic_code_execution_candidate=False,
             parameters=[
                 ToolParameter(
                     name="location",
