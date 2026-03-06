@@ -155,31 +155,52 @@ class Perplexity(SearchProvider):
 
 class GeminiSearch(SearchProvider):
     """
-    Google search provider without AI processing to reduce costs.
-    Returns raw search results directly from Google's Custom Search API.
+    Gemini-backed search provider using Google Search grounding.
+    Returns plain answer text and lets Gemini use grounding only when it
+    improves factual quality.
     """
 
     def __init__(self, config: Config):
-        self.api_key=os.environ.get("GEMINI_API_KEY", "")
-        self.model_id = "gemini-flash-lite-latest"
+        self.api_key = os.environ.get("GEMINI_API_KEY", "")
+        self.model_id = config.get("gemini_search_model", "gemini-flash-lite-latest")
         self.url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_id}:generateContent?key={self.api_key}"
+
+    @staticmethod
+    def _extract_text(candidate: dict) -> str:
+        parts = candidate.get("content", {}).get("parts", [])
+        return "".join(part.get("text", "") for part in parts if part.get("text")).strip()
 
     async def search(self, query: str) -> str:
         start_time = time.time()
         payload = {
-            "contents": [{"parts": [{"text": query}]}],
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": (
+                                "Use Google Search grounding only when it improves factual accuracy. "
+                                "Return only the answer text.\n\n"
+                                f"Query: {query}"
+                            )
+                        }
+                    ]
+                }
+            ],
             "tools": [{"google_search": {}}],
         }
         headers = {"Content-Type": "application/json"}
         answer = ""
         try:
-            response = requests.post(self.url, headers=headers, json=payload)
+            response = requests.post(self.url, headers=headers, json=payload, timeout=30)
             response.raise_for_status()
             data = response.json()
 
-            # Extract the answer
             candidate = data["candidates"][0]
-            answer = candidate["content"]["parts"][0]["text"]
+            answer = self._extract_text(candidate)
+            logger.debug(
+                "Gemini grounding used: %s",
+                bool(candidate.get("groundingMetadata")),
+            )
         except Exception as e:
             logger.error(f"gemini search failed: {e}")
         duration = time.time() - start_time

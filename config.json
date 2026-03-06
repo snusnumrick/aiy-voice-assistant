@@ -22,6 +22,7 @@
   "language_code": "ru",
   "wizard_model_api": "gemini",
   "wizard_model_id": "gemini-3.1-pro-preview",
+  "gemini_search_model": "gemini-flash-lite-latest",
   "max_optimized_facts": 20,
   "recent_facts_threshold_days": 30,
   "max_recent_facts": 8,
