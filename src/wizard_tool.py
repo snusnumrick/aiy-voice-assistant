@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import asyncio
 import json
 import logging
@@ -10,7 +11,7 @@ from typing import Dict, List, Optional, Union
 import aiofiles
 import requests
 
-from src.ai_models import OpenAIModel, to_reasoning_effort
+from src.ai_models import GeminiAIModel, OpenAIModel, to_reasoning_effort
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 from src.server_utils import get_server_url
@@ -58,6 +59,7 @@ def fix_markdown_formatting(text: str) -> str:
     - ")Capital -> ")\n\nCapital (new sentence after quote+paren)
     - word## -> word\n\n##     (header directly after word)
     """
+    text = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
 
     # ============================================================
     # Pattern 1: Numbered list after closing paren (no period between)
@@ -137,7 +139,7 @@ def fix_markdown_formatting(text: str) -> str:
     # Pattern 10b: Add space after closing paren when followed by lowercase letter
     # "психопатология)заметно" -> "психопатология) заметно"
     # ============================================================
-    text = re.sub(r"([а-яa-z])\)([а-яa-z])", r"\1) \2", text)
+    text = re.sub(r"(?<!\d)\)([А-Яа-яA-Za-z])", r") \1", text)
 
     # ============================================================
     # Pattern 11: Add space after header numbering paren
@@ -152,6 +154,14 @@ def fix_markdown_formatting(text: str) -> str:
     text = re.sub(r"(#{1,6})(\d)", r"\1 \2", text)
 
     # ============================================================
+    # Pattern 11a2: Split inline headers after punctuation or text
+    # ".## 2" -> ".\n\n## 2"
+    # "text## 2" -> "text\n\n## 2"
+    # ============================================================
+    text = re.sub(r"([.!?…»\"\)])\s*(#{1,6}\s*\S)", r"\1\n\n\2", text)
+    text = re.sub(r"([А-Яа-яA-Za-z])\s*(#{2,6}\s*\S)", r"\1\n\n\2", text)
+
+    # ============================================================
     # Pattern 11b: Add space after letter+paren in headers (like "### A)Text")
     # "### A)Нейронаучная" -> "### A) Нейронаучная"
     # ============================================================
@@ -161,21 +171,19 @@ def fix_markdown_formatting(text: str) -> str:
     # Pattern 11c: Inline numbered enumeration after colon (BEFORE colon-space pattern!)
     # ":1)**text" -> ":\n\n1) **text"
     # ============================================================
-    text = re.sub(r":(\d+)\)(\*\*)", r":\n\n\1) \2", text)
-    text = re.sub(r":(\d+)\)([А-Яа-яA-Za-z])", r":\n\n\1) \2", text)
+    text = re.sub(r":(\d+)\)(?=\S)", r":\n\n\1) ", text)
 
     # ============================================================
     # Pattern 11c2: Inline numbered enumeration with digit-period format after colon
     # ":1. Для" -> ":\n\n1. Для"
     # ============================================================
-    text = re.sub(r":(\d+)\.\s*([А-ЯA-Z])", r":\n\n\1. \2", text)
+    text = re.sub(r":(\d+)\.\s*(\S)", r":\n\n\1. \2", text)
 
     # ============================================================
     # Pattern 11d: Inline numbered enumeration after period
     # ".2)**text" -> ".\n\n2) **text"
     # ============================================================
-    text = re.sub(r"\.(\d+)\)(\*\*)", r".\n\n\1) \2", text)
-    text = re.sub(r"\.(\d+)\)([А-Яа-яA-Za-z])", r".\n\n\1) \2", text)
+    text = re.sub(r"\.(\d+)\)(?=\S)", r".\n\n\1) ", text)
 
     # ============================================================
     # Pattern 11e: Inline numbered enumeration with period-digit-period format
@@ -184,13 +192,19 @@ def fix_markdown_formatting(text: str) -> str:
     # BUT NOT "## 5.1." or "4.1." (section numbers)
     # Require a letter before the period
     # ============================================================
-    text = re.sub(r"([а-яa-zА-Яа-я])\.(\d+)\.\s*([А-ЯA-Z])", r"\1.\n\n\2. \3", text)
+    text = re.sub(r"([а-яa-zА-Яа-я])\.(\d+)\.\s*(\S)", r"\1.\n\n\2. \3", text)
 
     # ============================================================
     # Pattern 11f: Inline enumeration after closing paren + period
     # ").2. Сознание" -> ").\n\n2. Сознание"
     # ============================================================
-    text = re.sub(r"\)\.(\d+)\.\s*([А-ЯA-Z])", r").\n\n\1. \2", text)
+    text = re.sub(r"\)\.(\d+)\.\s*(\S)", r").\n\n\1. \2", text)
+
+    # ============================================================
+    # Pattern 12a: Split same-line horizontal rule + title/header
+    # "--- # Title" -> "---\n\n# Title"
+    # ============================================================
+    text = re.sub(r"(?m)^(---+)\s+(#{1,6}\s*[^\n]+)$", r"\1\n\n\2", text)
 
     # ============================================================
     # Pattern 12: Add space after colon when followed directly by letter or quote
@@ -218,17 +232,17 @@ def fix_markdown_formatting(text: str) -> str:
     text = re.sub(r"\)(\*\*[А-ЯA-Z])", r")\n\n\1", text)
 
     # ============================================================
-    # Pattern 15: New sentence after period (Capital Cyrillic/Latin after lowercase)
-    # "причинность.На" -> "причинность.\n\nНа"
-    # "состояний.С философской" -> "состояний.\n\nС философской"
+    # Pattern 15: Missing space between adjacent sentences
+    # "причинность.На" -> "причинность. На"
+    # "состояний.С философской" -> "состояний. С философской"
     # ============================================================
-    text = re.sub(r"([а-яa-z])\.([А-ЯA-Z])", r"\1.\n\n\2", text)
+    text = re.sub(r"([а-яa-z])\.([А-ЯA-Z])", r"\1. \2", text)
 
     # ============================================================
-    # Pattern 15b: New sentence after period following closing quote/paren
-    # '").Это' -> '").\n\nЭто'
+    # Pattern 15b: Missing space after period following quote/paren
+    # '").Это' -> '"). Это'
     # ============================================================
-    text = re.sub(r"(\"|»|\)|\*)\.([А-ЯA-Z])", r"\1.\n\n\2", text)
+    text = re.sub(r"(\"|»|\)|\*)\.([А-ЯA-Z])", r"\1. \2", text)
 
     # ============================================================
     # Pattern 16: Add space after digit+paren when followed by ** (bold enumeration)
@@ -299,6 +313,46 @@ def fix_markdown_formatting(text: str) -> str:
     text = "\n".join(result_lines)
 
     # ============================================================
+    # Merge continuation paragraphs back into the preceding list item
+    # when a generic sentence-splitting rule over-separates a bullet.
+    # ============================================================
+    lines = text.split("\n")
+    merged_lines = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        is_list_item = bool(
+            re.match(r"^[-*+]\s", stripped) or re.match(r"^\d+\.\s+", stripped)
+        )
+
+        if is_list_item:
+            current = line.rstrip()
+            j = i + 1
+            while (
+                j + 1 < len(lines)
+                and lines[j].strip() == ""
+                and lines[j + 1].strip()
+                and not re.match(r"^[-*+]\s", lines[j + 1].strip())
+                and not re.match(r"^\d+\.\s+", lines[j + 1].strip())
+                and not re.match(r"^#{1,6}\s", lines[j + 1].strip())
+                and not re.match(r"^---+$", lines[j + 1].strip())
+            ):
+                current = f"{current} {lines[j + 1].strip()}"
+                j += 2
+            merged_lines.append(current)
+            i = j
+            continue
+
+        merged_lines.append(line)
+        i += 1
+
+    text = "\n".join(merged_lines)
+
+    # Remove accidental indentation from normalized headers.
+    text = re.sub(r"(?m)^[ \t]+(#{1,6}\s)", r"\1", text)
+
+    # ============================================================
     # Ensure blank line after headers
     # ============================================================
     text = re.sub(
@@ -319,8 +373,8 @@ def fix_markdown_formatting(text: str) -> str:
 class WizardTool:
     """
     A sophisticated tool for handling complex analytical questions that require deep thinking
-    and analysis. It uses the GPT-5 model (OpenAI Responses API) to process questions thoroughly and provide
-    well-reasoned answers.
+    and analysis. It uses a configurable reasoning model (OpenAI or Gemini) to process
+    questions thoroughly and provide well-reasoned answers.
 
     The tool is designed to:
     1. Break down complex questions into analyzable components
@@ -339,7 +393,8 @@ class WizardTool:
         * get_wizard_report - For retrieving a specific report by filename
 
     - __init__(self, config: Config)
-        Initializes the WizardTool with configuration and sets up the GPT-5 model via OpenAI Responses API.
+        Initializes the WizardTool with configuration and sets up the configured
+        reasoning model.
 
     - analyze_question(self, question: str) -> Dict
         Breaks down a complex question into its core components for analysis.
@@ -460,15 +515,9 @@ class WizardTool:
         # Store config reference for later use
         self.config = config
 
-        # Use GPT-5 with reasoning via OpenAI Responses API; default to thorough effort
+        # Use a configurable reasoning model; preserve OpenAI as the default.
         self.default_effort = None
-        thinking_model_id = config.get("wizard_model_id", "gpt-5")
-        max_tokens = config.get("wizard_max_tokens", 8192)
-        self.thinking_model = OpenAIModel(
-            config,
-            model_id=thinking_model_id,
-            max_tokens=max_tokens
-        )
+        self.thinking_model = self._build_thinking_model(config)
 
         self.thinking_template = """
 Analyze this question:
@@ -494,6 +543,55 @@ Question: {question}
 Context: {context}
 Depth: {depth}
         """
+
+    @staticmethod
+    def _normalize_gemini_model_id(model_id: Union[str, object]) -> str:
+        """Allow shorthand Gemini model names like '3.1 pro' in config."""
+        normalized = str(model_id).strip().lower()
+        normalized = re.sub(r"[\s_]+", "-", normalized)
+        if not normalized.startswith("gemini-"):
+            normalized = f"gemini-{normalized}"
+        return normalized
+
+    def _build_thinking_model(self, config: Config):
+        """Create the reasoning model configured for wizard analyses."""
+        provider = str(config.get("wizard_model_api", "") or "").strip().lower()
+        explicit_gemini_model = config.get("wizard_gemini_model")
+        configured_model_id = config.get("wizard_model_id")
+        max_tokens = config.get("wizard_max_tokens", 8192)
+
+        if not provider:
+            if explicit_gemini_model:
+                provider = "gemini"
+            elif isinstance(configured_model_id, str) and configured_model_id.strip().lower().startswith("gemini"):
+                provider = "gemini"
+            else:
+                provider = "openai"
+
+        if provider == "gemini":
+            thinking_model_id = explicit_gemini_model or configured_model_id or config.get(
+                "gemini_model_id", "gemini-1.5-pro-exp-0801"
+            )
+            thinking_model_id = self._normalize_gemini_model_id(thinking_model_id)
+            logger.info("WizardTool using Gemini model: %s", thinking_model_id)
+            return GeminiAIModel(
+                config,
+                model_id=thinking_model_id,
+                max_tokens=max_tokens,
+            )
+
+        if provider == "openai":
+            thinking_model_id = configured_model_id or "gpt-5"
+            logger.info("WizardTool using OpenAI model: %s", thinking_model_id)
+            return OpenAIModel(
+                config,
+                model_id=thinking_model_id,
+                max_tokens=max_tokens,
+            )
+
+        raise ValueError(
+            f"Unsupported wizard_model_api: {provider}. Expected 'openai' or 'gemini'."
+        )
 
     def analyze_question(self, question: str) -> Dict:
         """Break down a complex question into analyzable components."""
@@ -693,25 +791,28 @@ Depth: {depth}
 
         # save to doc folder
         doc_folder = _discover_doc_folder()
-        if doc_folder and title and content:
-            # Apply same filename length limits to doc folder save
-            doc_filename = f"{timestamp}_{safe_title}.md"
-            # Ensure it doesn't exceed filesystem limits (typically 255 bytes)
-            max_doc_filename_bytes = 250  # Conservative limit
-            doc_filename_bytes = doc_filename.encode('utf-8')
+        if title and content:
+            if doc_folder:
+                # Apply same filename length limits to doc folder save
+                doc_filename = f"{timestamp}_{safe_title}.md"
+                # Ensure it doesn't exceed filesystem limits (typically 255 bytes)
+                max_doc_filename_bytes = 250  # Conservative limit
+                doc_filename_bytes = doc_filename.encode('utf-8')
 
-            if len(doc_filename_bytes) > max_doc_filename_bytes:
-                # Truncate to fit
-                while len(doc_filename.encode('utf-8')) > max_doc_filename_bytes:
-                    doc_filename = doc_filename[:-1]
-                # Ensure it still has .md extension
-                if not doc_filename.endswith('.md'):
-                    doc_filename = doc_filename[:-3] + '.md'
+                if len(doc_filename_bytes) > max_doc_filename_bytes:
+                    # Truncate to fit
+                    while len(doc_filename.encode('utf-8')) > max_doc_filename_bytes:
+                        doc_filename = doc_filename[:-1]
+                    # Ensure it still has .md extension
+                    if not doc_filename.endswith('.md'):
+                        doc_filename = doc_filename[:-3] + '.md'
 
-            doc_path = doc_folder / doc_filename
-            with open(doc_path, "w") as f:
-                f.write(content)
-            logger.info(f"Saved doc file: {doc_path}")
+                doc_path = doc_folder / doc_filename
+                with open(doc_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                logger.info(f"Saved doc file: {doc_path}")
+            else:
+                logger.info(f"Doc folder not found, skipping save. generated content:\n{title}\n{content}")
 
         return str(filepath)
 
@@ -829,7 +930,7 @@ async def test_wizard():
         "analysis_depth": "thorough"
     }
 
-    answer = """# Время и сознание:современные научные связи и теории
+    openai_answer = """# Время и сознание:современные научные связи и теории
 
 
 ##1. Разбор core components (что именно спрашивается)### Основные части вопроса
@@ -911,10 +1012,21 @@ async def test_wizard():
 и нейрокогнитивными механизмами, которые строят переживаемую временность.Лучшие на сегодня объяснения объединяют:распределенный тайминг (без единого “часового центра”)временные окна интеграции  
 предиктивную обработку  
 и механизмы, делающие содержание глобально доступным (или интегрированным)в сознании."""
-    await wizard.save_report_async(question, answer)
 
-    result = await wizard.do_wizardry_async(test_params)
-    print(result, end="")
+
+    gemini_answer = """# Природа Времени и Сознания:Нейрокогнитивный и Философский Анализ
+---
+##1. Деконструкция основных компонентов
+Анализ связи времени и сознания требует разделения проблемы на несколько фундаментальных элементов:- Физическое время:Объективная метрическая шкала изменения состояний в физической вселенной, описываемая термодинамикой и теорией относительности.- Психологическое время:Субъективное ощущение длительности, последовательности и скорости течения событий.- Феноменальное сознание:Субъективный опыт ( квалиа ), который непрерывно разворачивается во временном контексте.- Нейробиологический субстрат:Физические сети головного мозга, обрабатывающие сенсорные данные и создающие иллюзию непрерывности.##2. Ключевые концепции и их взаимосвязи
+Центральной проблемой в понимании этой связи является то, как объективные процессы мозга порождают субъективное чувство единого временного потока.Выделяются следующие концепции:- Специфическое настоящее ( specious present ):Психологическое "сейчас" не является математической точкой нулевой длительности.Оно имеет психологическую протяженность ( от нескольких миллисекунд до секунд ), внутри которой события воспринимаются как происходящие одновременно или в непосредственной связке.- Проблема связывания ( binding problem ):Сенсорные сигналы ( зрение, слух, осязание )обрабатываются мозгом с разной скоростью.Сознание функционирует как интегратор, который буферизирует эти сигналы и синхронизирует их, чтобы мы воспринимали мир цельным.- Темпоральная петля:Сознание существует за счет постоянного взаимодействия ретенции ( удержания краткосрочной памяти о недавнем прошлом )и протенции ( предвосхищения будущих событий ).##3. Рассмотрение с различных точек зрения
+Связь времени и сознания исследуется на пересечении трех главных дисциплин:- Нейронаука:Рассматривает время не как внешний параметр, который мозг пассивно фиксирует, а как внутреннюю конструкцию.У мозга нет единого центрального хронометра; вместо этого разные нейронные цепи кодируют время на разных масштабах, создавая единую картину постфактум.- Физика:С позиции современных физических теорий ( например, петлевой квантовой гравитации ), фундаментального времени не существует.Физики, такие как Карло Ровелли, предполагают, что течение времени — это эмерджентное свойство, которое возникает исключительно из-за термодинамического взаимодействия нашего макроскопического сознания с энтропией вселенной.- Философия сознания:Феноменология утверждает, что сознание по своей природе темпорально.Согласно этой точке зрения, невозможно представить себе сознание вне времени, так как сам акт осознания подразумевает процесс изменения.##4. Привлечение релевантных знаний
+Последние исследования в области нейробиологии и когнитивных наук предлагают конкретные механизмы, объясняющие природу субъективного времени:1. Клетки времени в гиппокампе:Недавние открытия показали наличие особых нейронов, которые активируются в определенные моменты временных пауз между событиями.Это физическое доказательство того, что мозг активно конструирует пространственно-временную карту реальности.2. Теория предсказательного кодирования ( predictive processing ):Утверждает, что мозг — это машина постоянных предсказаний.Субъективное чувство настоящего возникает в результате того, что мозг постоянно сверяет свои ожидания ( направленные в будущее )с поступающими сенсорными данными ( исходящими из прошлого ).3. Модель множественных набросков ( Daniel Dennett ):Философ Дэниел Деннет утверждает, что не существует единого "картезианского театра", где всё сходится в одно "сейчас".Мозг параллельно обрабатывает множество потоков информации, а линейное, хронологическое сознание — это лишь ретроспективная нарративная иллюзия.##5. Синтез идей в связный ответ
+С точки зрения современной науки, время и сознание неразрывно переплетены:наше восприятие течения времени является продуктом самого сознания, а не прямым отражением физической реальности.Мозг выступает в роли архитектора реальности.Из-за разной скорости передачи сенсорных сигналов физические данные поступают в нервную систему рассинхронизировано.Однако нейронные сети редактируют, задерживают и склеивают эту информацию, создавая для нас гладкую иллюзию единого "настоящего".В конечном итоге, связь между временем и сознанием можно описать как двусторонний интерфейс.С одной стороны, функционирование сознания требует времени для интеграции информации.С другой стороны, время как непрерывный текущий поток существует только благодаря способности сознания связывать воспоминания о прошлом и ожидания будущего.Наука постепенно приходит к выводу, что психологическое время — это эволюционный механизм, созданный мозгом для упорядочивания энтропии и успешной навигации в сложной среде.
+"""
+    # await wizard.save_report_async(question, openai_answer)
+    await wizard.save_report_async(question, gemini_answer)
+
+    # await wizard.do_wizardry_async(test_params)
 
 if __name__ == "__main__":
     import asyncio
