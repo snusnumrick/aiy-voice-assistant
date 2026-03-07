@@ -974,7 +974,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 )
                 self._append_programmatic_tool_followup_message(message_list)
                 async for response in self.get_response_async(message_list):
-                    logger.info(f"Yielding after tool response: {response}")
+                    logger.debug(f"Yielding after tool response: {response}")
                     yield response
         except json.JSONDecodeError:
             logger.error(f"{self._time_str()}Failed to decode tool input JSON: {tool_use['input']}")
@@ -1596,7 +1596,7 @@ async def main_async():
     config = Config()
     timezone = get_timezone()
 
-    system = """Today is August 13 2024. Now 12:15 PM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
+    system = """Today is March 7 2026. Now 9:15 AM PDT. In San Jose, California, US. Тебя зовут Кубик. Ты мой друг и помощник. Ты умеешь шутить и быть саркастичным.
             Отвечай естественно, как в устной речи. Говори максимально просто и понятно. Не используй списки и нумерации. Например, не говори 1. что-то; 2.
             что-то. говори во-первых, во-вторых или просто перечисляй. При ответе на вопрос где важно время, помни какое сегодня число. Если чего-то не знаешь,
             так и скажи. Я буду разговаривать с тобой через голосовой интерфейс. Будь краток, избегай банальностей и непрошенных советов.
@@ -1611,15 +1611,14 @@ async def main_async():
         tools=[
             # model = OpenAIModelWithTools(config, tools=[
             search_tool.tool_definition(),
-            interpreter_tool.tool_definition(),
+            # interpreter_tool.tool_definition(),
         ]
-        + wizard_tool.tool_definitions(),
-    )
-    # ], timezone=timezone)
+        # + wizard_tool.tool_definitions(),
+        , timezone=timezone)
     language = "russian"
-    for t in wizard_tool.tool_definitions():
-        if hasattr(t, "rule_instructions") and language in t.rule_instructions:
-            system += t.rule_instructions[language].strip()
+    # for t in wizard_tool.tool_definitions():
+    #     if hasattr(t, "rule_instructions") and language in t.rule_instructions:
+    #         system += t.rule_instructions[language].strip()
     # model = ClaudeAIModel(config)
     messages = [
         {"role": "system", "content": system},
@@ -1630,15 +1629,15 @@ async def main_async():
         #     )},
         # {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4. Use code interpreter tool"},
         # {"role": "user", "content": "how many r in word strawberry? think it through"},
-        {"role": "user", "content": "в каком клубе снйчас играет Месси"},
+        {"role": "user", "content": "что нового сегодня в мире"},
         # {"role": "user", "content": "где именно встретятся трамп с путиным, проверь свежие новости"},
         # {"role": "user", "content": "Что такое бегство декурионов в Поздней Римской империи?"},
     ]
     m = ""
     async for response_part in model.get_response_async(messages):
-        print(response_part + " ", flush=True, end="")
+        # print(response_part + " ", flush=True, end="")
         m += response_part
-    print()
+    print(m)
     return
 
     stress_tool = StressTool(config)

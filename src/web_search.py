@@ -173,19 +173,12 @@ class GeminiSearch(SearchProvider):
     async def search(self, query: str) -> str:
         start_time = time.time()
         payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": (
-                                "Use Google Search grounding only when it improves factual accuracy. "
-                                "Return only the answer text.\n\n"
-                                f"Query: {query}"
-                            )
-                        }
-                    ]
-                }
-            ],
+            "contents": [{"role": "user", "parts": [{"text": query}]}],
+            "generationConfig": {
+                "thinkingConfig": {
+                    "thinkingLevel": "LOW",
+                },
+            },
             "tools": [{"google_search": {}}],
         }
         headers = {"Content-Type": "application/json"}
@@ -327,8 +320,68 @@ class DuckDuckGoSearch(SearchProvider):
         return results
 
 
+class BraveLLMContext(SearchProvider):
+    """
+    Brave LLM Context API — returns pre-extracted page content optimised for
+    grounding LLM responses.  Requires BRAVE_API_KEY in the environment.
+    """
+
+    BASE_URL = "https://api.search.brave.com/res/v1/llm/context"
+
+    def __init__(self, config: Config):
+        self.api_key = os.environ.get("BRAVE_API_KEY")
+        if not self.api_key:
+            raise ValueError("BRAVE_API_KEY is not set in environment variables")
+        self.count = config.get("brave_count", 10)
+        self.max_tokens = config.get("brave_max_tokens", 4096)
+        self.threshold_mode = config.get("brave_threshold_mode", "balanced")
+
+    async def search(self, query: str) -> str:
+        start_time = time.time()
+        headers = {
+            "X-Subscription-Token": self.api_key,
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+        }
+        params = {
+            "q": query,
+            "count": self.count,
+            "maximum_number_of_tokens": self.max_tokens,
+            "context_threshold_mode": self.threshold_mode,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.get(self.BASE_URL, headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            generic = data.get("grounding", {}).get("generic", [])
+            if not generic:
+                logger.debug("Brave LLM Context: no grounding results returned")
+                return ""
+
+            parts = []
+            for item in generic:
+                title = item.get("title", "")
+                url = item.get("url", "")
+                snippets = item.get("snippets", [])
+                if snippets:
+                    body = "\n".join(snippets)
+                    parts.append(f"### {title}\n**URL:** {url}\n{body}")
+
+            result = "\n\n".join(parts)
+            duration = time.time() - start_time
+            logger.debug(f"Brave LLM Context search took {duration:.2f} seconds")
+            return result
+
+        except Exception as e:
+            logger.error(f"Brave LLM Context search failed: {e}")
+            return ""
+
+
 class WebSearcher:
     def __init__(self, config):
+        """Initializes multi-provider search engines with fallback for missing API key"""
         self.tavily = Tavily(config)
         self.google = Google(config)
         self.google_cs = GoogleCustomSearch(config)
@@ -337,6 +390,11 @@ class WebSearcher:
         self.gemini = GeminiSearch(config)
         self.ddgs = DuckDuckGoSearch(config)
         self.config = config
+        try:
+            self.brave = BraveLLMContext(config)
+        except ValueError:
+            self.brave = None
+            logger.debug("Brave LLM Context disabled: BRAVE_API_KEY not set")
 
     async def search_providers_async(self, query: str, enabled_providers):
         logger.debug(f"Searching for {query} with providers: {enabled_providers}")
@@ -395,6 +453,9 @@ class WebSearcher:
         Creates a new event loop for this thread since provider.search() is async.
         """
         provider = getattr(self, provider_name)
+        if provider is None:
+            logger.warning(f"Provider '{provider_name}' is not available (disabled or missing API key)")
+            return ""
         # Run the async search in a new event loop for this thread
         return asyncio.run(provider.search(query))
 
@@ -402,12 +463,13 @@ class WebSearcher:
         logger.debug(f"Searching for {query}")
         start_time = time.time()
 
-        providers = ["gemini", "tavily", "perplexity"]
+        # providers = ["gemini", "perplexity", "tavily", "brave"]
+        providers = ["brave", "tavily"]
 
         try:
             combined_result = await self.search_providers_async(query, providers)
 
-            # logger.debug(f"\n---------\n{query} result: {combined_result}")
+            # logger.info(f"\n---------\n{query} combined result: {combined_result}")
             #
             # prompt = (f"Answer short. Based on result from internet search below, what is the answer to the question: "
             #           f"{query}\n\n{combined_result}")
@@ -430,7 +492,7 @@ async def loop():
     web_searcher = WebSearcher(config)
     while True:
         query = input(">")
-        result = await web_searcher.search_providers_async(query, ["gemini"])
+        result = await web_searcher.search_providers_async(query, ["brave"])
         print(result)
 
 
