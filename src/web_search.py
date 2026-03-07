@@ -327,6 +327,7 @@ class BraveLLMContext(SearchProvider):
     """
 
     BASE_URL = "https://api.search.brave.com/res/v1/llm/context"
+    _cached_location_headers: Optional[dict] = None  # process-level cache
 
     def __init__(self, config: Config):
         self.api_key = os.environ.get("BRAVE_API_KEY")
@@ -336,12 +337,39 @@ class BraveLLMContext(SearchProvider):
         self.max_tokens = config.get("brave_max_tokens", 4096)
         self.threshold_mode = config.get("brave_threshold_mode", "balanced")
 
+    @classmethod
+    def _get_location_headers(cls) -> dict:
+        """Resolve location via IP once per process and cache the result."""
+        if cls._cached_location_headers is not None:
+            return cls._cached_location_headers
+        try:
+            import geocoder  # lazy import — same pattern as ai_models_with_tools.py
+            g = geocoder.ip("me")
+            headers = {}
+            if g.lat:
+                headers["X-Loc-Lat"] = str(g.lat)
+            if g.lng:
+                headers["X-Loc-Long"] = str(g.lng)
+            if g.city:
+                headers["X-Loc-City"] = g.city
+            if g.state:
+                headers["X-Loc-State"] = g.state
+            if g.country_code:
+                headers["X-Loc-Country"] = g.country_code
+            logger.debug(f"Brave location headers resolved: {headers}")
+            cls._cached_location_headers = headers
+        except Exception as e:
+            logger.debug(f"Brave location resolution failed, skipping: {e}")
+            cls._cached_location_headers = {}
+        return cls._cached_location_headers
+
     async def search(self, query: str) -> str:
         start_time = time.time()
         headers = {
             "X-Subscription-Token": self.api_key,
             "Accept": "application/json",
             "Accept-Encoding": "gzip",
+            **self._get_location_headers(),
         }
         params = {
             "q": query,
