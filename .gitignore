@@ -168,7 +168,26 @@ dialog.txt
 facts**
 user.json*
 rules**
+reminders.json
 *.cache
+.DS_Store
 logs/*
 wizard_reports/*
+
+# IDE / tools
+.idea/
+.claude/
+.omc/
+
+# Lock files (not primary package manager)
+uv.lock
+package-lock.json
+
+# Test audio/image artifacts
+test.mp3
+test.wav
+test.wav.mp3
+test_output.jpg
+gemini-native-image*.png
+tmp*.wav
 
