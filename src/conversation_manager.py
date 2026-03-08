@@ -8,27 +8,23 @@ including message history, token counting, and interaction with AI models.
 import asyncio
 import datetime
 import functools
+import glob
 import json
 import logging
 import os
 import re
 import sys
-import glob
 import time
 from collections import deque
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Any, AsyncGenerator, Deque, Dict, List, Optional, Tuple
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
 if __name__ == "__main__":
     # add current directory to python path
     sys.path.append(os.getcwd())
 
 from src.ai_models import AIModel, ClaudeAIModel
-from src.llm_tools import (
-    optimize_facts,
-    optimize_rules,
-    summarize_and_compress_history,
-)
 from src.llm_optimization import (
     PROFILE_CHAT_ONLY,
     classify_tool_profile,
@@ -36,24 +32,24 @@ from src.llm_optimization import (
     resolve_tools_for_profile,
     wants_detailed_response,
 )
+from src.llm_tools import (
+    optimize_facts,
+    optimize_rules,
+    summarize_and_compress_history,
+)
 from src.responce_player import extract_emotions, extract_language
 from src.tool_usage_stats import get_tool_usage_stats
 from src.tools import (
-    format_message_history,
     clean_response,
     fix_stress_marks_russian,
-)
-
-from src.web_search import WebSearcher
-from src.llm_tools import summarize_and_compress_history
-from src.ai_models import AIModel, ClaudeAIModel
-from src.tools import (
-    get_token_count,
+    format_message_history,
+    get_current_date_time_for_facts,
+    get_current_datetime_english,
     get_location,
     get_timezone,
-    get_current_datetime_english,
-    get_current_date_time_for_facts,
+    get_token_count,
 )
+from src.web_search import WebSearcher
 
 logger = logging.getLogger(__name__)
 
