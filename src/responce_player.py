@@ -438,8 +438,7 @@ class ResponsePlayer:
             self.current_process = play_wav_async(audio_file)
             self.current_process.wait()
             self.current_process = None
-            if prev_light:
-                self.change_light_behavior(prev_light)
+            self.change_light_behavior(prev_light)
 
             logger.info(f"Finished playing {audio_file}")
 

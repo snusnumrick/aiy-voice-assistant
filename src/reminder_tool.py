@@ -42,6 +42,10 @@ Actions:
 
 Use set_reminder_at for absolute timestamps, and set_reminder_in for relative durations.
 Return concise confirmations and IDs.
+
+IMPORTANT: Only create reminders when explicitly requested by the user.
+Never create reminders for internal AI tasks, housekeeping, or self-management
+(e.g., deleting facts, cleaning history, processing data).
             """,
             iterative=False,
             parameters=[

@@ -443,7 +443,7 @@ class ConversationManager:
             combined_facts.extend(self.ephemeral_facts)
             logger.info(f"Ephemeral facts: {self.ephemeral_facts}")
         else:
-            logger.info("Ephemeral facts Empty")
+            logger.debug("Ephemeral facts Empty")
         if combined_facts:
             prompt += " Ты уже знаешь факты:" + " ".join(combined_facts)
 
@@ -881,7 +881,9 @@ class ConversationManager:
                 prompt = self.config.get(
                     "form_new_memories_prompt",
                     "Это необязательно, но может хочешь еще что-нибудь запомнить "
-                    "из нашего разговора перед тем как его удалю?",
+                    "из нашего разговора перед тем как его удалю? "
+                    "Отвечай только текстом, используя $remember: <текст>$ если нужно. "
+                    "Не вызывай никакие инструменты.",
                 )
                 logger.debug(f"form new memory by asking {prompt}")
                 num_facts_before = len(self.facts)
