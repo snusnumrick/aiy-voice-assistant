@@ -486,7 +486,7 @@ class YandexTTSEngine(TTSEngine):
             Language.RUSSIAN: config.get("yandex_tts_voice_russian", "ermil"),
             Language.ENGLISH: config.get("yandex_tts_voice_english", "john"),
             Language.GERMAN: config.get("yandex_tts_voice_german", "lea"),
-            Language.PORTUGUESE: config.get("yandex_tts_voice_portuguese", "marina"),
+            Language.PORTUGUESE: config.get("yandex_tts_voice_portuguese", "ermil"),
         }
         self.roles = {
             Tone.PLAIN: config.get("yandex_tts_role_plain", "neutral"),
@@ -811,7 +811,7 @@ class ElevenLabsTTSEngine(TTSEngine):
                 "elevenlabs_voice_id_ru", "cjVigY5qzO86Huf0OWal"
             ),
             Language.PORTUGUESE: config.get(
-                "elevenlabs_voice_id_pt", "CYw3kZ02TIq5KnAiASog"
+                "elevenlabs_voice_id_pt", "pjqwOzrEUZ3n3m4rMWWL"    # Vasco
             ),
         }
         if not all(self.voice_ids.values()):
