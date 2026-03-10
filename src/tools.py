@@ -528,9 +528,7 @@ def clean_response(response: str) -> str:
     """
     Clean the response by removing:
     1. Meta tags in format $tagname: tagcontent$
-    2. Text surrounded by asterisks only if:
-       - No spaces between asterisks and text
-       - Text inside is not a number
+    2. Asterisk markdown markers (*, **) — keep the wrapped text, strip the markers
 
     :param response: The response string
     :return: The cleaned response string
@@ -539,9 +537,10 @@ def clean_response(response: str) -> str:
     pattern_tags = r"\$\w+:[^$]*\$"
     response = re.sub(pattern_tags, "", response)
 
-    # Remove text surrounded by asterisks that meets conditions
-    pattern_asterisks = r"\*(?!\d+\*)([^\s*]+)\*"
-    return re.sub(pattern_asterisks, "", response)
+    # Strip ** bold ** and * italic * markers, keeping the content
+    response = re.sub(r"\*\*([^*]+)\*\*", r"\1", response)
+    response = re.sub(r"\*([^*]+)\*", r"\1", response)
+    return response
 
 
 def retry(
