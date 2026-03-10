@@ -475,14 +475,14 @@ class ConversationManager:
         """
         return self._system_prompt_body(), self._system_prompt_context_prefix()
 
-    def _build_runtime_system_blocks(self) -> Optional[List[Dict[str, Any]]]:
+    def _build_runtime_system_blocks(self, no_cache: bool = False) -> Optional[List[Dict[str, Any]]]:
         if not self.optimize_prompt_split_dynamic:
             return None
         static_body, dynamic_context = self.get_system_prompt_parts()
         if not static_body and not dynamic_context:
             return None
         cache_enabled = bool(self.config.get("claude_enable_prompt_caching", False))
-        if cache_enabled:
+        if cache_enabled and not no_cache:
             return [
                 {
                     "type": "text",
@@ -570,7 +570,7 @@ class ConversationManager:
             usage.get("cache_read_input_tokens", 0),
         )
 
-    async def get_response(self, text: str) -> AsyncGenerator[List[Dict[str, Any]], None]:
+    async def get_response(self, text: str, no_cache: bool = False) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """
         Get an AI response based on the current conversation state and new input.
 
@@ -625,7 +625,7 @@ class ConversationManager:
 
         tool_names = self._select_tool_names_for_text(text)
         max_tokens = self._select_max_tokens_for_text(text)
-        system_blocks = self._build_runtime_system_blocks()
+        system_blocks = self._build_runtime_system_blocks(no_cache=no_cache)
         if system_blocks is not None:
             self.last_system_payload_for_dialog = system_blocks
         request_options = {
@@ -887,7 +887,7 @@ class ConversationManager:
                 )
                 logger.debug(f"form new memory by asking {prompt}")
                 num_facts_before = len(self.facts)
-                async for ai_response in self.get_response(prompt):
+                async for ai_response in self.get_response(prompt, no_cache=True):
                     logger.debug("CM: AI response: %s", ai_response)
                 num_facts_after_clean = len(self.facts)
                 if num_facts_after_clean == num_facts_before:
