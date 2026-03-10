@@ -87,6 +87,7 @@ class ReminderAnnouncer:
             "ru": Language.RUSSIAN,
             "en": Language.ENGLISH,
             "de": Language.GERMAN,
+            "pt": Language.PORTUGUESE,
         }.get(str(lang_code).lower(), Language.RUSSIAN)
 
     def _resolve_tone(self, reminder: Dict[str, Any]) -> Tone:

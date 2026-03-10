@@ -119,6 +119,7 @@ class Language(Enum):
     RUSSIAN = 0
     ENGLISH = 1
     GERMAN = 2
+    PORTUGUESE = 3
 
 
 class AudioFormat(Enum):
@@ -479,11 +480,13 @@ class YandexTTSEngine(TTSEngine):
             Language.RUSSIAN: "ru-RU",
             Language.ENGLISH: "en-GB",
             Language.GERMAN: "de-DE",
+            Language.PORTUGUESE: "pt-BR",
         }
         self.lang_voices = {
             Language.RUSSIAN: config.get("yandex_tts_voice_russian", "ermil"),
             Language.ENGLISH: config.get("yandex_tts_voice_english", "john"),
             Language.GERMAN: config.get("yandex_tts_voice_german", "lea"),
+            Language.PORTUGUESE: config.get("yandex_tts_voice_portuguese", "marina"),
         }
         self.roles = {
             Tone.PLAIN: config.get("yandex_tts_role_plain", "neutral"),
@@ -806,6 +809,9 @@ class ElevenLabsTTSEngine(TTSEngine):
             ),
             Language.RUSSIAN: config.get(
                 "elevenlabs_voice_id_ru", "cjVigY5qzO86Huf0OWal"
+            ),
+            Language.PORTUGUESE: config.get(
+                "elevenlabs_voice_id_pt", "Ay1WwRHxUsu3hEeAp8JZ"
             ),
         }
         if not all(self.voice_ids.values()):

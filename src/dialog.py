@@ -558,6 +558,7 @@ class DialogManager:
             "ru": Language.RUSSIAN,
             "en": Language.ENGLISH,
             "de": Language.GERMAN,
+            "pt": Language.PORTUGUESE,
         }.get(lang_code, Language.RUSSIAN)
 
         tts_engine = self.tts_engines.get(lang, self.tts_engines[Language.RUSSIAN])

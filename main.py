@@ -190,6 +190,7 @@ def main():
             Language.RUSSIAN: yandex_engine if yandex_engine else elevenlabs_engine,
             Language.ENGLISH: elevenlabs_engine if elevenlabs_engine else yandex_engine,
             Language.GERMAN: elevenlabs_engine if elevenlabs_engine else yandex_engine,
+            Language.PORTUGUESE: elevenlabs_engine if elevenlabs_engine else yandex_engine,
         }
         fallback_tts_engine = yandex_engine if yandex_engine else elevenlabs_engine
 
