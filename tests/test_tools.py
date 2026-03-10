@@ -2,7 +2,7 @@ import logging
 import unittest
 from typing import List
 
-from src.tools import extract_sentences
+from src.tools import clean_response, extract_sentences
 
 
 class TestExtractSentences(unittest.TestCase):
@@ -103,6 +103,34 @@ class TestExtractSentences(unittest.TestCase):
     def test_plain_text_no_punctuation_returns_empty(self):
         text = "встреча Путина и Трампа запланирована на 15 августа на Аляске"
         self.assert_sentences(text, [text])
+
+
+class TestCleanResponse(unittest.TestCase):
+
+    def test_italic_single_word(self):
+        self.assertEqual(clean_response("Она может описать *как*, но не *зачем*."),
+                         "Она может описать как, но не зачем.")
+
+    def test_bold_word(self):
+        self.assertEqual(clean_response("**bold** text"), "bold text")
+
+    def test_bold_and_italic(self):
+        self.assertEqual(clean_response("**bold** and *italic* text"), "bold and italic text")
+
+    def test_italic_phrase(self):
+        self.assertEqual(clean_response("*some phrase here*"), "some phrase here")
+
+    def test_meta_tags_removed(self):
+        self.assertEqual(clean_response("$lang: ru$ hello"), " hello")
+
+    def test_no_markers(self):
+        self.assertEqual(clean_response("normal text"), "normal text")
+
+    def test_empty_string(self):
+        self.assertEqual(clean_response(""), "")
+
+    def test_mixed_meta_and_asterisks(self):
+        self.assertEqual(clean_response("$lang: ru$ *важно* текст"), " важно текст")
 
 
 if __name__ == '__main__':
