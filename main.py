@@ -203,7 +203,10 @@ def main():
             logger.info("Using Claude model")
             ai_model = ClaudeAIModelWithTools(config, tools=tools, timezone=timezone)
 
-        conversation_manager = ConversationManager(config, ai_model, timezone, enabled_tools=tools)
+        conversation_manager = ConversationManager(
+            config, ai_model, timezone, enabled_tools=tools,
+            tts_engine=tts_engines.get(Language.RUSSIAN),
+        )
         reminder_announcer = ReminderAnnouncer(
             config=config,
             response_player=response_player,

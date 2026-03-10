@@ -87,7 +87,9 @@ def language_prompt() -> str:
     return (
         "Start every response with $lang: ru/en/de/pt$ tag. "
         "When including fragments in other languages, wrap them and switch back to primary response language after "
-        "each foreign fragment. Example: $lang: ru$ Привет $lang: en$ Hello $lang: ru$ как дела?"
+        "each foreign fragment. "
+        "Example (Russian with English): $lang: ru$ Привет $lang: en$ Hello $lang: ru$ как дела? "
+        "Example (Russian with Portuguese): $lang: ru$ По-португальски это $lang: pt$ Olá! Tudo bem? $lang: ru$ что значит Привет! Как дела?"
     )
 
 

@@ -537,16 +537,23 @@ def clean_response(response: str) -> str:
     pattern_tags = r"\$\w+:[^$]*\$"
     response = re.sub(pattern_tags, "", response)
 
-    # Strip ** bold ** and * italic * markers, keeping the content
-    response = re.sub(r"\*\*([^*]+)\*\*", r"\1", response)
-    response = re.sub(r"\*([^*]+)\*", r"\1", response)
+    # Keep **word** — Yandex SpeechKit interprets it as emphasis (equivalent to bold).
+    # For single asterisks: stage directions (uppercase start + spaces) are removed entirely;
+    # quoted speech (starts with " or ') is preserved; single words keep the wrapped text.
+    response = re.sub(r"_([^_]+)_", r"\1", response)
 
-    # Strip emoji (not speakable in TTS)
-    emoji_pattern = re.compile(
-        "[\U0001F300-\U0001F9FF\U00002702-\U000027B0\U0000FE0F\U0001FA00-\U0001FA9F]+",
-        flags=re.UNICODE,
-    )
-    return emoji_pattern.sub("", response)
+    def _handle_asterisk(m: re.Match) -> str:
+        content = m.group(1)
+        # Quoted speech (starts with " or ') — strip markers, keep content as-is
+        if content and content[0] in ('"', "'", "«"):
+            return content
+        # Stage direction: uppercase start + spaces — remove entirely
+        if content and content[0].isupper() and " " in content:
+            return ""
+        # Convert single * to double ** — maps markdown emphasis to Yandex TTS emphasis
+        return f"**{content}**"
+
+    return re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", _handle_asterisk, response)
 
 
 def retry(

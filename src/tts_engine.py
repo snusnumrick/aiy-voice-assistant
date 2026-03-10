@@ -173,6 +173,11 @@ class TTSEngine(ABC):
         """
         return -1
 
+    @property
+    def rule_instructions(self) -> dict:
+        """TTS-specific prompt rules. Override in subclasses to inject engine-specific guidance."""
+        return {}
+
     @abstractmethod
     async def synthesize_async(
         self,
@@ -498,6 +503,19 @@ class YandexTTSEngine(TTSEngine):
         if not self.use_async:
             self.voice_model(tone=Tone.PLAIN, lang=Language.RUSSIAN)
             self.voice_model(tone=Tone.HAPPY, lang=Language.RUSSIAN)
+
+    @property
+    def rule_instructions(self) -> dict:
+        return {
+            "russian": (
+                "Для пауз в речи используй теги: <[tiny]>, <[small]>, <[medium]>, <[large]>, <[huge]>. "
+                "Для акцента на слове используй ** слово **."
+            ),
+            "english": (
+                "For speech pauses use tags: <[tiny]>, <[small]>, <[medium]>, <[large]>, <[huge]>. "
+                "For word emphasis use ** word **."
+            ),
+        }
 
     def _ensure_sync_speechkit_ready(self) -> None:
         """Lazily initialize speechkit for sync fallback paths."""

@@ -109,16 +109,19 @@ class TestCleanResponse(unittest.TestCase):
 
     def test_italic_single_word(self):
         self.assertEqual(clean_response("Она может описать *как*, но не *зачем*."),
-                         "Она может описать как, но не зачем.")
+                         "Она может описать **как**, но не **зачем**.")
 
     def test_bold_word(self):
-        self.assertEqual(clean_response("**bold** text"), "bold text")
+        # ** kept for Yandex SpeechKit emphasis
+        self.assertEqual(clean_response("**bold** text"), "**bold** text")
 
     def test_bold_and_italic(self):
-        self.assertEqual(clean_response("**bold** and *italic* text"), "bold and italic text")
+        # ** kept; single * converted to ** emphasis
+        self.assertEqual(clean_response("**bold** and *italic* text"), "**bold** and **italic** text")
 
     def test_italic_phrase(self):
-        self.assertEqual(clean_response("*some phrase here*"), "some phrase here")
+        # lowercase + spaces = emphasis, converted to Yandex ** emphasis
+        self.assertEqual(clean_response("*some phrase here*"), "**some phrase here**")
 
     def test_meta_tags_removed(self):
         self.assertEqual(clean_response("$lang: ru$ hello"), " hello")
@@ -130,14 +133,51 @@ class TestCleanResponse(unittest.TestCase):
         self.assertEqual(clean_response(""), "")
 
     def test_mixed_meta_and_asterisks(self):
-        self.assertEqual(clean_response("$lang: ru$ *важно* текст"), " важно текст")
+        self.assertEqual(clean_response("$lang: ru$ *важно* текст"), " **важно** текст")
 
-    def test_emoji_stripped(self):
-        self.assertEqual(clean_response("Привет! 😄 Как дела?"), "Привет!  Как дела?")
+    def test_emoji_kept(self):
+        # Yandex SpeechKit handles emoji as punctuation — keep them
+        self.assertEqual(clean_response("Привет! 😄 Как дела?"), "Привет! 😄 Как дела?")
 
     def test_asterisk_with_quotes_and_emoji(self):
         result = clean_response('Вот: *"Olá!"* Это значит «Привет!» 😄 Пока!')
-        self.assertEqual(result, 'Вот: "Olá!" Это значит «Привет!»  Пока!')
+        self.assertEqual(result, 'Вот: "Olá!" Это значит «Привет!» 😄 Пока!')
+
+    def test_stage_direction_removed(self):
+        self.assertEqual(
+            clean_response("*Мигающий красный свет, имитирующий раздражение*"),
+            "",
+        )
+
+    def test_stage_direction_mid_sentence_removed(self):
+        self.assertEqual(
+            clean_response("Текст. *Резко переключается обратно в нормальный режим* Продолжение."),
+            "Текст.  Продолжение.",
+        )
+
+    def test_lowercase_asterisk_with_spaces_converted(self):
+        # lowercase + spaces = emphasis phrase, converted to Yandex ** emphasis
+        self.assertEqual(
+            clean_response("*светится нежно-розовым* продолжаем."),
+            "**светится нежно-розовым** продолжаем.",
+        )
+
+    def test_lowercase_phrase_asterisk_converted(self):
+        # lowercase emphasis phrase → converted to Yandex ** emphasis
+        self.assertEqual(
+            clean_response("Дискриминация *по гендерному признаку* недопустима."),
+            "Дискриминация **по гендерному признаку** недопустима.",
+        )
+
+    def test_uppercase_single_word_asterisk_converted(self):
+        # Single word (no spaces) — converted to Yandex ** emphasis
+        self.assertEqual(clean_response("*Важно*"), "**Важно**")
+
+    def test_underscore_emphasis_stripped(self):
+        self.assertEqual(clean_response("_Куплет_"), "Куплет")
+
+    def test_underscore_word_stripped(self):
+        self.assertEqual(clean_response("Это _важно_ для понимания."), "Это важно для понимания.")
 
 
 if __name__ == '__main__':

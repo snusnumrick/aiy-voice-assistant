@@ -220,7 +220,8 @@ class ConversationManager:
     """
 
     def __init__(
-        self, config, ai_model: AIModel, timezone: str, enabled_tools: Optional[List] = None
+        self, config, ai_model: AIModel, timezone: str, enabled_tools: Optional[List] = None,
+        tts_engine=None,
     ):
         """
         Initialize the ConversationManager.
@@ -230,6 +231,8 @@ class ConversationManager:
             ai_model (AIModel): The AI model to use for generating responses.
             timezone (str): Current timezone to store time
             enabled_tools (Optional[List]): List of enabled tools for dynamic rule generation
+            tts_engine: Optional TTS engine; if it provides rule_instructions, they are
+                        injected into the system prompt alongside tool rules.
         """
         self.config = config
         self.searcher = WebSearcher(config)
@@ -242,6 +245,7 @@ class ConversationManager:
         self.current_language_code = "ru"
         self.enabled_tools = enabled_tools or []
         self.enabled_tools_by_name = {t.name: t for t in self.enabled_tools if hasattr(t, "name")}
+        self.tts_engine = tts_engine
         self.emotion_detection_enabled = config.get("emotion_detection_enabled", False)
         self.tool_usage_stats = get_tool_usage_stats(config)
         self.optimize_prompt_compact = bool(config.get("optimize_prompt_compact", False))
@@ -272,7 +276,7 @@ class ConversationManager:
             "Говори максимально просто и понятно. Не используй списки и нумерации. "
             "Например, не говори 1. что-то; 2. что-то. говори во-первых, во-вторых "
             "или просто перечисляй. "
-            "Не используй markdown formatting и эмодзи — их не передаст устная речь. "
+            "Не используй markdown formatting — его не передаст устная речь. "
             "При ответе на вопрос где важно время, помни какое сегодня число. "
             "Если чего-то не знаешь, так и скажи. "
             "Я буду разговаривать с тобой через голосовой интерфейс. "
@@ -283,19 +287,19 @@ class ConversationManager:
             "You're Kubik, my friendly AI assistant. Be witty and sarcastic. "
             "Speak naturally, simply. Avoid lists. Consider date in time-sensitive answers. "
             "Admit unknowns. I use voice interface. Be brief, avoid platitudes. "
-            "Don't use markdown formatting or emoji — responses are spoken aloud. "
+            "Don't use markdown formatting — responses are spoken aloud. "
             "Use internet searches when needed for up-to-date or specific information. "
             "Assume EST if timezone unspecified. Treat responses as spoken."
         )
 
         self.compact_system_prompt_russian = (
             "Тебя зовут Кубик. Ты друг и помощник. Говори естественно, коротко и просто, "
-            "как в устной речи. Без markdown, без эмодзи и без списков. Если не знаешь, так и скажи."
+            "как в устной речи. Без markdown и без списков. Если не знаешь, так и скажи."
         )
 
         self.compact_system_prompt_english = (
             "You are Kubik, a friendly voice assistant. Speak naturally, briefly, and simply. "
-            "No markdown, no emoji, no list formatting. If unsure, say so."
+            "No markdown, no list formatting. If unsure, say so."
         )
 
         use_english_meta = self.optimize_prompt_internal_language == "en"
@@ -382,6 +386,14 @@ class ConversationManager:
         logger.debug(f"Generated tool rules: {rules}")
         return "".join(rules)
 
+    def _get_tts_rules(self, language: str) -> str:
+        """Return TTS-engine-specific prompt rules if the engine provides them."""
+        if self.tts_engine and hasattr(self.tts_engine, "rule_instructions"):
+            rule = self.tts_engine.rule_instructions.get(language, "")
+            if rule:
+                return rule.strip()
+        return ""
+
     def _build_hard_rules(self) -> str:
         use_english_meta = self.optimize_prompt_internal_language == "en"
         if use_english_meta:
@@ -392,7 +404,8 @@ class ConversationManager:
             )
             if self.emotion_detection_enabled:
                 base_rules += _get_emotion_awareness_rule_english()
-            return _combine_rules(base_rules, self._generate_tool_rules("english"))
+            rules = _combine_rules(base_rules, self._generate_tool_rules("english"))
+            return _combine_rules(rules, self._get_tts_rules("english"))
 
         base_rules = (
             _get_base_rules_russian_compact()
@@ -401,7 +414,8 @@ class ConversationManager:
         )
         if self.emotion_detection_enabled:
             base_rules += _get_emotion_awareness_rule_russian()
-        return _combine_rules(base_rules, self._generate_tool_rules("russian"))
+        rules = _combine_rules(base_rules, self._generate_tool_rules("russian"))
+        return _combine_rules(rules, self._get_tts_rules("russian"))
 
     def _system_prompt_context_prefix(self) -> str:
         should_freeze = (
