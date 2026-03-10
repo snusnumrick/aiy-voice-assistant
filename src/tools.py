@@ -540,7 +540,13 @@ def clean_response(response: str) -> str:
     # Strip ** bold ** and * italic * markers, keeping the content
     response = re.sub(r"\*\*([^*]+)\*\*", r"\1", response)
     response = re.sub(r"\*([^*]+)\*", r"\1", response)
-    return response
+
+    # Strip emoji (not speakable in TTS)
+    emoji_pattern = re.compile(
+        "[\U0001F300-\U0001F9FF\U00002702-\U000027B0\U0000FE0F\U0001FA00-\U0001FA9F]+",
+        flags=re.UNICODE,
+    )
+    return emoji_pattern.sub("", response)
 
 
 def retry(

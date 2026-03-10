@@ -132,6 +132,13 @@ class TestCleanResponse(unittest.TestCase):
     def test_mixed_meta_and_asterisks(self):
         self.assertEqual(clean_response("$lang: ru$ *важно* текст"), " важно текст")
 
+    def test_emoji_stripped(self):
+        self.assertEqual(clean_response("Привет! 😄 Как дела?"), "Привет!  Как дела?")
+
+    def test_asterisk_with_quotes_and_emoji(self):
+        result = clean_response('Вот: *"Olá!"* Это значит «Привет!» 😄 Пока!')
+        self.assertEqual(result, 'Вот: "Olá!" Это значит «Привет!»  Пока!')
+
 
 if __name__ == '__main__':
     unittest.main()
