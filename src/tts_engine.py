@@ -480,7 +480,7 @@ class YandexTTSEngine(TTSEngine):
             Language.RUSSIAN: "ru-RU",
             Language.ENGLISH: "en-GB",
             Language.GERMAN: "de-DE",
-            Language.PORTUGUESE: "pt-BR",
+            Language.PORTUGUESE: "pt-PT",
         }
         self.lang_voices = {
             Language.RUSSIAN: config.get("yandex_tts_voice_russian", "ermil"),
@@ -811,7 +811,7 @@ class ElevenLabsTTSEngine(TTSEngine):
                 "elevenlabs_voice_id_ru", "cjVigY5qzO86Huf0OWal"
             ),
             Language.PORTUGUESE: config.get(
-                "elevenlabs_voice_id_pt", "Ay1WwRHxUsu3hEeAp8JZ"
+                "elevenlabs_voice_id_pt", "CYw3kZ02TIq5KnAiASog"
             ),
         }
         if not all(self.voice_ids.values()):

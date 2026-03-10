@@ -79,5 +79,7 @@
   "claude_cost_input_per_million":3.0,
   "claude_cost_output_per_million":15.0,
   "claude_cost_cache_write_per_million":3.75,
-  "claude_cost_cache_read_per_million":0.3
+  "claude_cost_cache_read_per_million":0.3,
+  "elevenlabs_voice_id_pt": "CYw3kZ02TIq5KnAiASog",
+  "yandex_tts_voice_portuguese": "marina"
 }
