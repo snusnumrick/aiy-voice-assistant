@@ -681,7 +681,9 @@ class ConversationManager:
             ]
 
         try:
+            whole_raw_response = ""
             async for response_text in self.ai_model.get_response_async(list(self.message_history)):
+                whole_raw_response += response_text
                 crt = clean_response(response_text)
 
                 if self.message_history[-1]["role"] != "assistant":
@@ -764,6 +766,7 @@ class ConversationManager:
                                     f"Sentence buffer: added ({sentence_len} chars, "
                                     f"total: {buffer_chars}, count: {len(sentence_buffer)})"
                                 )
+            logger.info(f"full LLM Response: {whole_raw_response}")
 
             # Flush remaining buffer at the end
             if buffer_enabled and sentence_buffer:
