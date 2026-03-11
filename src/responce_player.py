@@ -442,7 +442,7 @@ class ResponsePlayer:
             self.current_process = None
             self.change_light_behavior(prev_light)
 
-            logger.info(f"Finished playing {audio_file}")
+            logger.debug(f"Finished playing {audio_file}")
 
         logger.debug("_play_sequence ended")
         self.current_process = None
