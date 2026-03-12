@@ -131,8 +131,7 @@ def extract_language(text: str, default_lang="ru") -> List[Tuple[str, str]]:
         seg_start = m.end()
         seg_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
         segment = text[seg_start:seg_end].strip()
-        if segment:
-            result.append((lang, segment))
+        result.append((lang, segment))
 
     return result
 
