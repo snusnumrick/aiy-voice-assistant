@@ -727,7 +727,7 @@ class ConversationManager:
                     for lang, clean_text in extract_language(
                         t, default_lang=self.current_language_code
                     ):
-                        logger.debug(f"Language: {lang} -> {clean_text}")
+                        logger.info(f"Language: {lang} -> {clean_text}")
                         self.current_language_code = lang
                         if text and clean_text:
                             clean_text = fix_stress_marks_russian(clean_text)
@@ -738,6 +738,19 @@ class ConversationManager:
                                 yield [sentence]
                             else:
                                 sentence_len = len(clean_text)
+
+                                # Flush if language changes — never mix languages in one TTS call
+                                if (
+                                    sentence_buffer
+                                    and sentence_buffer[0]["language"] != lang
+                                ):
+                                    logger.debug(
+                                        f"Sentence buffer: language change {sentence_buffer[0]['language']} -> {lang}, "
+                                        f"flushing {len(sentence_buffer)} sentences"
+                                    )
+                                    yield combine_buffer()
+                                    sentence_buffer.clear()
+                                    buffer_chars = 0
 
                                 # Check if adding this sentence would cross a billing unit boundary
                                 # (Yandex v3 charges per 250-char unit)
