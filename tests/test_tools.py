@@ -2,7 +2,7 @@ import logging
 import unittest
 from typing import List
 
-from src.tools import clean_response, extract_sentences
+from src.tools import clean_response, extract_sentences, split_long_sentence
 
 
 class TestExtractSentences(unittest.TestCase):
@@ -178,6 +178,74 @@ class TestCleanResponse(unittest.TestCase):
 
     def test_underscore_word_stripped(self):
         self.assertEqual(clean_response("Это _важно_ для понимания."), "Это важно для понимания.")
+
+
+class TestSplitLongSentence(unittest.TestCase):
+
+    def test_short_text_unchanged(self):
+        text = "Короткий текст."
+        self.assertEqual(split_long_sentence(text, max_length=245), [text])
+
+    def test_exactly_at_limit_unchanged(self):
+        text = "a" * 245
+        self.assertEqual(split_long_sentence(text, max_length=245), [text])
+
+    def test_splits_at_comma(self):
+        part1 = "a" * 200 + ","
+        part2 = " " + "b" * 200
+        result = split_long_sentence(part1 + part2, max_length=245)
+        self.assertEqual(len(result), 2)
+        self.assertLessEqual(len(result[0]), 245)
+        self.assertLessEqual(len(result[1]), 245)
+
+    def test_splits_at_em_dash(self):
+        part1 = "a" * 100
+        part2 = "b" * 100
+        text = part1 + " — " + part2
+        result = split_long_sentence(text, max_length=150)
+        self.assertEqual(len(result), 2)
+        self.assertIn("a" * 100, result[0])
+        self.assertIn("b" * 100, result[1])
+
+    def test_splits_at_semicolon(self):
+        part1 = "x" * 200 + ";"
+        part2 = " " + "y" * 200
+        result = split_long_sentence(part1 + part2, max_length=245)
+        self.assertEqual(len(result), 2)
+        self.assertLessEqual(len(result[0]), 245)
+
+    def test_no_split_point_hard_splits_at_word(self):
+        # Long text with no commas/dashes — falls back to word split
+        words = ["слово"] * 60  # ~360 chars with spaces
+        text = " ".join(words)
+        result = split_long_sentence(text, max_length=245)
+        self.assertGreater(len(result), 1)
+        for chunk in result:
+            self.assertLessEqual(len(chunk), 245)
+
+    def test_real_russian_news_sentence(self):
+        text = (
+            "Ну и сегодня ночью — иранский Новый год, Навруз. "
+            "Люди должны прыгать через костры на улицах, "
+            "но власти запретили выходить, говорят — израильские агенты хотят устроить хаос. "
+            "Такие дела. Как тебе такой расклад?"
+        )
+        result = split_long_sentence(text, max_length=245)
+        for chunk in result:
+            self.assertLessEqual(len(chunk), 245)
+        # Reassembled text should contain all content
+        combined = " ".join(result)
+        self.assertIn("Навруз", combined)
+        self.assertIn("израильские агенты", combined)
+
+    def test_multiple_delimiters_greedy_packing(self):
+        # Short pieces that can be packed together into one chunk
+        text = "один, два, три, четыре, пять"
+        result = split_long_sentence(text, max_length=245)
+        self.assertEqual(result, [text])
+
+    def test_empty_string(self):
+        self.assertEqual(split_long_sentence("", max_length=245), [""])
 
 
 if __name__ == '__main__':

@@ -749,7 +749,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 yield response
 
     async def _get_response_async_streaming(
-        self, messages: List[Dict[str, Any]]
+        self, messages: List[Dict[str, Any]], _is_continuation: bool = False
     ) -> AsyncGenerator[str, None]:
         """
         Generate a streaming response asynchronously.
@@ -768,6 +768,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         current_tool_use = None
         assistant_message = ""
         expected_enumeration = [1]  # passed as a list to keep mutable
+        text_yielded = False  # track if any text was sent to caller
+        yielded_text = ""    # accumulate actual text sentences for continuation
 
         async def process_content_block_delta(
             _event: Dict, _current_tool_use: Optional[Dict] = None
@@ -898,6 +900,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 if event_type == "content_block_delta":
                     async for sentence in process_content_block_delta(event, current_tool_use):
                         if sentence:
+                            text_yielded = True
+                            yielded_text += sentence + " "
                             yield sentence
 
                 elif event_type == "content_block_start":
@@ -907,6 +911,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                             f"{self._time_str()}Processing tool use: {event['content_block']['name']}"
                         )
                         # Signal that a tool is about to be used
+                        text_yielded = True
                         yield "[[TOOL_USE]]"
                         current_tool_use = process_content_block_start(event)
 
@@ -915,6 +920,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                         current_tool_use, current_text, message_list
                     ):
                         if sentence:
+                            text_yielded = True
+                            yielded_text += sentence + " "
                             yield sentence
                     current_text = ""
                     current_tool_use = None
@@ -923,18 +930,39 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     async for sentence in process_message_stop(message_list, assistant_message):
                         if sentence:
                             logger.debug(f"{self._time_str()}Yielding on message stop: {sentence}")
+                            text_yielded = True
+                            yielded_text += sentence + " "
                             yield sentence
                     current_text = ""
                     assistant_message = ""
 
             if current_text:
                 logger.debug(f"{self._time_str()}Yielding remaining text: {current_text}")
+                text_yielded = True
+                yielded_text += current_text + " "
                 yield current_text
 
         except StopAsyncIteration:
             logger.debug("AsyncGenerator completed normally.")
         except Exception as e:
             logger.error(f"Error in _get_response_async_streaming: {str(e)}")
+            if yielded_text.strip() and not _is_continuation:
+                logger.info(
+                    f"Partial response interrupted ({len(yielded_text)} chars), attempting continuation"
+                )
+                message_list.append({"role": "assistant", "content": yielded_text.strip()})
+                message_list.append({"role": "user", "content": "Continue"})
+                try:
+                    async for response in self._get_response_async_streaming(
+                        message_list, _is_continuation=True
+                    ):
+                        yield response
+                    return
+                except Exception as cont_e:
+                    logger.error(f"Continuation attempt failed: {cont_e}")
+            if text_yielded:
+                from src.tools import NonRetryableError
+                raise NonRetryableError(str(e)) from e
             raise
 
     async def _process_tool_use_streaming(

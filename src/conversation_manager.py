@@ -48,6 +48,7 @@ from src.tools import (
     get_location,
     get_timezone,
     get_token_count,
+    split_long_sentence,
 )
 from src.web_search import WebSearcher
 
@@ -731,54 +732,55 @@ class ConversationManager:
                         self.current_language_code = lang
                         if text and clean_text:
                             clean_text = fix_stress_marks_russian(clean_text)
-                            sentence = {"emotion": emo, "language": lang, "text": clean_text}
+                            for clean_text in split_long_sentence(clean_text, max_length=245):
+                                sentence = {"emotion": emo, "language": lang, "text": clean_text}
 
-                            if not buffer_enabled:
-                                # No buffering, yield immediately
-                                yield [sentence]
-                            else:
-                                sentence_len = len(clean_text)
+                                if not buffer_enabled:
+                                    # No buffering, yield immediately
+                                    yield [sentence]
+                                else:
+                                    sentence_len = len(clean_text)
 
-                                # Flush if language changes — never mix languages in one TTS call
-                                if (
-                                    sentence_buffer
-                                    and sentence_buffer[0]["language"] != lang
-                                ):
-                                    logger.debug(
-                                        f"Sentence buffer: language change {sentence_buffer[0]['language']} -> {lang}, "
-                                        f"flushing {len(sentence_buffer)} sentences"
+                                    # Flush if language changes — never mix languages in one TTS call
+                                    if (
+                                        sentence_buffer
+                                        and sentence_buffer[0]["language"] != lang
+                                    ):
+                                        logger.debug(
+                                            f"Sentence buffer: language change {sentence_buffer[0]['language']} -> {lang}, "
+                                            f"flushing {len(sentence_buffer)} sentences"
+                                        )
+                                        yield combine_buffer()
+                                        sentence_buffer.clear()
+                                        buffer_chars = 0
+
+                                    # Check if adding this sentence would cross a billing unit boundary
+                                    # (Yandex v3 charges per 250-char unit)
+                                    would_cross_unit = (
+                                        buffer_chars > 0 and buffer_chars + sentence_len > 250
                                     )
-                                    yield combine_buffer()
-                                    sentence_buffer.clear()
-                                    buffer_chars = 0
 
-                                # Check if adding this sentence would cross a billing unit boundary
-                                # (Yandex v3 charges per 250-char unit)
-                                would_cross_unit = (
-                                    buffer_chars > 0 and buffer_chars + sentence_len > 250
-                                )
+                                    # Also flush if max_length exceeded (safety check)
+                                    would_exceed_max = buffer_chars + sentence_len > buffer_max_length
 
-                                # Also flush if max_length exceeded (safety check)
-                                would_exceed_max = buffer_chars + sentence_len > buffer_max_length
+                                    # Flush if we should cross a unit boundary or exceed max_length
+                                    if (would_cross_unit or would_exceed_max) and buffer_chars > 0:
+                                        logger.debug(
+                                            f"Sentence buffer: optimizing for billing units "
+                                            f"({buffer_chars}/{sentence_len}={buffer_chars + sentence_len} chars), "
+                                            f"yielding {len(sentence_buffer)} sentences"
+                                        )
+                                        yield combine_buffer()
+                                        sentence_buffer.clear()
+                                        buffer_chars = 0
 
-                                # Flush if we should cross a unit boundary or exceed max_length
-                                if (would_cross_unit or would_exceed_max) and buffer_chars > 0:
+                                    # Add sentence to buffer
+                                    sentence_buffer.append(sentence)
+                                    buffer_chars += sentence_len
                                     logger.debug(
-                                        f"Sentence buffer: optimizing for billing units "
-                                        f"({buffer_chars}/{sentence_len}={buffer_chars + sentence_len} chars), "
-                                        f"yielding {len(sentence_buffer)} sentences"
+                                        f"Sentence buffer: added ({sentence_len} chars, "
+                                        f"total: {buffer_chars}, count: {len(sentence_buffer)})"
                                     )
-                                    yield combine_buffer()
-                                    sentence_buffer.clear()
-                                    buffer_chars = 0
-
-                                # Add sentence to buffer
-                                sentence_buffer.append(sentence)
-                                buffer_chars += sentence_len
-                                logger.debug(
-                                    f"Sentence buffer: added ({sentence_len} chars, "
-                                    f"total: {buffer_chars}, count: {len(sentence_buffer)})"
-                                )
             logger.info(f"full LLM Response: {whole_raw_response}")
 
             # Flush remaining buffer at the end

@@ -111,24 +111,24 @@ async def synthesize_with_fallback(
         ):
             logger.debug(f"Synthesis {audio_file_name} completed")
             return True
-
         logger.warning(
             f"Primary TTS engine failed for file: {audio_file_name}. Trying fallback engine."
         )
+    except Exception as e:
+        logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
+        logger.warning(f"Primary TTS raised exception, trying fallback engine.")
+
+    try:
         if await fallback_tts_engine.synthesize_async(
             session, response_text, audio_file_name, tone, lang
         ):
             logger.info(f"Fallback TTS engine succeeded for file: {audio_file_name}")
             return True
-
-        logger.error(
-            f"Both primary and fallback TTS engines failed for file: {audio_file_name}"
-        )
-        return False
     except Exception as e:
-        logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
-        logger.error(traceback.format_exc())
-        return False
+        logger.error(f"Fallback TTS also failed for file {audio_file_name}: {str(e)}")
+
+    logger.error(f"Speech synthesis failed for file: {audio_file_name}")
+    return False
 
 
 class DialogManager:

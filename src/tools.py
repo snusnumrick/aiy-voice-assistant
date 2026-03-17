@@ -803,6 +803,68 @@ def extract_sentences(text: str, expected_enumeration: Optional[List[int]] = Non
     return sentences
 
 
+def split_long_sentence(text: str, max_length: int) -> List[str]:
+    """Split text exceeding max_length at sub-sentence boundaries.
+
+    Splits at commas, semicolons, and em-dashes (keeping the delimiter
+    with the left part). Falls back to wo~rd boundaries as a last resort.
+
+    Args:
+        text: The text to potentially split.
+        max_length: Maximum allowed length per chunk.
+
+    Returns:
+        List of chunks, each at most max_length characters.
+    """
+    if len(text) <= max_length:
+        return [text]
+
+    # Split at sub-sentence delimiters, keeping delimiter attached to left part
+    delimiter_re = re.compile(r"(,\s+|;\s+| — | – | - )")
+    raw = delimiter_re.split(text)
+
+    # Merge each text piece with its following delimiter
+    pieces = []
+    i = 0
+    while i < len(raw):
+        piece = raw[i]
+        if i + 1 < len(raw) and delimiter_re.fullmatch(raw[i + 1]):
+            piece += raw[i + 1]
+            i += 2
+        else:
+            i += 1
+        if piece:
+            pieces.append(piece)
+
+    # Greedily accumulate pieces up to max_length
+    chunks: list[str] = []
+    current = ""
+    for piece in pieces:
+        if not current:
+            current = piece
+        elif len(current) + len(piece) <= max_length:
+            current += piece
+        else:
+            chunks.append(current.rstrip())
+            current = piece
+    if current.strip():
+        chunks.append(current.strip())
+
+    # Hard-split any chunk still exceeding max_length at word boundary
+    result: list[str] = []
+    for chunk in chunks:
+        while len(chunk) > max_length:
+            split_at = chunk.rfind(" ", 0, max_length)
+            if split_at <= 0:
+                split_at = max_length
+            result.append(chunk[:split_at].rstrip())
+            chunk = chunk[split_at:].lstrip()
+        if chunk:
+            result.append(chunk)
+
+    return result or [text]
+
+
 def yield_complete_sentences(
     func: Callable[..., AsyncIterator[str]],
 ) -> Callable[..., AsyncIterator[str]]:
