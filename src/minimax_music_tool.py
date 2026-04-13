@@ -121,12 +121,16 @@ class MiniMaxMusicTool:
                 ToolParameter(
                     name="prompt",
                     type="string",
-                    description='A description of the music, specifying style, mood, and scenario. For example: "Pop, melancholic, perfect for a rainy night".'
+                    description='A description of the music, specifying style, mood, and scenario. '
+                                'For example: "Pop, melancholic, perfect for a rainy night". '
                 ),
                 ToolParameter(
                     name="lyrics",
                     type="string",
-                    description="Song lyrics, 10 to 3000 characters. Use \n to separate lines. You may add structure tags like [Intro], [Verse], [Chorus], [Bridge], [Outro] to enhance the arrangement."
+                    description="Song lyrics, 10 to 3000 characters. "
+                                "Use \n to separate lines. You may add structure tags like [Intro], [Verse], [Chorus], "
+                                "[Bridge], [Outro] to enhance the arrangement. "
+                                "Empty lyrics generate instrumental music."
                 ),
                 ToolParameter(
                     name="emotion",
@@ -134,7 +138,7 @@ class MiniMaxMusicTool:
                     description="Optional emotion dictionary with format: {'light': {'color': [R,G,B], 'behavior': 'continuous/blinking/breathing', 'brightness': 'dark/medium/bright', 'period': seconds}, 'voice': {'tone': 'plain/happy'}}"
                 ),
             ],
-            required=["prompt", "lyrics"],
+            required=["prompt"],
             processor=self.generate_music_async,
 
             # RULE CONTRIBUTIONS
@@ -185,22 +189,39 @@ class MiniMaxMusicTool:
             str: Success message with download URL (valid 24h) + local MP3 path
         """
         # Validate parameters
-        if "prompt" not in parameters or "lyrics" not in parameters:
-            logger.error("Missing 'prompt' or 'lyrics' parameter")
-            return "Error: Both 'prompt' and 'lyrics' are required"
+        if "prompt" not in parameters:
+            logger.error("Missing 'prompt' parameter")
+            return "Error: 'prompt' is required"
 
         prompt = parameters["prompt"]
-        lyrics = parameters["lyrics"]
+        lyrics = parameters.get("lyrics", "")
         emotion = parameters.get("emotion", None)
 
         if len(prompt) < 10:
             return "Error: 'prompt' should be at least 10 characters"
-        if len(lyrics) < 10:
+        if lyrics and len(lyrics) < 10:
             return "Error: 'lyrics' should be at least 10 characters"
 
-
+        model = self.config.get("minimax_music_model", "music-2.6-free")
 
         logger.info(f"Generating music: prompt='{prompt}', lyrics='{lyrics}'")
+
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,  # Pi Zero W: single response, no real-time processing
+            "output_format": "url",  # Get URL for email inclusion + download for playback
+            "audio_setting": {
+                "sample_rate": 16000,  # Minimum valid sample rate for Pi Zero W
+                "bitrate": 32000,  # Minimum valid bitrate (3x smaller files, faster processing)
+                "format": "mp3",
+            },
+        }
+        if lyrics:
+            payload["lyrics"] = lyrics
+        else:
+            payload["is_instrumental"] = True
+
 
         try:
             # Make a streaming API request to MiniMax
@@ -212,7 +233,7 @@ class MiniMaxMusicTool:
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": "music-2.0",
+                        "model": model,
                         "prompt": prompt,
                         "lyrics": lyrics,
                         "stream": False,  # Pi Zero W: single response, no real-time processing
