@@ -528,7 +528,7 @@ def clean_response(response: str) -> str:
     """
     Clean the response by removing:
     1. Meta tags in format $tagname: tagcontent$
-    2. Malformed TTS pause tags: <small>[small]</small> → <[small]>
+    2. TTS pause tags: <[small]> etc. and malformed variants like <small>[small]</small>
     3. Asterisk markdown markers (*, **) — keep the wrapped text, strip the markers
 
     :param response: The response string
@@ -538,13 +538,11 @@ def clean_response(response: str) -> str:
     pattern_tags = r"\$\w+:[^$]*\$"
     response = re.sub(pattern_tags, "", response)
 
-    # Fix incorrectly formatted TTS pause tags: <small>[small]</small> → <[small]>
+    # Remove TTS pause tags (Yandex SpeechKit format) — not relevant in history
     _pause_sizes = "tiny|small|medium|large|huge"
-    response = re.sub(
-        rf"<({_pause_sizes})>\[({_pause_sizes})]</\1>",
-        r"<[\2]>",
-        response,
-    )
+    response = re.sub(rf"<\[({_pause_sizes})]>", "", response)
+    # Also remove malformed variants the LLM may produce: <small>[small]</small>
+    response = re.sub(rf"<({_pause_sizes})>\[({_pause_sizes})]</\1>", "", response)
 
     # Keep **word** — Yandex SpeechKit interprets it as emphasis (equivalent to bold).
     # For single asterisks: stage directions (uppercase start + spaces) are removed entirely;
