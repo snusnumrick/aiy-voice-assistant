@@ -95,7 +95,7 @@ class MiniMaxMusicTool:
 
     def _refresh_music_library(self):
         """Tell cubie-server to refresh its music library (from example_voice_assistant.py)"""
-        server_url = get_server_url(hostname='cubie-server.local')
+        server_url = get_server_url()
 
         try:
             response = requests.post(f'{server_url}/api/refresh', timeout=5)
@@ -455,4 +455,3 @@ if __name__ == "__main__":
 
     # Run the async main function
     asyncio.run(main())
-
