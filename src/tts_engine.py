@@ -508,11 +508,15 @@ class YandexTTSEngine(TTSEngine):
     def rule_instructions(self) -> dict:
         return {
             "russian": (
-                "Для пауз в речи используй теги: <[tiny]>, <[small]>, <[medium]>, <[large]>, <[huge]>. "
+                "Для пауз в речи используй теги (это НЕ HTML-теги, вставляй дословно, "
+                "формат: угловая скобка, квадратная скобка, слово, квадратная скобка, угловая скобка): "
+                "<[tiny]>, <[small]>, <[medium]>, <[large]>, <[huge]>. "
                 "Для акцента на слове используй ** слово **."
             ),
             "english": (
-                "For speech pauses use tags: <[tiny]>, <[small]>, <[medium]>, <[large]>, <[huge]>. "
+                "For speech pauses use tags (NOT HTML — insert literally as-is, "
+                "format: angle bracket, square bracket, word, square bracket, angle bracket): "
+                "<[tiny]>, <[small]>, <[medium]>, <[large]>, <[huge]>. "
                 "For word emphasis use ** word **."
             ),
         }
