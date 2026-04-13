@@ -217,7 +217,7 @@ class MiniMaxMusicTool:
                 "format": "mp3",
             },
         }
-        if lyrics:
+        if lyrics and lyrics != "":
             payload["lyrics"] = lyrics
         else:
             payload["is_instrumental"] = True
@@ -259,7 +259,7 @@ class MiniMaxMusicTool:
                         return f"Error generating music: {error_msg}"
 
                     # Extract URL
-                    if 'data' not in result or 'audio' not in result['data']:
+                    if result is None or 'data' not in result or 'audio' not in result['data']:
                         logger.error("No audio_url in response")
                         return "Error: No audio URL received from API"
 
