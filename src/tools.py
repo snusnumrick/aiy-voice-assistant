@@ -537,6 +537,14 @@ def clean_response(response: str) -> str:
     pattern_tags = r"\$\w+:[^$]*\$"
     response = re.sub(pattern_tags, "", response)
 
+    # Fix incorrectly formatted TTS pause tags: <small>[small]</small> → <[small]>
+    _pause_sizes = "tiny|small|medium|large|huge"
+    response = re.sub(
+        rf"<({_pause_sizes})>\[({_pause_sizes})]</\1>",
+        r"<[\2]>",
+        response,
+    )
+
     # Keep **word** — Yandex SpeechKit interprets it as emphasis (equivalent to bold).
     # For single asterisks: stage directions (uppercase start + spaces) are removed entirely;
     # quoted speech (starts with " or ') is preserved; single words keep the wrapped text.
