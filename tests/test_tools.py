@@ -179,6 +179,22 @@ class TestCleanResponse(unittest.TestCase):
     def test_underscore_word_stripped(self):
         self.assertEqual(clean_response("Это _важно_ для понимания."), "Это важно для понимания.")
 
+    def test_tts_pause_tag_removed(self):
+        self.assertEqual(clean_response("Привет. <[small]> Как дела?"), "Привет.  Как дела?")
+
+    def test_tts_pause_tag_all_sizes_removed(self):
+        for size in ("tiny", "small", "medium", "large", "huge"):
+            self.assertEqual(clean_response(f"<[{size}]>"), "")
+
+    def test_tts_malformed_pause_tag_removed(self):
+        self.assertEqual(clean_response("<small>[small]</small>"), "")
+
+    def test_tts_malformed_pause_tag_in_sentence(self):
+        self.assertEqual(
+            clean_response("Раз. <small>[small]</small> Два."),
+            "Раз.  Два.",
+        )
+
 
 class TestSplitLongSentence(unittest.TestCase):
 
