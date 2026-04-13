@@ -151,7 +151,7 @@ class MiniMaxMusicTool:
                     "'напиши композицию', 'сделай трек'. "
                     "Всегда уточни у пользователя жанр, настроение, описание или характеристики "
                     "желаемой музыки перед генерацией."
-                    "Если не попросили иначе и ты поешь саи, добавь в prompt 'Мужской голос среднего возраста, глубокий и теплый тембр'. "
+                    "Если не попросили иначе, песня с текстом и ты поешь саи, добавь в prompt 'Мужской голос среднего возраста, глубокий и теплый тембр'. "
                     "После получения ответа от инструмента обязательно сохрани текст песни и локальный путь к файлу в память, "
                     "используя формат: "
                     "$remember: Сгенерированная музыка: <описание из prompt>, текст: <lyrics>, файл: <путь>. Удали из памяти через 24 часа.$."
@@ -223,6 +223,7 @@ class MiniMaxMusicTool:
         else:
             payload["is_instrumental"] = True
 
+        timeout = self.config.get("minimax_music_timeout", 600)
 
         try:
             # Make a streaming API request to MiniMax
@@ -234,7 +235,7 @@ class MiniMaxMusicTool:
                         "Content-Type": "application/json"
                     },
                     json=payload,
-                    timeout=300  # 5 minute timeout
+                    timeout=timeout
                 ) as response:
                     response.raise_for_status()
 
