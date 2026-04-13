@@ -528,7 +528,8 @@ def clean_response(response: str) -> str:
     """
     Clean the response by removing:
     1. Meta tags in format $tagname: tagcontent$
-    2. Asterisk markdown markers (*, **) — keep the wrapped text, strip the markers
+    2. Malformed TTS pause tags: <small>[small]</small> → <[small]>
+    3. Asterisk markdown markers (*, **) — keep the wrapped text, strip the markers
 
     :param response: The response string
     :return: The cleaned response string
