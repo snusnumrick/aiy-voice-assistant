@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import time
@@ -232,35 +233,47 @@ class MiniMaxMusicTool:
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json"
                     },
-                    json={
-                        "model": model,
-                        "prompt": prompt,
-                        "lyrics": lyrics,
-                        "stream": False,  # Pi Zero W: single response, no real-time processing
-                        "output_format": "url",  # Get URL for email inclusion + download for playback
-                        "audio_setting": {
-                            "sample_rate": 16000,  # Minimum valid sample rate for Pi Zero W
-                            "bitrate": 32000,      # Minimum valid bitrate (3x smaller files, faster processing)
-                            "format": "mp3"
-                        }
-                    },
+                    json=payload,
                     timeout=300  # 5 minute timeout
                 ) as response:
                     response.raise_for_status()
 
                     # Pi Zero W: Get audio URL in one response (non-streaming)
                     logger.info("Receiving audio URL...")
-                    result = await response.json()
+                    response_text = await response.text()
+                    if not response_text.strip():
+                        logger.error("MiniMax returned an empty response body")
+                        return "Error: Music service returned an empty response"
+
+                    try:
+                        result = json.loads(response_text)
+                    except json.JSONDecodeError:
+                        logger.error(f"MiniMax returned non-JSON response: {response_text[:500]}")
+                        return "Error: Music service returned an invalid response"
 
                     # Check for API errors
+                    if result is None:
+                        logger.error("MiniMax returned JSON null response")
+                        return "Error: Music service returned an empty JSON response"
+
                     if 'error' in result:
                         error_msg = result['error']
                         logger.error(f"API error: {error_msg}")
                         return f"Error generating music: {error_msg}"
 
+                    base_resp = result.get("base_resp")
+                    if isinstance(base_resp, dict) and base_resp.get("status_code") not in (None, 0):
+                        status_msg = base_resp.get("status_msg", "unknown error")
+                        logger.error(
+                            "MiniMax API returned error status %s: %s",
+                            base_resp.get("status_code"),
+                            status_msg,
+                        )
+                        return f"Error generating music: {status_msg}"
+
                     # Extract URL
-                    if result is None or 'data' not in result or 'audio' not in result['data']:
-                        logger.error("No audio_url in response")
+                    if 'data' not in result or result['data'] is None or 'audio' not in result['data']:
+                        logger.error(f"No audio_url in response: {response_text[:500]}")
                         return "Error: No audio URL received from API"
 
                     audio_url = result['data']['audio']
@@ -285,7 +298,10 @@ class MiniMaxMusicTool:
                     # Save a complete MP3 file
                     timestamp = int(time.time())
                     # Create a safe filename from lyrics
-                    safe_lyrics = "".join(c if c.isalnum() or c.isspace() else "_" for c in lyrics[:30])
+                    filename_source = lyrics or prompt or "instrumental"
+                    safe_lyrics = "".join(
+                        c if c.isalnum() or c.isspace() else "_" for c in filename_source[:30]
+                    )
                     safe_lyrics = "_".join(safe_lyrics.split())  # Replace spaces with underscores
                     mp3_filename = f"music_{timestamp}_{safe_lyrics}.mp3"
                     mp3_path = self.music_dir / mp3_filename
@@ -423,7 +439,7 @@ async def main():
     try:
         # Test parameters
         test_prompt = "Upbeat electronic music with energetic beats and futuristic sounds"
-        test_lyrics = "Dancing through the night, feeling so alive, electronic dreams are calling"
+        test_lyrics = None # "Dancing through the night, feeling so alive, electronic dreams are calling"
 
         logger.info("Generating test music...")
         result = await tool.generate_music_async({
@@ -446,6 +462,9 @@ async def main():
 
 if __name__ == "__main__":
     import asyncio
+    from dotenv import load_dotenv
+
+    load_dotenv()
 
     # Configure logging for test
     logging.basicConfig(
