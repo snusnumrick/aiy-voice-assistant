@@ -591,8 +591,11 @@ class ConversationManager:
 
         Sentences are buffered and combined before yielding to reduce TTS costs.
         Buffer flushes when:
+        - Emotion changes
+        - Language changes
         - Total characters exceed sentence_buffer_max_length (default: 200)
-        - No new sentence arrives within sentence_buffer_timeout (default: 1.5s)
+        - Tool use starts
+        - The response ends
 
         Args:
             text (str): The new input text to respond to.
@@ -749,6 +752,21 @@ class ConversationManager:
                                         logger.debug(
                                             f"Sentence buffer: language change {sentence_buffer[0]['language']} -> {lang}, "
                                             f"flushing {len(sentence_buffer)} sentences"
+                                        )
+                                        yield combine_buffer()
+                                        sentence_buffer.clear()
+                                        buffer_chars = 0
+
+                                    # Flush if emotion changes so LED state changes are preserved.
+                                    if (
+                                        sentence_buffer
+                                        and sentence_buffer[0]["emotion"] != emo
+                                    ):
+                                        logger.debug(
+                                            "Sentence buffer: emotion change %s -> %s, flushing %s sentences",
+                                            sentence_buffer[0]["emotion"],
+                                            emo,
+                                            len(sentence_buffer),
                                         )
                                         yield combine_buffer()
                                         sentence_buffer.clear()

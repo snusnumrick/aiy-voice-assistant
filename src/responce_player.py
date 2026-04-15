@@ -142,7 +142,8 @@ def adjust_rgb_brightness(rgb: List[int], brightness: str) -> Tuple[int, int, in
 
     Args:
         rgb (List[int]): A list of three integers representing RGB values (0-255).
-        brightness (str): A string indicating the desired brightness level ('low', 'medium', 'high').
+        brightness (str): A string indicating the desired brightness level
+            ('dark'/'low', 'medium', 'bright'/'high').
 
     Returns:
         Tuple[int, int, int]: Adjusted RGB values.
@@ -150,7 +151,13 @@ def adjust_rgb_brightness(rgb: List[int], brightness: str) -> Tuple[int, int, in
     import colorsys
 
     # Define brightness factors
-    brightness_factors = {"low": 0.4, "medium": 0.7, "high": 1.0}
+    brightness_factors = {
+        "dark": 0.4,
+        "low": 0.4,
+        "medium": 0.7,
+        "bright": 1.0,
+        "high": 1.0,
+    }
 
     # Get the brightness factor, default to medium if invalid input
     factor = brightness_factors.get(brightness.lower(), 0.7)
@@ -343,7 +350,7 @@ class ResponsePlayer:
                     if not self.wav_list:
                         self.wav_list_light = mi.light
                         self.wav_list = [(mi.filename, mi.text)]
-                    elif mi.light is None or mi.light == self.wav_list_light:
+                    elif mi.light == self.wav_list_light:
                         self.wav_list.append((mi.filename, mi.text))
                     else:
                         self._process_wav_list()

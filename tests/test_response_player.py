@@ -1,10 +1,12 @@
+# ruff: noqa: E402
+
 import logging
 import queue
 import sys
 import threading
 import time
 import unittest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
 # Set up logging
 # logging.basicConfig(level=logging.DEBUG)
@@ -20,8 +22,15 @@ sys.modules['aiy.leds'] = mock_aiy.leds
 sys.modules['aiy.voice'] = mock_aiy.voice
 sys.modules['aiy.voice.audio'] = mock_aiy.voice.audio
 
+# Mock optional runtime dependencies imported by src.tools
+mock_pydub = MagicMock()
+mock_pydub.AudioSegment = MagicMock()
+sys.modules['aiofiles'] = MagicMock()
+sys.modules['geocoder'] = MagicMock()
+sys.modules['pydub'] = mock_pydub
+
 # Now it's safe to import from src
-from src.responce_player import ResponsePlayer, extract_emotions, extract_language, adjust_rgb_brightness, \
+from src.responce_player import ResponsePlayer, MergeItem, extract_emotions, extract_language, adjust_rgb_brightness, \
     emotions_prompt, language_prompt
 
 
@@ -72,6 +81,22 @@ class TestResponsePlayer(unittest.TestCase):
         self.player._process_wav_list()
         mock_combine.assert_called_once()
         self.assertEqual(self.player.playlist.qsize(), 1)
+
+    def test_merge_audio_files_keeps_light_reset_separate(self):
+        colored_light = {
+            "color": [0, 0, 255],
+            "brightness": "medium",
+            "behavior": "continuous",
+            "period": 1,
+        }
+        self.player.merge_queue.put(MergeItem(light=colored_light, filename="blue.wav", text="Blue"))
+        self.player.merge_queue.put(MergeItem(light=None, filename="plain.wav", text="Plain"))
+
+        self.player._merge_audio_files()
+
+        self.assertEqual(self.player.playlist.qsize(), 2)
+        self.assertEqual(self.player.playlist.get_nowait(), (colored_light, "blue.wav"))
+        self.assertEqual(self.player.playlist.get_nowait(), (None, "plain.wav"))
 
     @patch('src.responce_player.play_wav_async')
     def test_play_sequence(self, mock_play_async):
@@ -161,6 +186,17 @@ class TestHelperFunctions(unittest.TestCase):
         result = adjust_rgb_brightness(rgb, "low")
         self.assertEqual(len(result), 3)
         self.assertTrue(all(0 <= x <= 255 for x in result))
+
+    def test_adjust_rgb_brightness_accepts_prompt_aliases(self):
+        rgb = [255, 128, 64]
+        self.assertEqual(
+            adjust_rgb_brightness(rgb, "bright"),
+            adjust_rgb_brightness(rgb, "high"),
+        )
+        self.assertEqual(
+            adjust_rgb_brightness(rgb, "dark"),
+            adjust_rgb_brightness(rgb, "low"),
+        )
 
     def test_emotions_prompt(self):
         prompt = emotions_prompt()
