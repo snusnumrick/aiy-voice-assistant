@@ -25,7 +25,7 @@ from src.config import Config
 from src.conversation_manager import ConversationManager
 from src.dialog import main_loop_async
 from src.email_tools import SendEmailTool
-from src.emotion_engine import HumeEmotionEngine, NoOpEmotionEngine
+from src.emotion_engine import NoOpEmotionEngine, create_emotion_engine
 from src.gemini_image_tool import GeminiImageTool
 from src.minimax_music_tool import MiniMaxMusicTool
 from src.reminder_announcer import ReminderAnnouncer
@@ -54,7 +54,7 @@ def setup_logging(log_level, log_dir=None):
     """
     numeric_level = getattr(logging, log_level.upper(), None)
     if not isinstance(numeric_level, int):
-        raise ValueError("Invalid log level: %s" % log_level)
+        raise ValueError(f"Invalid log level: {log_level}")
 
     # Create logger
     logger = logging.getLogger()
@@ -216,15 +216,11 @@ def main():
         )
 
         # Initialize emotion engine
-        emotion_engine = None
-        if config.get("emotion_detection_enabled", False):
-            try:
-                emotion_engine = HumeEmotionEngine(config)
-                logger.info("Hume emotion detection enabled")
-            except Exception as e:
-                logger.warning(f"Failed to initialize Hume emotion engine: {e}")
-                emotion_engine = NoOpEmotionEngine()
-        else:
+        try:
+            emotion_engine = create_emotion_engine(config)
+            logger.info("Emotion engine initialized: %s", emotion_engine.__class__.__name__)
+        except Exception as e:
+            logger.warning("Failed to initialize emotion engine: %s", e)
             emotion_engine = NoOpEmotionEngine()
 
         logger.info("All components initialized. Starting main conversation loop.")

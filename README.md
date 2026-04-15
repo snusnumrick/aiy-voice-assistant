@@ -220,13 +220,13 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
         PERPLEXITY_API_KEY=your_perplexity_api_key
         ELEVENLABS_API_KEY=your_elevenlabs_api_key
         SONIOX_API_KEY=your_soniox_api_key
-        GEMINI_API_KEY=your_gemini_api_key
+        GEMINI_API_KEY=your_gemini_api_key                 # For Gemini models and optional emotion detection
         TOMORROW_API_KEY=your_tomorrow_io_api_key        # For weather data
         GEOCODE_API_KEY=your_maps_co_geocoding_api_key   # For location lookup
         WAQI_API_KEY=your_waqi_api_key                   # For air quality data
         OPENUV_API_KEY=your_openuv_api_key               # For UV index data
         MINIMAX_API_KEY=your_minimax_api_key             # For music generation (optional)
-        HUME_API_KEY=your_hume_api_key                   # For voice emotion detection (optional)
+        HUME_API_KEY=your_hume_api_key                   # For Hume voice emotion detection (optional)
     ```
     Notes
     1. Make sure to keep your `.env` file secure and never commit it to version control.
@@ -536,10 +536,16 @@ The assistant uses cron to manage Tailscale for optimal performance:
   * Maximum 50 temporary music files are kept, older files are auto-deleted
 
 - For voice emotion detection issues:
+  * Select provider with `emotion_engine_provider`: `hume` (default), `gemini`, or `none`
+  * For transition-mode comparison, set `emotion_comparison_enabled` to `true`; the primary provider stays on the critical path while the shadow provider runs in parallel and writes JSONL rows to `emotion_comparison_log_path` (default: `logs/emotion_comparison.jsonl`)
   * Verify HUME_API_KEY is set in .env file
+  * If using Gemini emotion detection, verify GEMINI_API_KEY is set in .env file
   * Ensure `emotion_detection_enabled` is set to `true` in config.json
   * Install websockets package: ```pip install websockets```
   * Check Hume API key validity at https://platform.hume.ai
+  * Gemini emotion detection uses end-of-turn audio understanding by default; Gemini Live WebSocket streaming requires a Live model, not Flash-Lite
+  * Comparison rows include both providers' top emotions and per-provider latency measurements
+  * Summarize collected comparison rows with: `python scripts/show_emotion_comparison_stats.py`
   * Emotion detection runs in parallel with STT - if STT works but emotions aren't detected, check Hume API connectivity
   * If emotion detection times out, adjust `emotion_detection_timeout` in config (default: 10 seconds)
   * Emotions are added as annotations to user messages, e.g., `[User emotion: excited (0.82)]`
