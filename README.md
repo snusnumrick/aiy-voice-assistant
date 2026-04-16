@@ -536,8 +536,9 @@ The assistant uses cron to manage Tailscale for optimal performance:
   * Maximum 50 temporary music files are kept, older files are auto-deleted
 
 - For voice emotion detection issues:
-  * Select provider with `emotion_engine_provider`: `hume` (default), `gemini`, or `none`
+  * Select provider with `emotion_engine_provider`: `gemini` (default), `hume`, or `none`
   * For transition-mode comparison, set `emotion_comparison_enabled` to `true`; the primary provider stays on the critical path while the shadow provider runs in parallel and writes JSONL rows to `emotion_comparison_log_path` (default: `logs/emotion_comparison.jsonl`)
+  * Control annotation verbosity with `emotion_annotation_omit_labels` (default: `["neutral", "calm"]`), `emotion_annotation_score_decimals` (default: `1`), and `emotion_annotation_include_scores` (default: `true`)
   * Verify HUME_API_KEY is set in .env file
   * If using Gemini emotion detection, verify GEMINI_API_KEY is set in .env file
   * Ensure `emotion_detection_enabled` is set to `true` in config.json

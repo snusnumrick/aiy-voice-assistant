@@ -107,7 +107,31 @@ class EmotionEngine(ABC):
         # Default implementation: not supported, subclasses can override
         return None
 
-def format_annotation(result: Optional[EmotionResult]) -> str:
+
+def get_annotation_options(config) -> dict:
+    """Build emotion annotation rendering options from config."""
+    omit_labels = config.get("emotion_annotation_omit_labels", ["neutral", "calm"])
+    if not isinstance(omit_labels, list):
+        omit_labels = ["neutral", "calm"]
+
+    try:
+        score_decimals = int(config.get("emotion_annotation_score_decimals", 1))
+    except (TypeError, ValueError):
+        score_decimals = 1
+
+    return {
+        "omit_labels": omit_labels,
+        "include_scores": bool(config.get("emotion_annotation_include_scores", True)),
+        "score_decimals": max(0, score_decimals),
+    }
+
+
+def format_annotation(
+    result: Optional[EmotionResult],
+    omit_labels: Optional[list[str]] = None,
+    include_scores: bool = True,
+    score_decimals: int = 2,
+) -> str:
     """
     Format emotion result as text annotation for LLM.
 
@@ -120,10 +144,23 @@ def format_annotation(result: Optional[EmotionResult]) -> str:
     """
     if not result or not result.top_emotions:
         return ""
-    emotions_str = ", ".join(
-        f"{name} ({score:.2f})"
+    omit_set = {str(label).strip().lower() for label in (omit_labels or []) if str(label).strip()}
+    filtered_emotions = [
+        (name, score)
         for name, score in result.top_emotions
-    )
+        if str(name).strip().lower() not in omit_set
+    ]
+    if not filtered_emotions:
+        return ""
+
+    score_decimals = max(0, int(score_decimals))
+    if include_scores:
+        emotions_str = ", ".join(
+            f"{name} ({score:.{score_decimals}f})"
+            for name, score in filtered_emotions
+        )
+    else:
+        emotions_str = ", ".join(name for name, _ in filtered_emotions)
     return f"[User emotion: {emotions_str}]"
 
 
@@ -249,6 +286,32 @@ class ComparisonEmotionEngine(EmotionEngine):
         ]
         primary_top_1 = primary_names[0] if primary_names else None
         shadow_top_1 = shadow_names[0] if shadow_names else None
+        primary_has_result = bool(primary_result and primary_result.top_emotions)
+        shadow_has_result = bool(shadow_result and shadow_result.top_emotions)
+
+        if primary_has_result and shadow_has_result:
+            coverage_status = "both"
+            availability_winner = "tie"
+        elif primary_has_result:
+            coverage_status = "primary_only"
+            availability_winner = self.primary_provider
+        elif shadow_has_result:
+            coverage_status = "shadow_only"
+            availability_winner = self.shadow_provider
+        else:
+            coverage_status = "neither"
+            availability_winner = "tie"
+
+        latency_delta = None
+        latency_winner = None
+        if isinstance(primary_latency, (int, float)) and isinstance(shadow_latency, (int, float)):
+            latency_delta = round(shadow_latency - primary_latency, 2)
+            if latency_delta < 0:
+                latency_winner = self.shadow_provider
+            elif latency_delta > 0:
+                latency_winner = self.primary_provider
+            else:
+                latency_winner = "tie"
 
         return {
             "schema_version": 1,
@@ -260,12 +323,18 @@ class ComparisonEmotionEngine(EmotionEngine):
             "timing": {
                 "primary_return_latency_ms": primary_latency,
                 "shadow_latency_ms": shadow_latency,
+                "shadow_minus_primary_latency_ms": latency_delta,
                 "shadow_extra_latency_ms": (
                     round(max(0.0, shadow_latency - primary_latency), 2)
                     if isinstance(primary_latency, (int, float))
                     and isinstance(shadow_latency, (int, float))
                     else None
                 ),
+            },
+            "coverage": {
+                "status": coverage_status,
+                "availability_winner": availability_winner,
+                "latency_winner": latency_winner,
             },
             "primary": {
                 "latency_ms": primary_latency,
@@ -314,6 +383,25 @@ class ComparisonEmotionEngine(EmotionEngine):
     def _track_background_task(self, task: asyncio.Task) -> None:
         self._pending_tasks.add(task)
         task.add_done_callback(self._pending_tasks.discard)
+
+    async def wait_for_pending_tasks(self, timeout: Optional[float] = None) -> None:
+        """Wait for any background comparison logging tasks to finish."""
+        pending = list(self._pending_tasks)
+        if not pending:
+            return
+        if timeout is None:
+            await asyncio.gather(*pending, return_exceptions=True)
+            return
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*pending, return_exceptions=True),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Timed out waiting for %s pending emotion comparison tasks",
+                len(pending),
+            )
 
     @staticmethod
     async def _iter_pcm_bytes(pcm_bytes: bytes, chunk_size: int = 3200) -> AsyncIterator[bytes]:
@@ -920,7 +1008,7 @@ class GeminiEmotionEngine(EmotionEngine):
 
 def normalize_emotion_provider(provider: Optional[str]) -> str:
     """Normalize provider aliases used in config."""
-    value = str(provider or "hume").strip().lower()
+    value = str(provider or "gemini").strip().lower()
     aliases = {
         "off": "none",
         "noop": "none",
@@ -955,7 +1043,7 @@ def create_emotion_engine(config) -> EmotionEngine:
     if not config.get("emotion_detection_enabled", False):
         return NoOpEmotionEngine()
 
-    primary_provider = normalize_emotion_provider(config.get("emotion_engine_provider", "hume"))
+    primary_provider = normalize_emotion_provider(config.get("emotion_engine_provider", "gemini"))
     primary_engine = create_provider_emotion_engine(primary_provider, config)
 
     if primary_provider == "none":
@@ -1069,6 +1157,12 @@ async def main() -> int:
         action="store_true",
         help="Enable comparison mode using config defaults for shadow provider",
     )
+    parser.add_argument(
+        "--comparison-wait-timeout",
+        type=float,
+        default=15.0,
+        help="Seconds to wait for pending comparison logging before exit",
+    )
     args = parser.parse_args()
 
     config = Config()
@@ -1080,10 +1174,11 @@ async def main() -> int:
 
     engine = create_emotion_engine(config)
     result = await engine.detect(args.audio_file)
+    annotation_options = get_annotation_options(config)
 
     print(f"engine={engine.__class__.__name__}")
     print(f"audio_file={args.audio_file}")
-    print(f"annotation={format_annotation(result)}")
+    print(f"annotation={format_annotation(result, **annotation_options)}")
     if result is None:
         print("result=None")
     else:
@@ -1098,6 +1193,13 @@ async def main() -> int:
                 indent=2,
             )
         )
+    if isinstance(engine, ComparisonEmotionEngine):
+        await engine.wait_for_pending_tasks(timeout=args.comparison_wait_timeout)
+        comparison_log_path = config.get(
+            "emotion_comparison_log_path",
+            "logs/emotion_comparison.jsonl",
+        )
+        print(f"comparison_log_path={comparison_log_path}")
     return 0
 
 

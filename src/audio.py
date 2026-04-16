@@ -26,13 +26,14 @@ import grpc
 from aiy.board import Button, ButtonState
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import AudioFormat, Recorder
+
 try:
     from google.cloud import speech
 except Exception:
     speech = None
 from src.background_tasks import BackgroundTaskManager
 from src.config import Config
-from src.emotion_engine import EmotionEngine, format_annotation
+from src.emotion_engine import EmotionEngine, format_annotation, get_annotation_options
 from src.responce_player import ResponsePlayer
 from src.tools import (
     combine_audio_files,
@@ -1568,7 +1569,10 @@ class SpeechTranscriber:
                             emotion_generator(),
                             sample_rate=self.audio_sample_rate
                         )
-                        annotation = format_annotation(result)
+                        annotation = format_annotation(
+                            result,
+                            **get_annotation_options(self.config),
+                        )
                         if annotation:
                             logger.debug(f"Detected emotion: {annotation}")
                         return annotation

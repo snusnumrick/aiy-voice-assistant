@@ -18,6 +18,8 @@ from src.emotion_engine import (
     HumeEmotionEngine,
     NoOpEmotionEngine,
     format_annotation,
+    get_annotation_options,
+    normalize_emotion_provider,
 )
 
 
@@ -120,6 +122,73 @@ class TestEmotionEngineFormatAnnotation(unittest.TestCase):
         """Test formatting with None result."""
         annotation = format_annotation(None)
         self.assertEqual(annotation, "")
+
+    def test_format_omits_configured_baseline_labels(self):
+        """Test baseline labels can be omitted from the annotation."""
+        result = EmotionResult(
+            top_emotions=[("neutral", 0.8), ("calm", 0.7), ("interest", 0.4)],
+            raw_scores={},
+            confidence=0.8,
+        )
+        annotation = format_annotation(
+            result,
+            omit_labels=["neutral", "calm"],
+            include_scores=True,
+            score_decimals=1,
+        )
+        self.assertEqual(annotation, "[User emotion: interest (0.4)]")
+
+    def test_format_returns_empty_after_filtering(self):
+        """Test annotation is omitted if only filtered baseline labels remain."""
+        result = EmotionResult(
+            top_emotions=[("neutral", 0.8), ("calm", 0.7)],
+            raw_scores={},
+            confidence=0.8,
+        )
+        annotation = format_annotation(
+            result,
+            omit_labels=["neutral", "calm"],
+            include_scores=True,
+            score_decimals=1,
+        )
+        self.assertEqual(annotation, "")
+
+    def test_format_can_omit_scores(self):
+        """Test annotation formatting without numeric scores."""
+        result = EmotionResult(
+            top_emotions=[("interest", 0.4), ("curiosity", 0.3)],
+            raw_scores={},
+            confidence=0.4,
+        )
+        annotation = format_annotation(
+            result,
+            include_scores=False,
+            score_decimals=1,
+        )
+        self.assertEqual(annotation, "[User emotion: interest, curiosity]")
+
+
+class TestEmotionAnnotationOptions(unittest.TestCase):
+    """Tests for config-driven annotation rendering options."""
+
+    def test_get_annotation_options_defaults(self):
+        """Test default annotation rendering settings."""
+        config = MagicMock()
+        config.get = MagicMock(side_effect=lambda key, default=None: default)
+
+        options = get_annotation_options(config)
+
+        self.assertEqual(options["omit_labels"], ["neutral", "calm"])
+        self.assertTrue(options["include_scores"])
+        self.assertEqual(options["score_decimals"], 1)
+
+
+class TestEmotionProviderDefaults(unittest.TestCase):
+    """Tests for provider default behavior."""
+
+    def test_normalize_emotion_provider_defaults_to_gemini(self):
+        """Missing provider should default to Gemini."""
+        self.assertEqual(normalize_emotion_provider(None), "gemini")
 
 
 class TestHumeEmotionEngine(unittest.TestCase):
@@ -474,6 +543,44 @@ class TestComparisonEmotionEngine(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             asyncio.run(scenario(os.path.join(tmp_dir, "emotion_compare.jsonl")))
 
+    def test_wait_for_pending_tasks_flushes_background_logging(self):
+        """Explicit flush should wait for delayed shadow logging."""
+        primary_result = EmotionResult(
+            top_emotions=[("Joy", 0.9)],
+            raw_scores={"Joy": 0.9},
+            confidence=0.9,
+        )
+        shadow_result = EmotionResult(
+            top_emotions=[("Interest", 0.6)],
+            raw_scores={"Interest": 0.6},
+            confidence=0.6,
+        )
+
+        async def scenario():
+            shadow_gate = asyncio.Event()
+            logger = MagicMock()
+            logger.record = MagicMock()
+            engine = ComparisonEmotionEngine(
+                primary_provider="hume",
+                primary_engine=FakeEmotionEngine(result=primary_result),
+                shadow_provider="gemini",
+                shadow_engine=FakeEmotionEngine(result=shadow_result, wait_event=shadow_gate),
+                comparison_logger=logger,
+            )
+
+            async def audio_chunks():
+                yield b"\x00" * 3200
+
+            result = await asyncio.wait_for(engine.detect_stream(audio_chunks()), timeout=0.05)
+            self.assertEqual(result.top_emotions[0], ("Joy", 0.9))
+            logger.record.assert_not_called()
+
+            shadow_gate.set()
+            await engine.wait_for_pending_tasks(timeout=0.2)
+            logger.record.assert_called_once()
+
+        asyncio.run(scenario())
+
     def test_comparison_logging_writes_jsonl_row(self):
         """Comparison mode should persist a row with both provider outcomes."""
         primary_result = EmotionResult(
@@ -512,6 +619,9 @@ class TestComparisonEmotionEngine(unittest.TestCase):
             self.assertEqual(payload["audio"]["pcm_bytes"], 6400)
             self.assertIn("primary_return_latency_ms", payload["timing"])
             self.assertIn("shadow_latency_ms", payload["timing"])
+            self.assertIn("shadow_minus_primary_latency_ms", payload["timing"])
+            self.assertEqual(payload["coverage"]["status"], "both")
+            self.assertEqual(payload["coverage"]["availability_winner"], "tie")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             asyncio.run(scenario(os.path.join(tmp_dir, "emotion_compare.jsonl")))
