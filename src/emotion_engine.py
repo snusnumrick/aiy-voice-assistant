@@ -1040,3 +1040,70 @@ class NoOpEmotionEngine(EmotionEngine):
         async for _ in audio_chunks:
             pass
         return None
+
+
+async def main() -> int:
+    """CLI helper to test emotion detection on a local WAV file."""
+    import argparse
+
+    from dotenv import load_dotenv
+
+    from src.config import Config
+
+    load_dotenv()
+
+    parser = argparse.ArgumentParser(
+        description="Run the configured emotion engine against a local audio file."
+    )
+    parser.add_argument(
+        "audio_file",
+        help="Path to a local WAV/audio file to analyze",
+    )
+    parser.add_argument(
+        "--provider",
+        choices=["hume", "gemini", "none"],
+        help="Override emotion_engine_provider from config",
+    )
+    parser.add_argument(
+        "--comparison",
+        action="store_true",
+        help="Enable comparison mode using config defaults for shadow provider",
+    )
+    args = parser.parse_args()
+
+    config = Config()
+    config["emotion_detection_enabled"] = True
+    if args.provider:
+        config["emotion_engine_provider"] = args.provider
+    if args.comparison:
+        config["emotion_comparison_enabled"] = True
+
+    engine = create_emotion_engine(config)
+    result = await engine.detect(args.audio_file)
+
+    print(f"engine={engine.__class__.__name__}")
+    print(f"audio_file={args.audio_file}")
+    print(f"annotation={format_annotation(result)}")
+    if result is None:
+        print("result=None")
+    else:
+        print(
+            json.dumps(
+                {
+                    "top_emotions": result.top_emotions,
+                    "raw_scores": result.raw_scores,
+                    "confidence": result.confidence,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    raise SystemExit(asyncio.run(main()))
