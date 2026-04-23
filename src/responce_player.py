@@ -10,9 +10,10 @@ import queue
 import re
 import tempfile
 import threading
+import wave
 from dataclasses import dataclass
 from subprocess import Popen
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import play_wav_async
@@ -41,7 +42,7 @@ def emotions_prompt() -> str:
     )
 
 
-def extract_emotions(text: str) -> List[Tuple[Optional[dict], str]]:
+def extract_emotions(text: str) -> list[tuple[Optional[dict], str]]:
     """
     This function parses the given text and extracts 'emotion' dictionaries (if any) and the associated text following them.
     The structured data is returned as a list of tuples, each containing the dictionary and the corresponding text.
@@ -93,7 +94,7 @@ def language_prompt() -> str:
     )
 
 
-def extract_language(text: str, default_lang="ru") -> List[Tuple[str, str]]:
+def extract_language(text: str, default_lang="ru") -> list[tuple[str, str]]:
     """
     Parse text into (language, segment) tuples using $lang: <code>[$] markers.
 
@@ -106,7 +107,7 @@ def extract_language(text: str, default_lang="ru") -> List[Tuple[str, str]]:
 
     Any text before the first $lang: tag is attributed to default_lang.
     """
-    result: List[Tuple[str, str]] = []
+    result: list[tuple[str, str]] = []
 
     # Find all $lang: occurrences with an optional closing '$'
     tag_pattern = re.compile(r"\$lang:\s*([A-Za-z]+)\s*\$?", re.IGNORECASE)
@@ -136,7 +137,7 @@ def extract_language(text: str, default_lang="ru") -> List[Tuple[str, str]]:
     return result
 
 
-def adjust_rgb_brightness(rgb: List[int], brightness: str) -> Tuple[int, int, int]:
+def adjust_rgb_brightness(rgb: list[int], brightness: str) -> tuple[int, int, int]:
     """
     Adjusts the brightness of an RGB color.
 
@@ -177,6 +178,46 @@ def adjust_rgb_brightness(rgb: List[int], brightness: str) -> Tuple[int, int, in
     return r, g, b
 
 
+def get_wav_duration_seconds(filename: str) -> Optional[float]:
+    """Return WAV duration in seconds when available."""
+    try:
+        with wave.open(filename, "rb") as wav_file:
+            frame_rate = wav_file.getframerate()
+            if frame_rate <= 0:
+                return None
+            return wav_file.getnframes() / float(frame_rate)
+    except Exception as e:
+        logger.debug(f"Could not determine WAV duration for {filename}: {e}")
+        return None
+
+
+def adjust_light_for_audio_duration(
+    light: Optional[dict], duration_sec: Optional[float]
+) -> Optional[dict]:
+    """Speed up slow patterns so they remain visible on short clips."""
+    if not isinstance(light, dict) or duration_sec is None or duration_sec <= 0:
+        return light
+
+    behavior = light.get("behavior")
+    if behavior not in {"breathing", "blinking"}:
+        return light
+
+    period = light.get("period")
+    if not isinstance(period, (int, float)) or period <= 0 or duration_sec >= period:
+        return light
+
+    adjusted_light = dict(light)
+    adjusted_light["period"] = max(0.6, round(duration_sec, 2))
+    logger.debug(
+        "Adjusted %s light period from %s to %s for %.2fs audio clip",
+        behavior,
+        period,
+        adjusted_light["period"],
+        duration_sec,
+    )
+    return adjusted_light
+
+
 @dataclass
 class MergeItem:
     light: Optional[dict]
@@ -211,7 +252,7 @@ class ResponsePlayer:
         condition (threading.Condition): Condition variable for efficient thread synchronization.
     """
 
-    def __init__(self, playlist: List[Tuple[Optional[Dict], str, str]], leds: Leds, timezone: str):
+    def __init__(self, playlist: list[tuple[Optional[dict], str, str]], leds: Leds, timezone: str):
         """
         Initialize the ResponsePlayer.
 
@@ -234,7 +275,7 @@ class ResponsePlayer:
         self._should_play = False
         self._stopped = False
         self.current_light: Optional[dict] = None
-        self.wav_list: List[Tuple[str, str]] = []
+        self.wav_list: list[tuple[str, str]] = []
         self.wav_list_light = dict()
 
         # start with light off
@@ -248,7 +289,7 @@ class ResponsePlayer:
         for item in playlist:
             self.add(item)
 
-    def add(self, playitem: Tuple[Optional[Dict], str, str]) -> None:
+    def add(self, playitem: tuple[Optional[dict], str, str]) -> None:
         """
         Add a new item to the merge queue and start merging if necessary.
 
@@ -442,7 +483,10 @@ class ResponsePlayer:
             logger.info(f"({time_string_ms(self.timezone)}) Playing {audio_file} with {light}")
 
             prev_light = self.current_light
-            self.change_light_behavior(light)
+            play_light = adjust_light_for_audio_duration(
+                light, get_wav_duration_seconds(audio_file)
+            )
+            self.change_light_behavior(play_light)
             self.current_process = play_wav_async(audio_file)
             self.current_process.wait()
             self.current_process = None

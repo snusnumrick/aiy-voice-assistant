@@ -6,6 +6,8 @@ import sys
 import threading
 import time
 import unittest
+import wave
+from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 # Set up logging
@@ -30,8 +32,17 @@ sys.modules['geocoder'] = MagicMock()
 sys.modules['pydub'] = mock_pydub
 
 # Now it's safe to import from src
-from src.responce_player import ResponsePlayer, MergeItem, extract_emotions, extract_language, adjust_rgb_brightness, \
-    emotions_prompt, language_prompt
+from src.responce_player import (
+    MergeItem,
+    ResponsePlayer,
+    adjust_light_for_audio_duration,
+    adjust_rgb_brightness,
+    emotions_prompt,
+    extract_emotions,
+    extract_language,
+    get_wav_duration_seconds,
+    language_prompt,
+)
 
 
 class TestResponsePlayer(unittest.TestCase):
@@ -197,6 +208,42 @@ class TestHelperFunctions(unittest.TestCase):
             adjust_rgb_brightness(rgb, "dark"),
             adjust_rgb_brightness(rgb, "low"),
         )
+
+    def test_get_wav_duration_seconds(self):
+        wav_path = Path("tests/test_duration.wav")
+        with wave.open(str(wav_path), "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(16000)
+            wav_file.writeframes(b"\x00\x00" * 16000)
+
+        try:
+            self.assertAlmostEqual(get_wav_duration_seconds(str(wav_path)), 1.0, places=2)
+        finally:
+            wav_path.unlink(missing_ok=True)
+
+    def test_adjust_light_for_audio_duration_shortens_slow_pattern(self):
+        light = {
+            "color": [255, 80, 0],
+            "behavior": "breathing",
+            "brightness": "dark",
+            "period": 3,
+        }
+
+        adjusted = adjust_light_for_audio_duration(light, 1.25)
+
+        self.assertIsNot(adjusted, light)
+        self.assertEqual(adjusted["period"], 1.25)
+        self.assertEqual(adjusted["color"], light["color"])
+
+    def test_adjust_light_for_audio_duration_leaves_continuous_light_unchanged(self):
+        light = {
+            "color": [255, 0, 0],
+            "behavior": "continuous",
+            "brightness": "medium",
+            "period": 1,
+        }
+        self.assertEqual(adjust_light_for_audio_duration(light, 0.5), light)
 
     def test_emotions_prompt(self):
         prompt = emotions_prompt()

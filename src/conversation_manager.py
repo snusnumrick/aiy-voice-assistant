@@ -125,6 +125,26 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
     return modified_text, extracted_rules
 
 
+def split_complete_meta_tag_prefix(text: str) -> Tuple[str, str]:
+    """
+    Split text into a safe-to-process prefix and a trailing incomplete $... meta tag.
+
+    Streaming LLM responses can cut through tags like $emotion:...$ or $lang:...$.
+    We keep a trailing unmatched '$' section buffered until its closing '$' arrives,
+    so downstream parsing and history cleanup only see complete tags.
+    """
+    if not text:
+        return "", ""
+
+    if text.count("$") % 2 == 0:
+        return text, ""
+
+    last_dollar = text.rfind("$")
+    if last_dollar < 0:
+        return text, ""
+    return text[:last_dollar], text[last_dollar:]
+
+
 def _get_emotion_awareness_rule_russian() -> str:
     """Rule for interpreting emotion annotations in user messages."""
     return (
@@ -684,122 +704,135 @@ class ConversationManager:
                 }
             ]
 
+        def append_assistant_history(response_text: str) -> None:
+            if not response_text:
+                return
+            cleaned = clean_response(response_text)
+            if not cleaned:
+                return
+
+            if self.message_history[-1]["role"] != "assistant":
+                self.message_history.append({"role": "assistant", "content": cleaned})
+            else:
+                self.message_history[-1]["content"] += " " + cleaned
+
+        def process_response_text(response_text: str) -> List[List[Dict[str, Any]]]:
+            nonlocal buffer_chars
+
+            batches: List[List[Dict[str, Any]]] = []
+            append_assistant_history(response_text)
+
+            response_text, facts = extract_facts(response_text, self.timezone)
+            if facts:
+                self.facts += facts
+                self.save_facts(self.facts)
+                logger.debug(f"Extracted facts: {facts}")
+
+            response_text, rules = extract_rules(response_text)
+            self.rules += rules
+            self.save_rules(self.rules)
+
+            if rules:
+                logger.debug(f"Extracted rules: {rules}")
+
+            if response_text.strip() == "[[TOOL_USE]]":
+                logger.debug("Received tool use signal, flushing sentence buffer")
+                if buffer_enabled and sentence_buffer:
+                    logger.debug(
+                        f"Sentence buffer: tool use detected, flushing {len(sentence_buffer)} sentences "
+                        f"({buffer_chars} chars)"
+                    )
+                    batches.append(combine_buffer())
+                    sentence_buffer.clear()
+                    buffer_chars = 0
+                self.message_history.pop()
+                return batches
+
+            for emo, t in extract_emotions(response_text):
+                logger.debug(f"Emotion: {emo} -> {t}")
+                for lang, clean_text in extract_language(
+                    t, default_lang=self.current_language_code
+                ):
+                    logger.info(f"Language: {lang} -> {clean_text}")
+                    self.current_language_code = lang
+                    if text and clean_text:
+                        clean_text = fix_stress_marks_russian(clean_text)
+                        for clean_text in split_long_sentence(clean_text, max_length=245):
+                            sentence = {"emotion": emo, "language": lang, "text": clean_text}
+
+                            if not buffer_enabled:
+                                batches.append([sentence])
+                            else:
+                                sentence_len = len(clean_text)
+
+                                if (
+                                    sentence_buffer
+                                    and sentence_buffer[0]["language"] != lang
+                                ):
+                                    logger.debug(
+                                        f"Sentence buffer: language change {sentence_buffer[0]['language']} -> {lang}, "
+                                        f"flushing {len(sentence_buffer)} sentences"
+                                    )
+                                    batches.append(combine_buffer())
+                                    sentence_buffer.clear()
+                                    buffer_chars = 0
+
+                                if (
+                                    sentence_buffer
+                                    and sentence_buffer[0]["emotion"] != emo
+                                ):
+                                    logger.debug(
+                                        "Sentence buffer: emotion change %s -> %s, flushing %s sentences",
+                                        sentence_buffer[0]["emotion"],
+                                        emo,
+                                        len(sentence_buffer),
+                                    )
+                                    batches.append(combine_buffer())
+                                    sentence_buffer.clear()
+                                    buffer_chars = 0
+
+                                would_cross_unit = (
+                                    buffer_chars > 0 and buffer_chars + sentence_len > 250
+                                )
+                                would_exceed_max = buffer_chars + sentence_len > buffer_max_length
+
+                                if (would_cross_unit or would_exceed_max) and buffer_chars > 0:
+                                    logger.debug(
+                                        f"Sentence buffer: optimizing for billing units "
+                                        f"({buffer_chars}/{sentence_len}={buffer_chars + sentence_len} chars), "
+                                        f"yielding {len(sentence_buffer)} sentences"
+                                    )
+                                    batches.append(combine_buffer())
+                                    sentence_buffer.clear()
+                                    buffer_chars = 0
+
+                                sentence_buffer.append(sentence)
+                                buffer_chars += sentence_len
+                                logger.debug(
+                                    f"Sentence buffer: added ({sentence_len} chars, "
+                                    f"total: {buffer_chars}, count: {len(sentence_buffer)})"
+                                )
+
+            return batches
+
         try:
             whole_raw_response = ""
+            pending_response_text = ""
             async for response_text in self.ai_model.get_response_async(list(self.message_history)):
                 whole_raw_response += response_text
-                crt = clean_response(response_text)
-
-                if self.message_history[-1]["role"] != "assistant":
-                    self.message_history.append({"role": "assistant", "content": crt})
-                else:
-                    self.message_history[-1]["content"] += " " + crt
-
-                response_text, facts = extract_facts(response_text, self.timezone)
-                if facts:
-                    self.facts += facts
-                    self.save_facts(self.facts)
-                    logger.debug(f"Extracted facts: {facts}")
-
-                response_text, rules = extract_rules(response_text)
-                self.rules += rules
-                self.save_rules(self.rules)
-
-                if rules:
-                    logger.debug(f"Extracted rules: {rules}")
-
-                # Check if this is a tool use signal
-                if response_text.strip() == "[[TOOL_USE]]":
-                    logger.debug("Received tool use signal, flushing sentence buffer")
-                    # Flush buffer immediately when tool is about to be used
-                    if buffer_enabled and sentence_buffer:
-                        logger.debug(
-                            f"Sentence buffer: tool use detected, flushing {len(sentence_buffer)} sentences "
-                            f"({buffer_chars} chars)"
-                        )
-                        yield combine_buffer()
-                        sentence_buffer.clear()
-                        buffer_chars = 0
-                    # remove from history
-                    self.message_history.pop()
-                    # Don't process further
+                pending_response_text += response_text
+                response_text, pending_response_text = split_complete_meta_tag_prefix(
+                    pending_response_text
+                )
+                if not response_text:
                     continue
-
-                # Process emotions and language for this sentence
-                for emo, t in extract_emotions(response_text):
-                    logger.debug(f"Emotion: {emo} -> {t}")
-                    for lang, clean_text in extract_language(
-                        t, default_lang=self.current_language_code
-                    ):
-                        logger.info(f"Language: {lang} -> {clean_text}")
-                        self.current_language_code = lang
-                        if text and clean_text:
-                            clean_text = fix_stress_marks_russian(clean_text)
-                            for clean_text in split_long_sentence(clean_text, max_length=245):
-                                sentence = {"emotion": emo, "language": lang, "text": clean_text}
-
-                                if not buffer_enabled:
-                                    # No buffering, yield immediately
-                                    yield [sentence]
-                                else:
-                                    sentence_len = len(clean_text)
-
-                                    # Flush if language changes — never mix languages in one TTS call
-                                    if (
-                                        sentence_buffer
-                                        and sentence_buffer[0]["language"] != lang
-                                    ):
-                                        logger.debug(
-                                            f"Sentence buffer: language change {sentence_buffer[0]['language']} -> {lang}, "
-                                            f"flushing {len(sentence_buffer)} sentences"
-                                        )
-                                        yield combine_buffer()
-                                        sentence_buffer.clear()
-                                        buffer_chars = 0
-
-                                    # Flush if emotion changes so LED state changes are preserved.
-                                    if (
-                                        sentence_buffer
-                                        and sentence_buffer[0]["emotion"] != emo
-                                    ):
-                                        logger.debug(
-                                            "Sentence buffer: emotion change %s -> %s, flushing %s sentences",
-                                            sentence_buffer[0]["emotion"],
-                                            emo,
-                                            len(sentence_buffer),
-                                        )
-                                        yield combine_buffer()
-                                        sentence_buffer.clear()
-                                        buffer_chars = 0
-
-                                    # Check if adding this sentence would cross a billing unit boundary
-                                    # (Yandex v3 charges per 250-char unit)
-                                    would_cross_unit = (
-                                        buffer_chars > 0 and buffer_chars + sentence_len > 250
-                                    )
-
-                                    # Also flush if max_length exceeded (safety check)
-                                    would_exceed_max = buffer_chars + sentence_len > buffer_max_length
-
-                                    # Flush if we should cross a unit boundary or exceed max_length
-                                    if (would_cross_unit or would_exceed_max) and buffer_chars > 0:
-                                        logger.debug(
-                                            f"Sentence buffer: optimizing for billing units "
-                                            f"({buffer_chars}/{sentence_len}={buffer_chars + sentence_len} chars), "
-                                            f"yielding {len(sentence_buffer)} sentences"
-                                        )
-                                        yield combine_buffer()
-                                        sentence_buffer.clear()
-                                        buffer_chars = 0
-
-                                    # Add sentence to buffer
-                                    sentence_buffer.append(sentence)
-                                    buffer_chars += sentence_len
-                                    logger.debug(
-                                        f"Sentence buffer: added ({sentence_len} chars, "
-                                        f"total: {buffer_chars}, count: {len(sentence_buffer)})"
-                                    )
+                for batch in process_response_text(response_text):
+                    yield batch
             logger.info(f"full LLM Response: {whole_raw_response}")
+
+            if pending_response_text:
+                for batch in process_response_text(pending_response_text):
+                    yield batch
 
             # Flush remaining buffer at the end
             if buffer_enabled and sentence_buffer:

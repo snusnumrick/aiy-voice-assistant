@@ -83,6 +83,41 @@ class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(batches[2]["emotion"]["light"]["color"], [0, 100, 255])
         self.assertEqual(batches[3]["emotion"], {})
 
+    async def test_buffer_preserves_emotion_after_plain_text_when_stream_splits_inside_tag(self):
+        chunks = [
+            '$lang: ru$ Ну что, справедливо.$emotion:{"light":{"color":[255,80,0],',
+            '"behavior":"breathing","brightness":"dark","period":3}, "voice":{"tone":"plain"}}$ '
+            'Сказал — не подумав, попался.Буду стараться.',
+        ]
+
+        with patch("src.conversation_manager.WebSearcher"):
+            with patch("src.conversation_manager.ClaudeAIModel"):
+                with patch("src.conversation_manager.get_location", return_value="In Test."):
+                    with patch("src.conversation_manager.get_tool_usage_stats", return_value=None):
+                        with patch.object(ConversationManager, "load_facts", return_value=[]):
+                            with patch.object(ConversationManager, "load_rules", return_value=[]):
+                                manager = ConversationManager(
+                                    self._config(),
+                                    _StreamingModel(chunks),
+                                    timezone="UTC",
+                                    enabled_tools=[],
+                                )
+
+        batches = []
+        async for batch in manager.get_response("Проверь эмоцию"):
+            batches.extend(batch)
+
+        self.assertEqual(
+            [item["text"] for item in batches],
+            [
+                "Ну что, справедливо.",
+                "Сказал — не подумав, попался.Буду стараться.",
+            ],
+        )
+        self.assertIsNone(batches[0]["emotion"])
+        self.assertEqual(batches[1]["emotion"]["light"]["color"], [255, 80, 0])
+        self.assertEqual(batches[1]["emotion"]["light"]["brightness"], "dark")
+
 
 if __name__ == "__main__":
     unittest.main()
