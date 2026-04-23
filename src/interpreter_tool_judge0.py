@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import aiohttp
 
@@ -68,14 +68,14 @@ The result is JSON dictionary with keys stdout and stderr.
         self.api_base = config.get(
             "judge0_api_base", "https://judge0-ce.p.rapidapi.com"
         )
-        self.headers: Dict[str, str] = {
+        self.headers: dict[str, str] = {
             "x-rapidapi-host": "judge0-ce.p.rapidapi.com",
             "x-rapidapi-key": self.api_key,
             "Content-Type": "application/json",
         }
         self.python_language_id: int = 71
 
-    async def execute_code_async(self, parameters: Dict[str, Any]) -> str:
+    async def execute_code_async(self, parameters: dict[str, Any]) -> str:
         if "code" not in parameters:
             logger.error("Missing 'code' parameter")
             return "Error: Missing required parameter 'code'"
@@ -112,8 +112,8 @@ The result is JSON dictionary with keys stdout and stderr.
             return f"Error: An unexpected error occurred - {e}"
 
     async def _create_submission(
-        self, data: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+        self, data: dict[str, Any]
+    ) -> Optional[dict[str, Any]]:
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.api_base}/submissions?base64_encoded=false&wait=false",
@@ -127,7 +127,7 @@ The result is JSON dictionary with keys stdout and stderr.
                     logger.error(f"Failed to create submission: {response.status}")
                     return None
 
-    async def _get_submission_result(self, token: str) -> Optional[Dict[str, Any]]:
+    async def _get_submission_result(self, token: str) -> Optional[dict[str, Any]]:
         max_attempts = 10
         for attempt in range(max_attempts):
             async with aiohttp.ClientSession() as session:
@@ -152,7 +152,7 @@ The result is JSON dictionary with keys stdout and stderr.
         logger.error("Max attempts reached while waiting for submission result")
         return None
 
-    def _format_result(self, result: Dict[str, Any]) -> str:
+    def _format_result(self, result: dict[str, Any]) -> str:
         formatted_result = f"Status: {result['status']['description']}\n"
 
         if result.get("compile_output"):
@@ -175,7 +175,7 @@ The result is JSON dictionary with keys stdout and stderr.
                 return lang["name"]
         return "Python version information not found"
 
-    async def get_languages(self) -> List[Dict[str, Any]]:
+    async def get_languages(self) -> list[dict[str, Any]]:
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 f"{self.api_base}/languages",

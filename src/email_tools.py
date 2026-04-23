@@ -5,7 +5,6 @@ from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Dict
 
 if __name__ == "__main__":
     # add the current directory to the python path
@@ -283,7 +282,7 @@ class SendEmailTool:
             required=["subject", "body"],
         )
 
-    async def do_send_email(self, parameters: Dict[str, any]):
+    async def do_send_email(self, parameters: dict[str, any]):
         logger.info(f"Sending email {parameters}")
         subject = parameters.get("subject", "")
         body = parameters.get("body", "")

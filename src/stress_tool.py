@@ -1,5 +1,4 @@
 import logging
-from typing import Dict
 
 import aiohttp
 
@@ -95,7 +94,7 @@ class StressTool:
     def _stop_processing(self):
         pass
 
-    def do_stress(self, parameters: Dict[str, any]) -> str:
+    def do_stress(self, parameters: dict[str, any]) -> str:
         if "word" in parameters:
             self._start_processing()
             import requests
@@ -114,7 +113,7 @@ class StressTool:
         logger.error(f"missing parameter word: {parameters}")
         return ""
 
-    async def do_stress_async(self, parameters: Dict[str, any]) -> str:
+    async def do_stress_async(self, parameters: dict[str, any]) -> str:
         if "word" in parameters:
             self._start_processing()
             async with aiohttp.ClientSession() as session:

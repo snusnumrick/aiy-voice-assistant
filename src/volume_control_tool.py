@@ -21,7 +21,7 @@ import logging
 import os
 import subprocess
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
@@ -70,7 +70,7 @@ class VolumeControlTool:
         if not self.volume_state_file or not os.path.exists(self.volume_state_file):
             return None
         try:
-            with open(self.volume_state_file, "r", encoding="utf-8") as f:
+            with open(self.volume_state_file, encoding="utf-8") as f:
                 data = json.load(f)
             vol = data.get("volume")
             if isinstance(vol, int):
@@ -107,7 +107,7 @@ class VolumeControlTool:
         timer.daemon = True
         timer.start()
 
-    def _get_available_controls(self) -> List[str]:
+    def _get_available_controls(self) -> list[str]:
         """
         Retrieve a list of available volume controls on the system.
 
@@ -203,7 +203,7 @@ Returns the new volume level after adjustment.
             }
         )
 
-    async def adjust_volume(self, parameters: Dict[str, Any]) -> str:
+    async def adjust_volume(self, parameters: dict[str, Any]) -> str:
         """
         Adjust the volume based on the provided parameters.
 

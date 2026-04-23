@@ -9,7 +9,7 @@ Backward compatible with both Pydantic v1 and v2.
 import json
 import logging
 import os
-from typing import Any, Dict
+from typing import Any
 
 # Try to import Pydantic v2 first, fall back to v1
 try:
@@ -143,7 +143,7 @@ class Config(BaseModel):
         """
         return hasattr(self, key)
 
-    def model_dump(self, **kwargs) -> Dict[str, Any]:
+    def model_dump(self, **kwargs) -> dict[str, Any]:
         """
         Get a dictionary representation of the configuration.
 

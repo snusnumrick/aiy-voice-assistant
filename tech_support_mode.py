@@ -372,14 +372,12 @@ def check_tech_support_mode():
 
             # Monitor button state during blinking period
             tech_support_activated = False
-            button_held = False
             check_interval = 0.1  # Check every 100ms
             max_wait_time = 5.0  # Wait up to 5 seconds
             elapsed_time = 0
 
             while elapsed_time < max_wait_time:
                 if board.button.state == ButtonState.PRESSED:
-                    button_held = True
                     logger.info("Button detected as PRESSED")
                     play_audio_cue('pressed')
 
@@ -541,7 +539,7 @@ def check_tech_support_mode():
                                 logger.info("Disabling Tailscale VPN...")
                                 try:
                                     subprocess.run(["sudo", "tailscale", "down"], check=False)
-                                except:
+                                except Exception:
                                     pass
                                 logger.info("Tailscale VPN disabled.")
 
@@ -563,7 +561,7 @@ def check_tech_support_mode():
                     logger.info("Shutting down Tailscale VPN...")
                     try:
                         subprocess.run(["sudo", "tailscale", "down"], check=False)
-                    except:
+                    except Exception:
                         pass
                     logger.info("Tailscale VPN disabled.")
                     logger.info("Cleaning up resources...")
@@ -602,7 +600,7 @@ def check_tech_support_mode():
             with Leds() as leds:
                 leds.update(Leds.rgb_off())
                 logger.info("LED turned OFF")
-        except:
+        except Exception:
             pass
         # On error, exit normally and let startup continue
         sys.exit(0)
@@ -619,4 +617,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

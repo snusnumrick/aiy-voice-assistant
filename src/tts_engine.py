@@ -32,7 +32,7 @@ import time
 from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum, IntEnum
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import aiofiles
 import aiohttp
@@ -52,12 +52,15 @@ except (ImportError, ModuleNotFoundError):
     HTTP_CLIENT_AVAILABLE = False
     logger.info("aiohttp not available - using synchronous speechkit")
 
-if __name__ == "__main__":
-    # add current directory to python path
+try:
+    from src.config import Config
+    from src.tools import NonRetryableError, retry_async
+except ModuleNotFoundError:
+    if __name__ != "__main__":
+        raise
     sys.path.append(os.getcwd())
-
-from src.config import Config
-from src.tools import NonRetryableError, retry_async
+    from src.config import Config
+    from src.tools import NonRetryableError, retry_async
 
 # Set up TTS usage logger
 TTS_USAGE_LOG = os.environ.get('APP_LOG_DIR', 'logs') + '/tts_usage.log'
@@ -901,7 +904,7 @@ class ElevenLabsTTSEngine(TTSEngine):
     @retry_async()
     async def _get_history_items_async(
         self, session: aiohttp.ClientSession, voice_id: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Asynchronously retrieve history items for a specific voice from ElevenLabs API.
 
@@ -929,7 +932,7 @@ class ElevenLabsTTSEngine(TTSEngine):
                     f"Failed to get history items: {response.status} - {await response.text()}"
                 )
 
-    def _get_history_items(self, voice_id: str) -> List[Dict[str, Any]]:
+    def _get_history_items(self, voice_id: str) -> list[dict[str, Any]]:
         """
         Retrieve history items for a specific voice from ElevenLabs API.
 

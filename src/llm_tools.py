@@ -1,26 +1,24 @@
-# -*- coding: utf-8 -*-
 import asyncio
 import json
 import logging
 import re
 from collections import deque
-from typing import Deque, List
+from typing import Any
 
 from src.ai_models import AIModel, ClaudeAIModel
 from src.config import Config
 from src.tools import (
-    format_message_history,
     extract_json,
+    format_message_history,
     get_current_datetime_english,
-    get_timezone,
 )
 
 logger = logging.getLogger(__name__)
 
 
 async def summarize_and_compress_history(
-    message_history: Deque, ai_model: AIModel, config: Config
-) -> Deque:
+    message_history: deque[dict[str, Any]], ai_model: AIModel, config: Config
+) -> deque[dict[str, Any]]:
     """
     Summarizes and compresses a history of messages.
 
@@ -81,8 +79,8 @@ async def summarize_and_compress_history(
 
 
 async def optimize_rules(
-    hard_rules: str, soft_rules: List[str], config: Config
-) -> List[str]:
+    hard_rules: str, soft_rules: list[str], config: Config
+) -> list[str]:
     """
     :param hard_rules: A list of hard rules.
     :param soft_rules: A list of soft rules in JSON format.
@@ -147,7 +145,7 @@ async def optimize_rules(
     return new_rules
 
 
-async def optimize_facts(facts: List[str], config: Config, timezone: str) -> List[str]:
+async def optimize_facts(facts: list[str], config: Config, timezone: str) -> list[str]:
     """
     Optimizes facts using LLM-only approach:
     - Simpler and more accurate than keyword-based scoring
@@ -265,12 +263,12 @@ Return ONLY JSON array from facts list above. No other text.
                         'sep': 9, 'sept': 9, 'oct': 10, 'nov': 11, 'dec': 12,
                         # English full names
                         'january': 1, 'february': 2, 'march': 3, 'april': 4,
-                        'may': 5, 'june': 6, 'july': 7, 'august': 8,
+                        'june': 6, 'july': 7, 'august': 8,
                         'september': 9, 'october': 10, 'november': 11, 'december': 12
                     }
                     month = month_map.get(month_name.lower(), 1)
                     return datetime(int(year), month, int(day))
-                except:
+                except Exception:
                     return datetime(1900, 1, 1)  # Oldest date if parsing fails
             return datetime(1900, 1, 1)
 

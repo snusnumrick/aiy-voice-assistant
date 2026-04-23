@@ -18,7 +18,7 @@ import time
 from collections import deque
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -55,7 +55,7 @@ from src.web_search import WebSearcher
 logger = logging.getLogger(__name__)
 
 
-def extract_facts(text: str, timezone: str) -> Tuple[str, List[str]]:
+def extract_facts(text: str, timezone: str) -> tuple[str, list[str]]:
     """
     Extract facts from the input text and return the modified text and a list of extracted facts.
 
@@ -90,7 +90,7 @@ def extract_facts(text: str, timezone: str) -> Tuple[str, List[str]]:
     return modified_text, extracted_facts
 
 
-def extract_rules(text: str) -> Tuple[str, List[str]]:
+def extract_rules(text: str) -> tuple[str, list[str]]:
     """
     Extract rules from the input text and return the modified text and a list of extracted rules.
 
@@ -125,7 +125,7 @@ def extract_rules(text: str) -> Tuple[str, List[str]]:
     return modified_text, extracted_rules
 
 
-def split_complete_meta_tag_prefix(text: str) -> Tuple[str, str]:
+def split_complete_meta_tag_prefix(text: str) -> tuple[str, str]:
     """
     Split text into a safe-to-process prefix and a trailing incomplete $... meta tag.
 
@@ -241,7 +241,11 @@ class ConversationManager:
     """
 
     def __init__(
-        self, config, ai_model: AIModel, timezone: str, enabled_tools: Optional[List] = None,
+        self,
+        config,
+        ai_model: AIModel,
+        timezone: str,
+        enabled_tools: Optional[list[Any]] = None,
         tts_engine=None,
     ):
         """
@@ -260,7 +264,7 @@ class ConversationManager:
         self.ai_model = ai_model
         self.summarize_model = ClaudeAIModel(config)
         self.facts = self.load_facts()
-        self.rules: List[str] = self.load_rules()
+        self.rules: list[str] = self.load_rules()
         self.location = get_location()
         self.timezone = timezone
         self.current_language_code = "ru"
@@ -340,7 +344,7 @@ class ConversationManager:
             self.tool_rules_language = "russian"
 
         self.hard_rules = self._build_hard_rules()
-        self.ephemeral_facts: List[str] = []
+        self.ephemeral_facts: list[str] = []
 
         use_structured_system_payload = (
             self.optimize_prompt_split_dynamic and hasattr(self.ai_model, "set_request_options")
@@ -348,7 +352,7 @@ class ConversationManager:
         initial_system_for_history = (
             self._system_prompt_body() if use_structured_system_payload else self.get_system_prompt()
         )
-        self.message_history: Deque[dict] = deque(
+        self.message_history: deque[dict[str, Any]] = deque(
             [{"role": "system", "content": initial_system_for_history}]
         )
         if use_structured_system_payload:
@@ -504,13 +508,15 @@ class ConversationManager:
     def get_system_prompt(self):
         return self._system_prompt_context_prefix() + self._system_prompt_body()
 
-    def get_system_prompt_parts(self) -> Tuple[str, str]:
+    def get_system_prompt_parts(self) -> tuple[str, str]:
         """
         Return (static_body, dynamic_context).
         """
         return self._system_prompt_body(), self._system_prompt_context_prefix()
 
-    def _build_runtime_system_blocks(self, no_cache: bool = False) -> Optional[List[Dict[str, Any]]]:
+    def _build_runtime_system_blocks(
+        self, no_cache: bool = False
+    ) -> Optional[list[dict[str, Any]]]:
         if not self.optimize_prompt_split_dynamic:
             return None
         static_body, dynamic_context = self.get_system_prompt_parts()
@@ -563,7 +569,7 @@ class ConversationManager:
         tool = self.enabled_tools_by_name.get("control_speaker_volume")
         if not tool:
             return None
-        params: Dict[str, Any] = {"action": intent.action}
+        params: dict[str, Any] = {"action": intent.action}
         if intent.value is not None:
             params["value"] = intent.value
         try:
@@ -605,7 +611,9 @@ class ConversationManager:
             usage.get("cache_read_input_tokens", 0),
         )
 
-    async def get_response(self, text: str, no_cache: bool = False) -> AsyncGenerator[List[Dict[str, Any]], None]:
+    async def get_response(
+        self, text: str, no_cache: bool = False
+    ) -> AsyncGenerator[list[dict[str, Any]], None]:
         """
         Get an AI response based on the current conversation state and new input.
 
@@ -686,10 +694,10 @@ class ConversationManager:
                 )
 
         # Buffer for combining sentences
-        sentence_buffer: List[Dict[str, Any]] = []
+        sentence_buffer: list[dict[str, Any]] = []
         buffer_chars = 0
 
-        def combine_buffer() -> List[Dict[str, Any]]:
+        def combine_buffer() -> list[dict[str, Any]]:
             """Combine buffered sentences into one."""
             if not sentence_buffer:
                 return []
@@ -716,10 +724,10 @@ class ConversationManager:
             else:
                 self.message_history[-1]["content"] += " " + cleaned
 
-        def process_response_text(response_text: str) -> List[List[Dict[str, Any]]]:
+        def process_response_text(response_text: str) -> list[list[dict[str, Any]]]:
             nonlocal buffer_chars
 
-            batches: List[List[Dict[str, Any]]] = []
+            batches: list[list[dict[str, Any]]] = []
             append_assistant_history(response_text)
 
             response_text, facts = extract_facts(response_text, self.timezone)
@@ -980,7 +988,7 @@ class ConversationManager:
 
         if self.config.get("clean_message_history_at_night", True) or force:
             # cleanup conversation
-            self.message_history: Deque[dict] = deque(
+            self.message_history: deque[dict[str, Any]] = deque(
                 [{"role": "system", "content": self.get_system_prompt()}]
             )
             # Clear ephemeral facts during nightly cleanup.
@@ -1049,7 +1057,7 @@ class ConversationManager:
     @staticmethod
     def load_facts():
         try:
-            with open("facts.json", "r") as f:
+            with open("facts.json") as f:
                 return json.load(f)
         except FileNotFoundError:
             return []
@@ -1063,9 +1071,9 @@ class ConversationManager:
             json.dump(facts, f, ensure_ascii=False, indent=4)
 
     @staticmethod
-    def load_rules() -> List[str]:
+    def load_rules() -> list[str]:
         try:
-            with open("rules.json", "r") as f:
+            with open("rules.json") as f:
                 result = json.load(f)
                 if isinstance(result, dict):
                     result = result["rules"]
@@ -1083,8 +1091,8 @@ class ConversationManager:
 
 
 async def test():
-    from src.config import Config
     from src.ai_models_with_tools import ClaudeAIModelWithTools
+    from src.config import Config
 
     config = Config()
     timezone = get_timezone()

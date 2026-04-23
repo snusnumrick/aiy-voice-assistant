@@ -8,9 +8,8 @@ enabled via config flags without changing default behavior.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Optional, Set
-
 
 # Tool profile names
 PROFILE_ALL_TOOLS = "all_tools"
@@ -71,7 +70,7 @@ class VolumeIntent:
     """Represents a deterministic speaker volume intent."""
 
     action: str
-    value: Optional[int] = None
+    value: int | None = None
 
 
 def wants_detailed_response(text: str) -> bool:
@@ -138,7 +137,7 @@ def classify_tool_profile(text: str, default_profile: str = PROFILE_CHAT_ONLY) -
     return default_profile
 
 
-def resolve_tools_for_profile(profile: str, available_tool_names: Iterable[str]) -> Set[str]:
+def resolve_tools_for_profile(profile: str, available_tool_names: Iterable[str]) -> set[str]:
     """
     Resolve profile name to concrete tool names that exist in this runtime.
     """
@@ -150,7 +149,7 @@ def resolve_tools_for_profile(profile: str, available_tool_names: Iterable[str])
     return available.intersection(requested)
 
 
-def parse_volume_intent(text: str) -> Optional[VolumeIntent]:
+def parse_volume_intent(text: str) -> VolumeIntent | None:
     """
     Parse deterministic volume commands from natural language.
 

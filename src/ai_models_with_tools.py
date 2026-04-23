@@ -13,7 +13,7 @@ import logging
 import os
 import sys
 from collections.abc import AsyncGenerator, Coroutine
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import aiohttp  # ty:ignore[unresolved-import]
 from pydantic import BaseModel, Field
@@ -60,10 +60,10 @@ class Tool(BaseModel):
     name: str
     description: str
     iterative: bool
-    parameters: List[ToolParameter]
-    processor: Callable[[Dict[str, Any]], Coroutine[Any, Any, str]]
-    required: List[str] = Field(default_factory=list)
-    rule_instructions: Dict[str, str] = Field(default_factory=dict)
+    parameters: list[ToolParameter]
+    processor: Callable[[dict[str, Any]], Coroutine[Any, Any, str]]
+    required: list[str] = Field(default_factory=list)
+    rule_instructions: dict[str, str] = Field(default_factory=dict)
     # When true, this tool is eligible to call Claude code_execution in programmatic mode.
     programmatic_code_execution_candidate: bool = False
 
@@ -84,7 +84,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
     """
 
     def __init__(
-        self, config: Config, timezone: str = "", tools: Optional[List[Tool]] = None
+        self, config: Config, timezone: str = "", tools: Optional[list[Tool]] = None
     ) -> None:
         """
         Initialize the ClaudeAIModelWithTools instance.
@@ -122,7 +122,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             "claude_programmatic_allowed_callers",
             [self.programmatic_code_execution_type],
         )
-        configured_items: List[str]
+        configured_items: list[str]
         if isinstance(configured_callers, list):
             configured_items = [str(caller).strip() for caller in configured_callers]
         elif configured_callers is None:
@@ -141,7 +141,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 invalid_callers,
                 sorted(VALID_PROGRAMMATIC_ALLOWED_CALLERS),
             )
-        self.programmatic_candidate_allowed_callers: List[str] = []
+        self.programmatic_candidate_allowed_callers: list[str] = []
         seen_valid_callers = set()
         for caller in configured_items:
             if (
@@ -167,10 +167,10 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         # Per-request runtime overrides (set by ConversationManager).
         self._runtime_tool_names: Optional[set] = None
         self._runtime_response_max_tokens: Optional[int] = None
-        self._runtime_system_blocks: Optional[List[Dict[str, Any]]] = None
+        self._runtime_system_blocks: Optional[list[dict[str, Any]]] = None
         self._usage_depth = 0
-        self._turn_usage_accumulator: Dict[str, int] = self._new_usage_totals()
-        self._last_turn_usage: Optional[Dict[str, int]] = None
+        self._turn_usage_accumulator: dict[str, int] = self._new_usage_totals()
+        self._last_turn_usage: Optional[dict[str, int]] = None
         self._last_turn_cost_usd: Optional[float] = None
 
         # Optional prompt caching/programmatic beta headers; default off.
@@ -198,7 +198,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
         if config.get("claude_use_search", False):
             # Build user_location for Claude web_search tool
-            def _build_user_location(timezone: str) -> Dict:
+            def _build_user_location(timezone: str) -> dict:
                 try:
                     import geocoder  # lazy import to avoid test import issues
 
@@ -230,7 +230,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self,
         tool_names: Optional[set] = None,
         response_max_tokens: Optional[int] = None,
-        system_blocks: Optional[List[Dict[str, Any]]] = None,
+        system_blocks: Optional[list[dict[str, Any]]] = None,
     ) -> None:
         """Set one-turn runtime options."""
         self._runtime_tool_names = tool_names
@@ -244,8 +244,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self._runtime_system_blocks = None
 
     @staticmethod
-    def _merge_beta_headers(values: List[str]) -> str:
-        merged: List[str] = []
+    def _merge_beta_headers(values: list[str]) -> str:
+        merged: list[str] = []
         seen = set()
         for value in values:
             if not value:
@@ -268,20 +268,20 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
     def _build_programmatic_code_execution_tool(
         self, active_custom_tool_names: Optional[set]
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[dict[str, Any]]:
         if not self.programmatic_tool_calling_enabled:
             return None
         has_candidate = self._has_active_programmatic_candidate(active_custom_tool_names)
         if self.programmatic_require_eligible_tools and not has_candidate:
             return None
-        code_execution_tool: Dict[str, Any] = {
+        code_execution_tool: dict[str, Any] = {
             "type": self.programmatic_code_execution_type,
             "name": self.programmatic_code_execution_name,
             "allowed_callers": list(DEFAULT_PROGRAMMATIC_CODE_EXECUTION_ALLOWED_CALLERS),
         }
         return code_execution_tool
 
-    def _decorate_programmatic_candidate_tool(self, tool_desc: Dict[str, Any]) -> Dict[str, Any]:
+    def _decorate_programmatic_candidate_tool(self, tool_desc: dict[str, Any]) -> dict[str, Any]:
         """
         Constrain candidate tools to preferred callers in programmatic mode.
         """
@@ -294,9 +294,9 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         updated["allowed_callers"] = list(self.programmatic_candidate_allowed_callers)
         return updated
 
-    def _get_runtime_tools_description(self) -> List[Dict]:
+    def _get_runtime_tools_description(self) -> list[dict]:
         allowed = set(self._runtime_tool_names) if self._runtime_tool_names is not None else None
-        filtered: List[Dict] = []
+        filtered: list[dict] = []
         for desc in self.tools_description:
             desc_name = desc.get("name")
             desc_type = desc.get("type")
@@ -328,7 +328,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 filtered.append(programmatic_tool)
         return filtered
 
-    def _append_programmatic_tool_followup_message(self, message_list: List[Dict[str, Any]]) -> None:
+    def _append_programmatic_tool_followup_message(self, message_list: list[dict[str, Any]]) -> None:
         """
         Programmatic tool calling requires the final input message to be user text
         after tool_result. Add a short follow-up user message when enabled.
@@ -353,8 +353,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         message_list.append({"role": "user", "content": self.programmatic_tool_followup_text})
 
     def _apply_hybrid_message_cache_breakpoint(
-        self, non_system_message: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, non_system_message: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """
         Add a cache breakpoint in message history for long conversations.
 
@@ -425,7 +425,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         return messages
 
     @staticmethod
-    def _new_usage_totals() -> Dict[str, int]:
+    def _new_usage_totals() -> dict[str, int]:
         return {
             "input_tokens": 0,
             "output_tokens": 0,
@@ -433,7 +433,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             "cache_read_input_tokens": 0,
         }
 
-    def _merge_usage(self, usage: Dict[str, Any]) -> None:
+    def _merge_usage(self, usage: dict[str, Any]) -> None:
         if not isinstance(usage, dict):
             return
         for key in self._turn_usage_accumulator.keys():
@@ -445,7 +445,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             except Exception:
                 continue
 
-    def _record_usage_from_event(self, event: Dict[str, Any]) -> None:
+    def _record_usage_from_event(self, event: dict[str, Any]) -> None:
         if not isinstance(event, dict):
             return
         self._merge_usage(event.get("usage", {}))
@@ -456,7 +456,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         if isinstance(delta, dict):
             self._merge_usage(delta.get("usage", {}))
 
-    def _get_claude_cost_rates(self) -> Dict[str, float]:
+    def _get_claude_cost_rates(self) -> dict[str, float]:
         return {
             "input_tokens": float(self.config.get("claude_cost_input_per_million", 0.0)),
             "output_tokens": float(self.config.get("claude_cost_output_per_million", 0.0)),
@@ -466,7 +466,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             "cache_read_input_tokens": float(self.config.get("claude_cost_cache_read_per_million", 0.0)),
         }
 
-    def _compute_turn_cost_usd(self, usage: Dict[str, int]) -> Optional[float]:
+    def _compute_turn_cost_usd(self, usage: dict[str, int]) -> Optional[float]:
         rates = self._get_claude_cost_rates()
         if not any(v > 0 for v in rates.values()):
             return None
@@ -476,7 +476,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             total += (float(usage.get(key, 0)) / scale) * rate_per_million
         return total
 
-    def get_last_turn_usage(self) -> Optional[Dict[str, int]]:
+    def get_last_turn_usage(self) -> Optional[dict[str, int]]:
         if self._last_turn_usage is None:
             return None
         return dict(self._last_turn_usage)
@@ -485,7 +485,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         return self._last_turn_cost_usd
 
     @staticmethod
-    def _create_tools_description(tools: List[Tool]) -> List[Dict]:
+    def _create_tools_description(tools: list[Tool]) -> list[dict]:
         """
         Create a list of tool descriptions for the AI model.
 
@@ -534,7 +534,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 response_text += self._process_tool_use(content, messages)
         return response_text
 
-    def _process_tool_use(self, content: Dict, messages: List[Dict[str, Any]]) -> str:
+    def _process_tool_use(self, content: dict, messages: list[dict[str, Any]]) -> str:
         """Process a tool use request and generate a response."""
         tool_name = content["name"]
         tool_use_id = content["id"]
@@ -562,7 +562,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
 
     @retry_async_generator()
     async def _get_response_async(
-        self, messages: List[Dict[str, Any]], streaming=False
+        self, messages: list[dict[str, Any]], streaming=False
     ) -> AsyncGenerator[dict, None]:
         """
         Asynchronously get responses from the AI model.
@@ -689,7 +689,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 self._last_turn_cost_usd = self._compute_turn_cost_usd(self._last_turn_usage)
 
     async def _get_response_async_plain(
-        self, messages: List[Dict[str, str]]
+        self, messages: list[dict[str, str]]
     ) -> AsyncGenerator[str, None]:
         """Generate a plain (non-streaming) response asynchronously."""
         message_list = [m for m in messages]
@@ -721,7 +721,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                         yield response
 
     async def _process_tool_use_async(
-        self, content: Dict, message_list: List[Dict[str, Any]]
+        self, content: dict, message_list: list[dict[str, Any]]
     ) -> AsyncGenerator[str, None]:
         """Process a tool use request asynchronously and generate a response."""
         tool_name = content["name"]
@@ -749,7 +749,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 yield response
 
     async def _get_response_async_streaming(
-        self, messages: List[Dict[str, Any]], _is_continuation: bool = False
+        self, messages: list[dict[str, Any]], _is_continuation: bool = False
     ) -> AsyncGenerator[str, None]:
         """
         Generate a streaming response asynchronously.
@@ -772,7 +772,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         yielded_text = ""    # accumulate actual text sentences for continuation
 
         async def process_content_block_delta(
-            _event: Dict, _current_tool_use: Optional[Dict] = None
+            _event: dict, _current_tool_use: Optional[dict] = None
         ) -> AsyncGenerator[str, None]:
             """
             Process a content block delta event.
@@ -803,7 +803,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                         "input",
                     ) + delta.get("partial_json", "")
 
-        def process_content_block_start(_event: Dict) -> Optional[Dict]:
+        def process_content_block_start(_event: dict) -> Optional[dict]:
             """
             Process a content block start event.
 
@@ -824,9 +824,9 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             return None
 
         async def process_content_block_stop(
-            _current_tool_use: Optional[Dict],
+            _current_tool_use: Optional[dict],
             _current_text: str,
-            _message_list: List[Dict[str, str]],
+            _message_list: list[dict[str, str]],
         ) -> AsyncGenerator[str, None]:
             """
             Process a content block stop event.
@@ -850,7 +850,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     yield r
 
         async def process_message_stop(
-            _message_list: List[Dict[str, str]], _assistant_message: str
+            _message_list: list[dict[str, str]], _assistant_message: str
         ) -> AsyncGenerator[str, None]:
             """
             Process a message stop event.
@@ -966,7 +966,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             raise
 
     async def _process_tool_use_streaming(
-        self, tool_use: Dict, message_list: List[Dict[str, Any]]
+        self, tool_use: dict, message_list: list[dict[str, Any]]
     ) -> AsyncGenerator[str, None]:
         """Process a tool use request in streaming mode and generate a response."""
 
@@ -1024,7 +1024,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
         self,
         config: Config,
         model_id: Optional[str] = None,
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[list[Tool]] = None,
     ):
         super().__init__(config, model_id)
         sys_path = sys.path
@@ -1045,7 +1045,7 @@ class GeminiAIModeWithTools(GeminiAIModel):
         self.generation_config = genai.GenerationConfig(max_output_tokens=max_tokens)
 
     @classmethod
-    def _create_tools_description(cls, tools: List[Tool]) -> dict:
+    def _create_tools_description(cls, tools: list[Tool]) -> dict:
         """Create a list of tool descriptions for the Gemini model."""
 
         def schema(t: Tool):
@@ -1212,7 +1212,7 @@ class OpenAIModelWithTools(OpenAIModel):
     various tools during the conversation process.
     """
 
-    def __init__(self, config: Config, tools: Optional[List[Tool]] = None) -> None:
+    def __init__(self, config: Config, tools: Optional[list[Tool]] = None) -> None:
         """
         Initialize the ClaudeAIModelWithTools instance.
 
@@ -1228,7 +1228,7 @@ class OpenAIModelWithTools(OpenAIModel):
         # Enable OpenAI built-in web search (Responses API) if requested via config
         if config.get("openai_use_search", False):
             # Build approximate user location (best-effort, optional)
-            def _build_user_location() -> Dict:
+            def _build_user_location() -> dict:
                 try:
                     import geocoder  # lazy import to avoid import issues in tests
 
@@ -1261,7 +1261,7 @@ class OpenAIModelWithTools(OpenAIModel):
             self._openai_store = bool(config.get("openai_store", True))
 
     @classmethod
-    def _create_tools_description(cls, tools: List[Tool]) -> List[Dict]:
+    def _create_tools_description(cls, tools: list[Tool]) -> list[dict]:
         """Create a list of tool descriptions for the OpenAI model."""
 
         def schema(t: Tool):
@@ -1531,7 +1531,7 @@ class OpenAIModelWithTools(OpenAIModel):
             stream=True,
         )
         tool_name = ""
-        tools: Dict[str, ToolCall] = {}
+        tools: dict[str, ToolCall] = {}
         current_text = ""
         async for chunk in stream:
             choice = chunk.choices[0]
@@ -1573,7 +1573,7 @@ class OpenAIModelWithTools(OpenAIModel):
             yield current_text
 
     async def _process_tool_calls(
-        self, tools: Dict[str, ToolCall], messages: List[Dict[str, str]]
+        self, tools: dict[str, ToolCall], messages: list[dict[str, str]]
     ) -> AsyncGenerator[str, None]:
         """Process tool calls and generate a response."""
         _messages = messages.copy()
@@ -1631,8 +1631,8 @@ async def main_async():
             В ответах не используй ссылки на источники.
             """
 
-    interpreter_tool = InterpreterTool(config)
-    wizard_tool = WizardTool(config)
+    InterpreterTool(config)
+    WizardTool(config)
     search_tool = WebSearchTool(config)
     model = ClaudeAIModelWithTools(
         config,
@@ -1643,7 +1643,6 @@ async def main_async():
         ]
         # + wizard_tool.tool_definitions(),
         , timezone=timezone)
-    language = "russian"
     # for t in wizard_tool.tool_definitions():
     #     if hasattr(t, "rule_instructions") and language in t.rule_instructions:
     #         system += t.rule_instructions[language].strip()
@@ -1667,34 +1666,6 @@ async def main_async():
         m += response_part
     print(m)
     return
-
-    stress_tool = StressTool(config)
-    model = ClaudeAIModelWithTools(config, tools=[stress_tool.tool_definition()])
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": "как поставить ударение в слове тростник?"},
-    ]
-    m = ""
-    async for response_part in model.get_response_async(messages):
-        print(response_part, flush=True, end="")
-        m += response_part
-    print()
-    return
-
-    search_tool = WebSearchTool(config)
-    for model in [
-        GeminiAIModeWithTools(config, tools=[search_tool.tool_definition()]),
-        OpenAIModelWithTools(config, tools=[search_tool.tool_definition()]),
-        ClaudeAIModelWithTools(config, tools=[search_tool.tool_definition()]),
-    ]:
-        message = "Today is August 6, 2024. who got olympics gold today?"
-        print(message)
-        # messages = [{"role": "user", "content": message}]
-        m = ""
-        async for response_part in model.get_response_async(messages):
-            print(response_part, flush=True, end="")
-            m += response_part
-        print()
 
 
 if __name__ == "__main__":

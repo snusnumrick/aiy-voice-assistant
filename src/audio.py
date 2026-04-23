@@ -16,9 +16,9 @@ import tempfile
 import time
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Awaitable, Iterator
 from enum import Enum
-from typing import Awaitable, Callable, List, Optional
+from typing import Callable, Optional
 
 import aiohttp
 import grpc
@@ -777,7 +777,7 @@ class ElevenLabsSpeechRecognition(SpeechRecognitionService):
         websocket,
         send_done,
         commit_sent,
-        full_transcript: List[str],
+        full_transcript: list[str],
     ) -> str:
         error_types = {
             "auth_error",
@@ -1102,7 +1102,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
         self,
         websocket,
         send_done,
-        transcript_parts: List[str],
+        transcript_parts: list[str],
         last_partial: str,
     ) -> str:
         # Receives and processes transcript messages from websocket
@@ -1624,7 +1624,7 @@ class SpeechTranscriber:
         logger.info("Button pressed LED OFF")
 
 
-def split_text(text: str, max_length: int) -> List[str]:
+def split_text(text: str, max_length: int) -> list[str]:
     """
     Split text into chunks of maximum length.
 

@@ -29,7 +29,8 @@ import re
 import tempfile
 import time
 import traceback
-from typing import Awaitable, Callable, Dict, List, Optional, Tuple
+from collections.abc import Awaitable
+from typing import Callable, Optional
 
 import aiohttp
 
@@ -116,7 +117,7 @@ async def synthesize_with_fallback(
         )
     except Exception as e:
         logger.error(f"Error synthesizing speech for file {audio_file_name}: {str(e)}")
-        logger.warning(f"Primary TTS raised exception, trying fallback engine.")
+        logger.warning("Primary TTS raised exception, trying fallback engine.")
 
     try:
         if await fallback_tts_engine.synthesize_async(
@@ -155,7 +156,7 @@ class DialogManager:
         self,
         button: Button,
         leds: Leds,
-        tts_engines: Dict[Language, TTSEngine],
+        tts_engines: dict[Language, TTSEngine],
         fallback_tts_engine: TTSEngine,
         conversation_manager: ConversationManager,
         config: Config,
@@ -231,7 +232,7 @@ class DialogManager:
         await self.conversation_manager.process_and_clean()
 
     async def process_completed_tasks(
-        self, synthesis_tasks: List[Tuple[asyncio.Task, dict]], next_response_index: int
+        self, synthesis_tasks: list[tuple[asyncio.Task, dict]], next_response_index: int
     ) -> int:
         """
         Process completed speech synthesis tasks and update the response player.
@@ -530,7 +531,7 @@ class DialogManager:
 
     def create_synthesis_task(
         self, session: aiohttp.ClientSession, response: dict, response_count: int
-    ) -> Tuple[asyncio.Task, dict]:
+    ) -> tuple[asyncio.Task, dict]:
         """
         Create a speech synthesis task for an AI response.
 
@@ -589,7 +590,7 @@ class DialogManager:
 async def main_loop_async(
     button: Button,
     leds: Leds,
-    tts_engines: Dict[Language, TTSEngine],
+    tts_engines: dict[Language, TTSEngine],
     fallback_tts_engine: TTSEngine,
     conversation_manager: ConversationManager,
     config: Config,

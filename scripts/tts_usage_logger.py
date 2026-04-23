@@ -4,8 +4,8 @@ Enhanced TTS Engine with comprehensive usage logging
 Add this to your YandexTTSEngine to track every request with cost
 """
 
-import logging
 import json
+import logging
 import os
 from datetime import datetime
 from typing import Optional
@@ -76,7 +76,7 @@ class TTSUsageLogger:
         if not os.path.exists(self.log_file):
             return {'date': date, 'requests': 0, 'chars': 0, 'units': 0, 'cost_usd': 0}
 
-        with open(self.log_file, 'r', encoding='utf-8') as f:
+        with open(self.log_file, encoding='utf-8') as f:
             for line in f:
                 record = json.loads(line)
                 if record['timestamp'].startswith(date):
@@ -110,7 +110,7 @@ class TTSUsageLogger:
                 'daily': {}
             }
 
-        with open(self.log_file, 'r', encoding='utf-8') as f:
+        with open(self.log_file, encoding='utf-8') as f:
             for line in f:
                 record = json.loads(line)
                 date_str = record['timestamp'][:10]  # YYYY-MM-DD
@@ -152,7 +152,7 @@ class TTSUsageLogger:
         if not os.path.exists(self.log_file):
             return f"No usage data found in {self.log_file}"
 
-        with open(self.log_file, 'r', encoding='utf-8') as f:
+        with open(self.log_file, encoding='utf-8') as f:
             records = [json.loads(line) for line in f]
 
         # Filter by date range

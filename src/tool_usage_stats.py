@@ -14,7 +14,6 @@ import logging
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +29,7 @@ class ToolUsageStats:
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()
 
-    def _empty(self) -> Dict:
+    def _empty(self) -> dict:
         return {
             "schema_version": 1,
             "total_calls": 0,
@@ -38,7 +37,7 @@ class ToolUsageStats:
             "updated_at": self._now_iso(),
         }
 
-    def _load(self) -> Dict:
+    def _load(self) -> dict:
         if not self.path or not os.path.exists(self.path):
             return self._empty()
         try:
@@ -91,7 +90,7 @@ class ToolUsageStats:
         with self._lock:
             return int(self._data.get("total_calls", 0))
 
-    def top_tools(self, limit: int = 5) -> List[str]:
+    def top_tools(self, limit: int = 5) -> list[str]:
         with self._lock:
             tools = self._data.get("tools", {})
             sorted_names = sorted(
@@ -101,12 +100,12 @@ class ToolUsageStats:
             )
             return sorted_names[: max(0, int(limit))]
 
-    def snapshot(self) -> Dict:
+    def snapshot(self) -> dict:
         with self._lock:
             return json.loads(json.dumps(self._data))
 
 
-def get_tool_usage_stats(config) -> Optional[ToolUsageStats]:
+def get_tool_usage_stats(config) -> ToolUsageStats | None:
     """
     Return a process-shared ToolUsageStats instance stored on config.
     """

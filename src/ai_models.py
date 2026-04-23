@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 AI Models module.
 
@@ -13,9 +12,9 @@ import logging
 import os
 import sys
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Optional, Union
 
 import aiohttp
 import requests
@@ -41,7 +40,7 @@ class MessageModel(BaseModel):
     content: str
 
 
-Message = Union[Dict[str, Any], MessageModel]
+Message = Union[dict[str, Any], MessageModel]
 MessageList = Sequence[Message]
 
 
@@ -115,7 +114,7 @@ def _to_openai_reasoning_effort(value: Optional[Union[str, ReasoningEffort]]) ->
     return mapping.get(key)
 
 
-def normalize_messages(messages: MessageList) -> List[Dict[str, Any]]:
+def normalize_messages(messages: MessageList) -> list[dict[str, Any]]:
     """
     Normalize messages to ensure they are in the correct format for API calls.
 
@@ -480,7 +479,7 @@ class OpenAIModel(AIModel):
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
                 }
-                payload: Dict[str, Union[str, int, Dict, List]] = {
+                payload: dict[str, Any] = {
                     "model": self.model,
                     "messages": messages,
                     "max_tokens": self.max_tokens,
@@ -528,7 +527,7 @@ class OpenAIModel(AIModel):
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
                 }
-                payload: Dict[str, Union[str, int, Dict, List]] = {
+                payload: dict[str, Any] = {
                     "model": self.model,
                     "input": _messages_to_input(messages),
                 }
@@ -632,7 +631,7 @@ class OpenAIModel(AIModel):
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
             }
-            payload: Dict[str, Union[str, int, Dict, List]] = {
+            payload: dict[str, Any] = {
                 "model": self.model,
                 "messages": messages,
                 "max_tokens": self.max_tokens,
@@ -702,7 +701,7 @@ class OpenAIModel(AIModel):
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
             }
-            payload: Dict[str, Union[str, int, Dict, List]] = {
+            payload: dict[str, Any] = {
                 "model": self.model,
                 "input": messages,
             }
@@ -780,7 +779,7 @@ class ClaudeAIModel(AIModel):
         """
         return f"({time_string_ms(self.timezone)}) " if self.timezone else ""
 
-    def _get_response(self, messages: List[Dict[str, str]]) -> dict:
+    def _get_response(self, messages: list[dict[str, str]]) -> dict:
         """
         Send a request to the Claude API and get the response.
 
@@ -814,7 +813,7 @@ class ClaudeAIModel(AIModel):
             raise NonRetryableError(f"Claude error: {msg}")
         return json.loads(response.content.decode("utf-8"))
 
-    async def _get_response_async(self, messages: List[Dict[str, str]]) -> dict:
+    async def _get_response_async(self, messages: list[dict[str, str]]) -> dict:
         """
         Asynchronously send a request to the Claude API and get the response.
 

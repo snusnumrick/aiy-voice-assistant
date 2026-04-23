@@ -1,5 +1,4 @@
 import logging
-from typing import Dict
 
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
@@ -76,7 +75,7 @@ class WebSearchTool:
     def _stop_processing(self):
         pass
 
-    def do_search(self, parameters: Dict[str, any]) -> str:
+    def do_search(self, parameters: dict[str, any]) -> str:
         logger.info(f"searching for {parameters['query']}")
         if "query" in parameters:
             self._start_processing()
@@ -86,7 +85,7 @@ class WebSearchTool:
         logger.error(f"missing  parameter  query:  {parameters}")
         return ""
 
-    async def do_search_async(self, parameters: Dict[str, any]) -> str:
+    async def do_search_async(self, parameters: dict[str, any]) -> str:
         logger.info(f"searching async for {parameters['query']}")
         if "query" in parameters:
             self._start_processing()

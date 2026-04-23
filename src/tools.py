@@ -8,15 +8,7 @@ import time
 from collections.abc import AsyncGenerator, AsyncIterator, Iterable
 from datetime import datetime
 from functools import wraps
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
-)
+from typing import Any, Callable, Optional
 
 import aiofiles
 import geocoder
@@ -51,7 +43,7 @@ def estimate_tokens(text: str) -> int:
     return int(words * 1.5 + punctuation)
 
 
-def get_token_count(messages: List[Dict[str, Any]]) -> int:
+def get_token_count(messages: list[dict[str, Any]]) -> int:
     """
     Get the total token count for a list of messages.
 
@@ -254,7 +246,7 @@ def get_location_string() -> str:
     return location
 
 
-def get_current_date_time_tuple(timezone_string: str) -> Tuple[str, str]:
+def get_current_date_time_tuple(timezone_string: str) -> tuple[str, str]:
     """
     :param timezone_string: A string representing the timezone to convert the current date and time to (e.g. 'America/Los_Angeles').
     :return: A tuple with the current date and time in the specified timezone in Russian.
@@ -474,7 +466,9 @@ def indent_content(content, max_width=120):
     return "    " + "\n    ".join(formatted_lines)
 
 
-def format_message_history(message_history: Iterable[Dict[str, str]], max_width=120) -> str:
+def format_message_history(
+    message_history: Iterable[dict[str, str]], max_width=120
+) -> str:
     """
     Format the message history into a formatted string with a specified maximum width.
 
@@ -702,7 +696,9 @@ def retry_async_generator(
     return decorator
 
 
-def extract_sentences(text: str, expected_enumeration: Optional[List[int]] = None) -> List[str]:
+def extract_sentences(
+    text: str, expected_enumeration: Optional[list[int]] = None
+) -> list[str]:
     """
     Extracts sentences from the given text while preserving special patterns and numbered lists.
 
@@ -810,7 +806,7 @@ def extract_sentences(text: str, expected_enumeration: Optional[List[int]] = Non
     return sentences
 
 
-def split_long_sentence(text: str, max_length: int) -> List[str]:
+def split_long_sentence(text: str, max_length: int) -> list[str]:
     """Split text exceeding max_length at sub-sentence boundaries.
 
     Splits at commas, semicolons, and em-dashes (keeping the delimiter
@@ -930,7 +926,7 @@ def yield_complete_sentences(
     return wrapper
 
 
-def combine_audio_files(file_list: List[str], output_filename: str) -> None:
+def combine_audio_files(file_list: list[str], output_filename: str) -> None:
     """
     Combine multiple audio files into a single file.
 

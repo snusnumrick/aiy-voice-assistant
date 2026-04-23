@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any, Dict, List
+from typing import Any
 
 import aiohttp
 
@@ -75,7 +75,7 @@ Convey all results through print(), so you can capture the output.
             "Content-Type": "application/json",
         }
 
-    async def execute_code_async(self, parameters: Dict[str, any]) -> str:
+    async def execute_code_async(self, parameters: dict[str, any]) -> str:
         if "code" not in parameters:
             logger.error("Missing 'code' parameter")
             return "Error: Missing 'code' parameter"
@@ -137,7 +137,7 @@ Convey all results through print(), so you can capture the output.
         logger.info(f"openai responses result:\n{result}")
         return result
 
-    async def _create_response(self, input_text: str) -> Dict[str, Any]:
+    async def _create_response(self, input_text: str) -> dict[str, Any]:
         payload = {
             "model": self.model,
             "input": input_text,
@@ -151,7 +151,7 @@ Convey all results through print(), so you can capture the output.
             ) as resp:
                 return await resp.json()
 
-    async def _get_response(self, response_id: str) -> Dict[str, Any]:
+    async def _get_response(self, response_id: str) -> dict[str, Any]:
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 f"{self.openai_api_base}/responses/{response_id}",
@@ -159,7 +159,7 @@ Convey all results through print(), so you can capture the output.
             ) as resp:
                 return await resp.json()
 
-    async def _wait_for_response(self, response_id: str, poll_interval: float = 1.0) -> Dict[str, Any]:
+    async def _wait_for_response(self, response_id: str, poll_interval: float = 1.0) -> dict[str, Any]:
         while True:
             resp = await self._get_response(response_id)
             status = resp.get("status")
@@ -167,14 +167,14 @@ Convey all results through print(), so you can capture the output.
                 return resp
             await asyncio.sleep(poll_interval)
 
-    def _extract_text_from_response(self, response: Dict[str, Any]) -> str:
+    def _extract_text_from_response(self, response: dict[str, Any]) -> str:
         """
         Try to robustly extract assistant text content from Responses API schemas.
         """
         # 1) Newer schema: response["output"] is a list of items; pick assistant message text
         output = response.get("output")
         if isinstance(output, list) and output:
-            texts: List[str] = []
+            texts: list[str] = []
             for item in output:
                 # Message item with content array
                 if isinstance(item, dict) and item.get("type") == "message":
@@ -206,8 +206,8 @@ Convey all results through print(), so you can capture the output.
             return response["text"]
         return ""
 
-    def _extract_texts_from_content_array(self, content: List[Any]) -> List[str]:
-        texts: List[str] = []
+    def _extract_texts_from_content_array(self, content: list[Any]) -> list[str]:
+        texts: list[str] = []
         for part in content:
             if not isinstance(part, dict):
                 continue
