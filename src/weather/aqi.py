@@ -1,10 +1,10 @@
-from typing import Dict, Union
+from typing import Union
 
 import aiohttp
 import requests
 
 
-def get_air_quality(latitude: float, longitude: float, token: str) -> Dict[str, Union[str, dict]]:
+def get_air_quality(latitude: float, longitude: float, token: str) -> dict[str, Union[str, dict]]:
     """
     Get air quality data for a specific latitude and longitude using the WAQI API.
 
@@ -59,7 +59,9 @@ def get_air_quality(latitude: float, longitude: float, token: str) -> Dict[str, 
             "message": f"API request failed: {str(e)}"
         }
 
-async def get_air_quality_async(latitude: float, longitude: float, token: str) -> Dict[str, Union[str, dict]]:
+async def get_air_quality_async(
+    latitude: float, longitude: float, token: str
+) -> dict[str, Union[str, dict]]:
     """
     Async version of get_air_quality using aiohttp.
 

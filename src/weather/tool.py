@@ -2,22 +2,22 @@ import asyncio
 import logging
 import os
 from datetime import datetime
-from typing import Dict
 
 import aiohttp
 
 from src.ai_models_with_tools import Tool, ToolParameter
-from src.aqi import get_air_quality_async
 from src.config import Config
-from src.moon import Moon
-from src.openuv import get_uv_index_async
-from src.sunrise import get_solar_data_async
 from src.web_search import WebSearcher
+
+from .aqi import get_air_quality_async
+from .moon import Moon
+from .openuv import get_uv_index_async
+from .sunrise import get_solar_data_async
 
 logger = logging.getLogger(__name__)
 
 
-def _format_weather_response(weather_data: Dict, timeframe: str, timezone: str) -> str:
+def _format_weather_response(weather_data: dict, timeframe: str, timezone: str) -> str:
     """Format the weather data response based on timeframe"""
     code_lookup = {
         1000: 'Clear, Sunny',
@@ -299,12 +299,11 @@ class WeatherTool:
                     logger.error(f"Could not geocode location: {location_description}")
                     raise ValueError(f"Could not geocode location: {location_description}")
 
-    async def get_weather_async(self, parameters: Dict[str, any]) -> str:
+    async def get_weather_async(self, parameters: dict[str, any]) -> str:
         """Asynchronous weather data fetch"""
         if "location" not in parameters:
             raise ValueError(f"Missing required parameter location: {parameters}")
 
-        weather_api_failed = False
         try:
             lat, lon = await self.get_lat_lng(parameters["location"])
             location = f"{lat},{lon}"
@@ -315,9 +314,7 @@ class WeatherTool:
                 self._get_weather_data(location, "forecast"),
                 return_exceptions=True
             )
-            if isinstance(current, Exception) or isinstance(forecast, Exception):
-                weather_api_failed = True
-            else:
+            if not isinstance(current, Exception) and not isinstance(forecast, Exception):
                 return f"{current}\n\n{forecast}"
 
         except Exception as e:
@@ -341,7 +338,7 @@ class EnhancedWeatherTool:
         self.openuv_api_key = os.getenv("OPENUV_API_KEY")
         self.waqi_token = os.getenv("WAQI_TOKEN")
 
-    async def get_weather_async(self, parameters: Dict[str, any]) -> str:
+    async def get_weather_async(self, parameters: dict[str, any]) -> str:
         """
         Get comprehensive weather information including UV index, air quality,
         lunar phase, and solar data.

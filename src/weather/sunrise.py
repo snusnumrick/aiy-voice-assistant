@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import aiohttp
 import requests
@@ -11,7 +11,7 @@ def get_solar_data(
         date: Optional[str] = None,
         timezone: Optional[str] = None,
         time_format: Optional[str] = None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get solar data (sunrise, sunset, etc.) for a specific location and date.
 
@@ -88,7 +88,7 @@ async def get_solar_data_async(
         date: Optional[str] = None,
         timezone: Optional[str] = None,
         time_format: Optional[str] = None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Async version of get_solar_data using aiohttp.
 

@@ -466,26 +466,27 @@ The assistant uses cron to manage Tailscale for optimal performance:
 - `src/`: Contains core modules:
   - `ai_models.py`: AI model implementations
   - `ai_models_with_tools.py`: AI models with tool support
-  - `aqi.py`: Air Quality Index data fetching using WAQI API
   - `audio.py`: Audio processing and speech recognition
   - `config.py`: Configuration management
   - `conversation_manager.py`: Manages conversation flow and memory
   - `dialog.py`: Main conversation loop
   - `email_tools.py`: Email functionality
   - `emotion_engine.py`: Voice emotion detection using Hume AI
-  - `moon.py`: Astronomical calculations for lunar phases and information
-  - `openuv.py`: UV index and ozone data fetching using OpenUV API
   - `responce_player.py`: Audio playback and LED control
   - `stt_engine.py`: Speech-to-text engines
-  - `sunrise.py`: Solar calculations and data (sunrise, sunset, dawn, dusk)
   - `stress_tool.py`: Tool for adding stress marks to Russian words
   - `tools.py`: Utility functions
   - `tts_engine.py`: Text-to-speech engines
-  - `weather_tool.py`: Enhanced weather tool integrating multiple data sources:
-    - Basic weather conditions and forecasts
-    - Moon phase information
-    - UV index and air quality data
-    - Solar data integration
+  - `weather/`: Weather-related package:
+    - `aqi.py`: Air Quality Index data fetching using WAQI API
+    - `moon.py`: Astronomical calculations for lunar phases and information
+    - `openuv.py`: UV index and ozone data fetching using OpenUV API
+    - `sunrise.py`: Solar calculations and data (sunrise, sunset, dawn, dusk)
+    - `tool.py`: Enhanced weather tool integrating multiple data sources:
+      - Basic weather conditions and forecasts
+      - Moon phase information
+      - UV index and air quality data
+      - Solar data integration
   - `web_search.py` & `web_search_tool.py`: Web search functionality
   - `llm_tools.py`: Language model specific tools
   - `code_interpreter_tool.py`: Tool for executing Python code and returning results
