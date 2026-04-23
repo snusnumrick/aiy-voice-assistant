@@ -6,14 +6,16 @@ Provides tools to set, list, update, and delete reminders stored in reminders.js
 
 import datetime as dt
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 import pytz
+from pydantic import ValidationError
 
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
-from src.reminders import ReminderManager
-from src.tools import get_timezone
+
+from .manager import ReminderManager
+from .models import ReminderCreateAtRequest, ReminderCreateInRequest, ReminderUpdateRequest
 
 logger = logging.getLogger(__name__)
 
@@ -153,96 +155,86 @@ Never create reminders for internal AI tasks, housekeeping, or self-management
         )
         return [manage_tool, list_tool]
 
-    async def manage_reminders(self, parameters: Dict[str, Any]) -> str:
+    def _common_request_fields(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        light = parameters.get("light")
+        emotion = parameters.get("emotion")
+        if isinstance(emotion, dict) and isinstance(emotion.get("light"), dict):
+            light = emotion.get("light")
+
+        data: dict[str, Any] = {}
+        if isinstance(parameters.get("speak_text"), str):
+            data["speak_text"] = parameters.get("speak_text")
+        if isinstance(parameters.get("language"), str):
+            data["language"] = parameters.get("language")
+        if isinstance(parameters.get("fact_text"), str):
+            data["fact_text"] = parameters.get("fact_text")
+        if isinstance(light, dict):
+            data["light"] = light
+        if isinstance(emotion, dict):
+            data["emotion"] = emotion
+        if "bell_repeat" in parameters:
+            data["bell_repeat"] = parameters.get("bell_repeat")
+        if "bell_duration_sec" in parameters:
+            data["bell_duration_sec"] = parameters.get("bell_duration_sec")
+        return data
+
+    async def manage_reminders(self, parameters: dict[str, Any]) -> str:
         action = parameters.get("action")
         manager = ReminderManager(self.reminders_file, timezone=self.timezone)
 
         if action == "set_reminder_at":
             message = parameters.get("message")
-            speak_text = parameters.get("speak_text")
-            language = parameters.get("language")
-            fact_text = parameters.get("fact_text")
             time_value = parameters.get("time")
-            recurring = bool(parameters.get("recurring", False))
-            light = parameters.get("light")
-            emotion = parameters.get("emotion")
-            if isinstance(emotion, dict) and isinstance(emotion.get("light"), dict):
-                light = emotion.get("light")
-            bell_repeat = parameters.get("bell_repeat")
-            bell_duration_sec = parameters.get("bell_duration_sec")
             if not message or not time_value:
                 return "Missing message or time."
-            when = manager._parse_time(str(time_value))
-            if when is None:
-                return "Invalid time format."
-            reminder = manager.add_reminder(
-                str(message),
-                when,
-                recurring,
-                speak_text=str(speak_text) if speak_text is not None else None,
-                language=str(language) if language is not None else None,
-                emotion=emotion if isinstance(emotion, dict) else None,
-                fact_text=str(fact_text) if fact_text is not None else None,
-                light=light if isinstance(light, dict) else None,
-                bell_repeat=bell_repeat,
-                bell_duration_sec=bell_duration_sec,
-            )
-            return f"Reminder set: id={reminder['id']}, time={reminder['time']}"
+            request_data = {
+                "message": str(message),
+                "time": str(time_value),
+                "recurring": bool(parameters.get("recurring", False)),
+                **self._common_request_fields(parameters),
+            }
+            try:
+                request = ReminderCreateAtRequest.from_data(request_data)
+            except ValidationError as exc:
+                if any(error.get("loc") == ("time",) for error in exc.errors()):
+                    return "Invalid time format."
+                return "Invalid reminder parameters."
+            reminder = manager.add_reminder(request.to_draft())
+            return f"Reminder set: id={reminder.id}, time={reminder.time.isoformat()}"
 
         if action == "set_reminder_in":
             message = parameters.get("message")
-            speak_text = parameters.get("speak_text")
-            language = parameters.get("language")
-            fact_text = parameters.get("fact_text")
             amount = parameters.get("amount")
             unit = parameters.get("unit")
-            recurring = bool(parameters.get("recurring", False))
-            light = parameters.get("light")
-            emotion = parameters.get("emotion")
-            if isinstance(emotion, dict) and isinstance(emotion.get("light"), dict):
-                light = emotion.get("light")
-            bell_repeat = parameters.get("bell_repeat")
-            bell_duration_sec = parameters.get("bell_duration_sec")
             if not message or amount is None or not unit:
                 return "Missing message, amount, or unit."
             try:
-                amount_int = int(amount)
+                request = ReminderCreateInRequest.from_data(
+                    {
+                        "message": str(message),
+                        "amount": amount,
+                        "unit": str(unit),
+                        "recurring": bool(parameters.get("recurring", False)),
+                        **self._common_request_fields(parameters),
+                    }
+                )
+            except ValidationError as exc:
+                if any(error.get("loc") == ("amount",) for error in exc.errors()):
+                    return "Invalid amount."
+                return "Invalid reminder parameters."
+            try:
+                reminder = manager.add_reminder(request.to_draft(dt.datetime.now(self.timezone)))
+            except ValueError as exc:
+                return str(exc)
             except Exception:
                 return "Invalid amount."
-            unit = str(unit).lower()
-            seconds = {
-                "second": 1,
-                "seconds": 1,
-                "minute": 60,
-                "minutes": 60,
-                "hour": 3600,
-                "hours": 3600,
-                "day": 86400,
-                "days": 86400,
-            }.get(unit)
-            if seconds is None:
-                return "Invalid unit. Use seconds, minutes, hours, or days."
-            now = dt.datetime.now(self.timezone)
-            when = now + dt.timedelta(seconds=amount_int * seconds)
-            reminder = manager.add_reminder(
-                str(message),
-                when,
-                recurring,
-                speak_text=str(speak_text) if speak_text is not None else None,
-                language=str(language) if language is not None else None,
-                emotion=emotion if isinstance(emotion, dict) else None,
-                fact_text=str(fact_text) if fact_text is not None else None,
-                light=light if isinstance(light, dict) else None,
-                bell_repeat=bell_repeat,
-                bell_duration_sec=bell_duration_sec,
-            )
-            return f"Reminder set: id={reminder['id']}, time={reminder['time']}"
+            return f"Reminder set: id={reminder.id}, time={reminder.time.isoformat()}"
 
         if action == "update_reminder":
             reminder_id = parameters.get("id")
             if not reminder_id:
                 return "Missing reminder id."
-            updates: Dict[str, Optional[Any]] = {}
+            updates: dict[str, Any] = {}
             if "message" in parameters:
                 updates["message"] = parameters.get("message")
             if "speak_text" in parameters:
@@ -257,23 +249,22 @@ Never create reminders for internal AI tasks, housekeeping, or self-management
                 updates["recurring"] = parameters.get("recurring")
             if "done" in parameters:
                 updates["done"] = parameters.get("done")
-            if "light" in parameters:
-                updates["light"] = parameters.get("light")
-            if "emotion" in parameters:
-                emotion = parameters.get("emotion")
-                if isinstance(emotion, dict) and isinstance(emotion.get("light"), dict):
-                    updates["light"] = emotion.get("light")
-                updates["emotion"] = emotion
-            if "bell_repeat" in parameters:
-                updates["bell_repeat"] = parameters.get("bell_repeat")
-            if "bell_duration_sec" in parameters:
-                updates["bell_duration_sec"] = parameters.get("bell_duration_sec")
+            updates.update(self._common_request_fields(parameters))
             if not updates:
                 return "No updates provided."
-            updated = manager.update_reminder(str(reminder_id), updates)
+            try:
+                request = ReminderUpdateRequest.from_data({"id": str(reminder_id), **updates})
+            except ValidationError as exc:
+                if any(error.get("loc") == ("time",) for error in exc.errors()):
+                    return "Invalid time format."
+                return "Invalid reminder update."
+            update_payload = request.to_update()
+            if not update_payload.has_updates():
+                return "No updates provided."
+            updated = manager.update_reminder(str(reminder_id), update_payload)
             if not updated:
                 return "Reminder not found."
-            return f"Reminder updated: id={updated.get('id')}"
+            return f"Reminder updated: id={updated.id}"
 
         if action == "delete_reminder":
             reminder_id = parameters.get("id")
@@ -289,7 +280,7 @@ Never create reminders for internal AI tasks, housekeeping, or self-management
 
         return "Unknown action."
 
-    async def list_reminders(self, parameters: Dict[str, Any]) -> str:
+    async def list_reminders(self, parameters: dict[str, Any]) -> str:
         manager = ReminderManager(self.reminders_file, timezone=self.timezone)
         include_done = parameters.get("include_done", True)
         reminders = manager.list_reminders(include_done=bool(include_done))
@@ -297,11 +288,11 @@ Never create reminders for internal AI tasks, housekeeping, or self-management
             return "No reminders."
         lines = []
         for reminder in reminders:
-            rid = reminder.get("id")
-            time_value = reminder.get("time")
-            message = reminder.get("message")
-            recurring = reminder.get("recurring")
-            done = reminder.get("done", False)
+            rid = reminder.id
+            time_value = reminder.time.isoformat()
+            message = reminder.message
+            recurring = reminder.recurring
+            done = reminder.done
             lines.append(
                 f"id={rid} time={time_value} recurring={recurring} done={done} message={message}"
             )

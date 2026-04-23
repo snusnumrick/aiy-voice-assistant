@@ -8,7 +8,7 @@ import logging
 import math
 import os
 import wave
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import aiohttp
 
@@ -16,6 +16,8 @@ from src.config import Config
 from src.conversation_manager import ConversationManager
 from src.responce_player import ResponsePlayer
 from src.tts_engine import Language, Tone, TTSEngine
+
+from .models import ReminderRecord
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,7 @@ class ReminderAnnouncer:
         config: Config,
         response_player: ResponsePlayer,
         conversation_manager: ConversationManager,
-        tts_engines: Dict[Language, TTSEngine],
+        tts_engines: dict[Language, TTSEngine],
         fallback_tts_engine: TTSEngine,
     ) -> None:
         self.config = config
@@ -49,7 +51,7 @@ class ReminderAnnouncer:
             },
         )
         self._bell_duration_sec = self._load_bell_duration_sec(self.bell_file)
-        self._silence_cache: Dict[float, str] = {}
+        self._silence_cache: dict[float, str] = {}
         self.ready_breathing_period_ms = float(config.get("ready_breathing_period_ms", 10000))
         self.ready_breathing_color = config.get("ready_breathing_color", (0, 1, 0))
         self.ready_breathing_duration = float(config.get("ready_breathing_duration", 60))
@@ -69,20 +71,20 @@ class ReminderAnnouncer:
             logger.warning(f"Failed to read bell duration: {e}")
             return None
 
-    def _resolve_repeat(self, reminder: Dict[str, Any]) -> int:
-        if "bell_repeat" in reminder:
-            return max(1, int(reminder.get("bell_repeat", 1)))
+    def _resolve_repeat(self, reminder: ReminderRecord) -> int:
+        if reminder.bell_repeat is not None:
+            return max(1, int(reminder.bell_repeat))
 
-        if "bell_duration_sec" in reminder and self._bell_duration_sec:
-            duration = float(reminder.get("bell_duration_sec", 1))
+        if reminder.bell_duration_sec is not None and self._bell_duration_sec:
+            duration = float(reminder.bell_duration_sec)
             if duration <= 0:
                 return 1
             return max(1, int(math.ceil(duration / self._bell_duration_sec)))
 
         return 1
 
-    def _resolve_language(self, reminder: Dict[str, Any]) -> Language:
-        lang_code = reminder.get("language") or self.config.get("reminders_language", "ru")
+    def _resolve_language(self, reminder: ReminderRecord) -> Language:
+        lang_code = reminder.language or self.config.get("reminders_language", "ru")
         return {
             "ru": Language.RUSSIAN,
             "en": Language.ENGLISH,
@@ -90,30 +92,30 @@ class ReminderAnnouncer:
             "pt": Language.PORTUGUESE,
         }.get(str(lang_code).lower(), Language.RUSSIAN)
 
-    def _resolve_tone(self, reminder: Dict[str, Any]) -> Tone:
-        emotion = reminder.get("emotion")
+    def _resolve_tone(self, reminder: ReminderRecord) -> Tone:
+        emotion = reminder.emotion
         if isinstance(emotion, dict):
             voice = emotion.get("voice")
             if isinstance(voice, dict) and voice.get("tone") == "happy":
                 return Tone.HAPPY
         return Tone.PLAIN
 
-    def _resolve_light(self, reminder: Dict[str, Any]) -> dict:
-        emotion = reminder.get("emotion")
+    def _resolve_light(self, reminder: ReminderRecord) -> dict:
+        emotion = reminder.emotion
         if isinstance(emotion, dict):
             light = emotion.get("light")
             if isinstance(light, dict):
                 return light
-        light = reminder.get("light")
+        light = reminder.light
         if isinstance(light, dict):
             return light
         return self.default_light
 
-    def _resolve_speak_text(self, reminder: Dict[str, Any]) -> Optional[str]:
-        speak_text = reminder.get("speak_text")
+    def _resolve_speak_text(self, reminder: ReminderRecord) -> Optional[str]:
+        speak_text = reminder.speak_text
         if isinstance(speak_text, str) and speak_text.strip():
             return speak_text.strip()
-        message = reminder.get("message")
+        message = reminder.message
         if isinstance(message, str) and message.strip():
             prefix = self.config.get("reminders_prefix", "Напоминаю: ")
             return f"{prefix}{message.strip()}"
@@ -167,10 +169,10 @@ class ReminderAnnouncer:
             logger.error(f"Reminder TTS failed: {e}")
         return None
 
-    async def notify(self, reminder: Dict[str, Any]) -> None:
-        fact_text = reminder.get("fact_text")
+    async def notify(self, reminder: ReminderRecord) -> None:
+        fact_text = reminder.fact_text
         if not isinstance(fact_text, str) or not fact_text.strip():
-            message = reminder.get("message")
+            message = reminder.message
             if isinstance(message, str) and message.strip():
                 fact_text = f"Это напоминание уже сработало: {message.strip()}."
         if isinstance(fact_text, str) and fact_text.strip():

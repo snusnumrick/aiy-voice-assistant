@@ -7,9 +7,10 @@ such as system maintenance, and cleaning.
 
 import datetime
 import logging
-from typing import Callable, Optional, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Optional
 
-from .reminders import ReminderManager
+from .reminder import ReminderManager, ReminderRecord
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class BackgroundTaskManager:
         self.cleaning_time_stop = datetime.time(
             hour=self.config.get("cleaning_time_stop_hour", 4)
         )
-        self.reminder_notifier: Optional[Callable[[dict], Awaitable[None]]] = None
+        self.reminder_notifier: Optional[Callable[[ReminderRecord], Awaitable[None]]] = None
         self.reminders_enabled = self.config.get("reminders_enabled", True)
         self.reminder_check_interval_sec = self.config.get(
             "reminders_check_interval_sec", 60
@@ -48,7 +49,9 @@ class BackgroundTaskManager:
         """Set the cleaning routine to be executed during maintenance."""
         self.cleaning_routine = routine
 
-    def set_reminder_notifier(self, notifier: Callable[[dict], Awaitable[None]]) -> None:
+    def set_reminder_notifier(
+        self, notifier: Callable[[ReminderRecord], Awaitable[None]]
+    ) -> None:
         """Set the reminder notification callback."""
         self.reminder_notifier = notifier
 

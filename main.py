@@ -28,8 +28,7 @@ from src.email_tools import SendEmailTool
 from src.emotion_engine import NoOpEmotionEngine, create_emotion_engine
 from src.image_tool import create_image_tool
 from src.music_tool import create_music_tool
-from src.reminder_announcer import ReminderAnnouncer
-from src.reminder_tool import ReminderTool
+from src.reminder import ReminderAnnouncer, ReminderTool
 from src.responce_player import ResponsePlayer
 from src.stress_tool import StressTool
 from src.tools import get_timezone
