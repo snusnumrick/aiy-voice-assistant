@@ -6,7 +6,7 @@ notification handling.
 """
 
 import datetime as dt
-from typing import Any, Optional
+from typing import Any, Optional, TypeVar
 
 try:
     from pydantic import BaseModel, ConfigDict
@@ -16,6 +16,9 @@ except ImportError:
     from pydantic import BaseModel
 
     PYDANTIC_V2 = False
+
+
+ReminderModelT = TypeVar("ReminderModelT", bound="ReminderModel")
 
 
 class ReminderModel(BaseModel):
@@ -29,7 +32,7 @@ class ReminderModel(BaseModel):
             extra = "allow"
 
     @classmethod
-    def from_data(cls, data: Any) -> "ReminderModel":
+    def from_data(cls: type[ReminderModelT], data: Any) -> ReminderModelT:
         if PYDANTIC_V2:
             return cls.model_validate(data)
         return cls.parse_obj(data)

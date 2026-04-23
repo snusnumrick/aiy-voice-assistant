@@ -34,7 +34,7 @@ from src.stress_tool import StressTool
 from src.tools import get_timezone
 from src.tts_engine import ElevenLabsTTSEngine, Language, YandexTTSEngine
 from src.volume_control_tool import VolumeControlTool
-from src.weather_tool import EnhancedWeatherTool
+from src.weather import EnhancedWeatherTool
 from src.web_search_tool import WebSearchTool
 from src.wizard_tool import WizardTool
 

@@ -194,12 +194,12 @@ Never create reminders for internal AI tasks, housekeeping, or self-management
                 **self._common_request_fields(parameters),
             }
             try:
-                request = ReminderCreateAtRequest.from_data(request_data)
+                create_at_request = ReminderCreateAtRequest.from_data(request_data)
             except ValidationError as exc:
                 if any(error.get("loc") == ("time",) for error in exc.errors()):
                     return "Invalid time format."
                 return "Invalid reminder parameters."
-            reminder = manager.add_reminder(request.to_draft())
+            reminder = manager.add_reminder(create_at_request.to_draft())
             return f"Reminder set: id={reminder.id}, time={reminder.time.isoformat()}"
 
         if action == "set_reminder_in":
@@ -209,7 +209,7 @@ Never create reminders for internal AI tasks, housekeeping, or self-management
             if not message or amount is None or not unit:
                 return "Missing message, amount, or unit."
             try:
-                request = ReminderCreateInRequest.from_data(
+                create_in_request = ReminderCreateInRequest.from_data(
                     {
                         "message": str(message),
                         "amount": amount,
@@ -223,7 +223,9 @@ Never create reminders for internal AI tasks, housekeeping, or self-management
                     return "Invalid amount."
                 return "Invalid reminder parameters."
             try:
-                reminder = manager.add_reminder(request.to_draft(dt.datetime.now(self.timezone)))
+                reminder = manager.add_reminder(
+                    create_in_request.to_draft(dt.datetime.now(self.timezone))
+                )
             except ValueError as exc:
                 return str(exc)
             except Exception:
@@ -253,12 +255,14 @@ Never create reminders for internal AI tasks, housekeeping, or self-management
             if not updates:
                 return "No updates provided."
             try:
-                request = ReminderUpdateRequest.from_data({"id": str(reminder_id), **updates})
+                update_request = ReminderUpdateRequest.from_data(
+                    {"id": str(reminder_id), **updates}
+                )
             except ValidationError as exc:
                 if any(error.get("loc") == ("time",) for error in exc.errors()):
                     return "Invalid time format."
                 return "Invalid reminder update."
-            update_payload = request.to_update()
+            update_payload = update_request.to_update()
             if not update_payload.has_updates():
                 return "No updates provided."
             updated = manager.update_reminder(str(reminder_id), update_payload)
