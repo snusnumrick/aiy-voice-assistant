@@ -172,8 +172,13 @@ class GeminiSearch(SearchProvider):
 
     async def search(self, query: str) -> str:
         start_time = time.time()
+        prompt = (
+            "Use Google Search grounding only when it improves factual accuracy. "
+            "Return only the plain answer text without citations or source annotations.\n\n"
+            f"Query: {query}"
+        )
         payload = {
-            "contents": [{"role": "user", "parts": [{"text": query}]}],
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {
                 "thinkingConfig": {
                     "thinkingLevel": "LOW",
@@ -410,7 +415,11 @@ class BraveLLMContext(SearchProvider):
 class WebSearcher:
     def __init__(self, config):
         """Initializes multi-provider search engines with fallback for missing API key"""
-        self.tavily = Tavily(config)
+        try:
+            self.tavily = Tavily(config)
+        except ValueError:
+            self.tavily = None
+            logger.debug("Tavily search disabled: TAVILY_API_KEY not set")
         self.google = Google(config)
         self.google_cs = GoogleCustomSearch(config)
         self.ai_model = OpenRouterModel(config, use_simple_model=True)

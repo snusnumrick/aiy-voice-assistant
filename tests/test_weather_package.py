@@ -1,6 +1,7 @@
 import sys
 import types
 import unittest
+from unittest.mock import patch
 
 stub_ai_models_with_tools = types.ModuleType("src.ai_models_with_tools")
 
@@ -15,7 +16,6 @@ class ToolParameter:
 
 stub_ai_models_with_tools.Tool = Tool
 stub_ai_models_with_tools.ToolParameter = ToolParameter
-sys.modules["src.ai_models_with_tools"] = stub_ai_models_with_tools
 
 stub_web_search = types.ModuleType("src.web_search")
 
@@ -26,45 +26,51 @@ class WebSearcher:
 
 
 stub_web_search.WebSearcher = WebSearcher
-sys.modules["src.web_search"] = stub_web_search
 
 
 def _load_weather_symbols():
-    from src.weather import (
-        EnhancedWeatherTool as PackagedEnhancedWeatherTool,
-    )
-    from src.weather import (
-        Moon as PackagedMoon,
-    )
-    from src.weather import (
-        UVIndexError as PackagedUVIndexError,
-    )
-    from src.weather import (
-        WeatherTool as PackagedWeatherTool,
-    )
-    from src.weather import (
-        get_air_quality as packaged_get_air_quality,
-    )
-    from src.weather import (
-        get_air_quality_async as packaged_get_air_quality_async,
-    )
-    from src.weather import (
-        get_solar_data as packaged_get_solar_data,
-    )
-    from src.weather import (
-        get_solar_data_async as packaged_get_solar_data_async,
-    )
-    from src.weather import (
-        get_uv_index as packaged_get_uv_index,
-    )
-    from src.weather import (
-        get_uv_index_async as packaged_get_uv_index_async,
-    )
-    from src.weather.aqi import get_air_quality, get_air_quality_async
-    from src.weather.moon import Moon
-    from src.weather.openuv import UVIndexError, get_uv_index, get_uv_index_async
-    from src.weather.sunrise import get_solar_data, get_solar_data_async
-    from src.weather.tool import EnhancedWeatherTool, WeatherTool
+    with patch.dict(
+        sys.modules,
+        {
+            "src.ai_models_with_tools": stub_ai_models_with_tools,
+            "src.web_search": stub_web_search,
+        },
+    ):
+        from src.weather import (
+            EnhancedWeatherTool as PackagedEnhancedWeatherTool,
+        )
+        from src.weather import (
+            Moon as PackagedMoon,
+        )
+        from src.weather import (
+            UVIndexError as PackagedUVIndexError,
+        )
+        from src.weather import (
+            WeatherTool as PackagedWeatherTool,
+        )
+        from src.weather import (
+            get_air_quality as packaged_get_air_quality,
+        )
+        from src.weather import (
+            get_air_quality_async as packaged_get_air_quality_async,
+        )
+        from src.weather import (
+            get_solar_data as packaged_get_solar_data,
+        )
+        from src.weather import (
+            get_solar_data_async as packaged_get_solar_data_async,
+        )
+        from src.weather import (
+            get_uv_index as packaged_get_uv_index,
+        )
+        from src.weather import (
+            get_uv_index_async as packaged_get_uv_index_async,
+        )
+        from src.weather.aqi import get_air_quality, get_air_quality_async
+        from src.weather.moon import Moon
+        from src.weather.openuv import UVIndexError, get_uv_index, get_uv_index_async
+        from src.weather.sunrise import get_solar_data, get_solar_data_async
+        from src.weather.tool import EnhancedWeatherTool, WeatherTool
 
     return {
         "EnhancedWeatherTool": EnhancedWeatherTool,

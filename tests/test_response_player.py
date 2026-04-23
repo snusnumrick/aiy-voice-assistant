@@ -75,12 +75,14 @@ class TestResponsePlayer(unittest.TestCase):
         self.leds.reset_mock()
 
         behaviour = {"color": [255, 0, 0], "behavior": "continuous", "brightness": "medium", "period": 1}
+        expected_color = (178, 0, 0)  # Adjusted [255, 0, 0] at medium brightness.
         with patch.object(self.player, 'current_light', None):
-            self.player.change_light_behavior(behaviour)
-            self.leds.update.assert_called_once()
+            with patch('src.responce_player.Leds.rgb_on', return_value=expected_color) as mock_rgb_on:
+                self.player.change_light_behavior(behaviour)
+                self.leds.update.assert_called_once()
+                mock_rgb_on.assert_called_once_with(expected_color)
 
         # Check that the LED was updated with the correct color
-        expected_color = (178, 0, 0)  # This is the adjusted color for [255, 0, 0] with "medium" brightness
         self.leds.update.assert_called_with(expected_color)
 
     @patch('src.responce_player.combine_audio_files')
