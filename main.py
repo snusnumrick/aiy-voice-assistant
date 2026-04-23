@@ -26,7 +26,7 @@ from src.conversation_manager import ConversationManager
 from src.dialog import main_loop_async
 from src.email_tools import SendEmailTool
 from src.emotion_engine import NoOpEmotionEngine, create_emotion_engine
-from src.gemini_image_tool import GeminiImageTool
+from src.image_tool import create_image_tool
 from src.minimax_music_tool import MiniMaxMusicTool
 from src.reminder_announcer import ReminderAnnouncer
 from src.reminder_tool import ReminderTool
@@ -144,7 +144,7 @@ def main():
         volume_control_tool = VolumeControlTool(config)
         weather_tool = EnhancedWeatherTool(config)
         wizard_tool = WizardTool(config)
-        image_tool = GeminiImageTool(config)
+        image_tool = create_image_tool(config)
         reminder_tool = ReminderTool(config, timezone)
 
         tools = [
