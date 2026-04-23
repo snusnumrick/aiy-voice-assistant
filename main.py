@@ -27,7 +27,7 @@ from src.dialog import main_loop_async
 from src.email_tools import SendEmailTool
 from src.emotion_engine import NoOpEmotionEngine, create_emotion_engine
 from src.image_tool import create_image_tool
-from src.minimax_music_tool import MiniMaxMusicTool
+from src.music_tool import create_music_tool
 from src.reminder_announcer import ReminderAnnouncer
 from src.reminder_tool import ReminderTool
 from src.responce_player import ResponsePlayer
@@ -166,11 +166,8 @@ def main():
 
         response_player = ResponsePlayer([], leds, timezone)
 
-        # Create MiniMax music tool (requires response_player and button_state)
-        minimax_tool = MiniMaxMusicTool(config=config, response_player=response_player)
-
-        # Add MiniMax music tool to tools list
-        tools.append(minimax_tool.tool_definition())
+        music_tool = create_music_tool(config=config, response_player=response_player)
+        tools.append(music_tool.tool_definition())
 
         # Initialize components
         elevenlabs_engine = None

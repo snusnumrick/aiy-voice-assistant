@@ -36,6 +36,7 @@
   "recent_facts_threshold_days": 30,
   "max_recent_facts": 8,
   "image_tool_provider": "openai",
+  "music_tool_provider": "minimax",
   "gemini_image_model": "gemini-3-pro-image-preview",
   "openai_image_model": "gpt-image-2",
   "sentence_buffer_enabled": true,
