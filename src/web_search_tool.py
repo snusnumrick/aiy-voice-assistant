@@ -46,6 +46,16 @@ class WebSearchTool:
                     name="query",
                     type="string",
                     description="A query to search for, preferable in English",
+                ),
+                ToolParameter(
+                    name="after_date",
+                    type="string",
+                    description="Optional freshness filter as YYYY-MM-DD. Use when the user asks for recent results after a specific date.",
+                ),
+                ToolParameter(
+                    name="location",
+                    type="string",
+                    description="Optional country or place for localized search, for example 'us' or 'San Francisco, CA, US'.",
                 )
             ],
             required=["query"],
@@ -79,7 +89,11 @@ class WebSearchTool:
         logger.info(f"searching for {parameters['query']}")
         if "query" in parameters:
             self._start_processing()
-            result = self.web_searcher.search(parameters["query"])
+            result = self.web_searcher.search(
+                parameters["query"],
+                after_date=parameters.get("after_date"),
+                location=parameters.get("location"),
+            )
             self._stop_processing()
             return result
         logger.error(f"missing  parameter  query:  {parameters}")
@@ -90,7 +104,11 @@ class WebSearchTool:
         if "query" in parameters:
             self._start_processing()
             logger.info(f"searching for {parameters['query']}")
-            result = await self.web_searcher.search_async(parameters["query"])
+            result = await self.web_searcher.search_async(
+                parameters["query"],
+                after_date=parameters.get("after_date"),
+                location=parameters.get("location"),
+            )
             logger.info(f"search result: {result}")
             self._stop_processing()
             return result

@@ -72,7 +72,7 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 - Rust compiler
 - ZSH shell with Oh My Zsh
 - ffmpeg (required for music generation audio conversion)
-- API keys for: OpenAI, Google, **Yandex**, **Anthropic**, **ElevenLabs**, **Tavily**, OpenRouter, **Perplexity**,  **Tomorrow.io**, **Maps.co Geocoding**, MiniMax (optional, for music generation)
+- API keys for: OpenAI, Google, **Yandex**, **Anthropic**, **ElevenLabs**, **Tavily**, **Parallel**, OpenRouter, **Perplexity**,  **Tomorrow.io**, **Maps.co Geocoding**, MiniMax (optional, for music generation)
 (in **bold** are keys for default configuration)
 - Additional system packages and development tools (detailed in setup instructions)
 
@@ -216,6 +216,7 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
         EMAIL_PASSWORD=your_SMTP_server_password
         GOOGLE_CUSTOMSEARCH_KEY=your_google_customsearch_key
         TAVILY_API_KEY=your_tavily_api_key
+        PARALLEL_API_KEY=your_parallel_api_key
         OPENROUTER_API_KEY=your_open_router_api_key
         PERPLEXITY_API_KEY=your_perplexity_api_key
         ELEVENLABS_API_KEY=your_elevenlabs_api_key
@@ -232,6 +233,7 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
     1. Make sure to keep your `.env` file secure and never commit it to version control.
     2. Depending on configuration, some of these API keys may be unnecessary.
     3. GOOGLE_API_KEY should support the timezone API.
+    4. `web_search_providers` controls the search provider order. Parallel Search is used when `PARALLEL_API_KEY` is set; optional config keys include `parallel_search_mode`, `parallel_search_max_results`, `parallel_search_location`, and `parallel_search_after_date`. The `internet_search` tool also accepts optional `after_date` (`YYYY-MM-DD`) and `location` parameters when a request needs freshness or local context.
 
 
 13. **Set up the systemd service:**

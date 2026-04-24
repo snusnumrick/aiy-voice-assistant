@@ -6,6 +6,7 @@ import random
 import sys
 import time
 from abc import ABC, abstractmethod
+from datetime import date
 from typing import Optional
 
 import httpx
@@ -32,6 +33,122 @@ USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
 ]
 
+COUNTRY_NAME_TO_CODE = {
+    "australia": "au",
+    "canada": "ca",
+    "france": "fr",
+    "germany": "de",
+    "great britain": "gb",
+    "japan": "jp",
+    "united kingdom": "gb",
+    "united states": "us",
+    "united states of america": "us",
+    "usa": "us",
+}
+
+COUNTRY_CODE_TO_TAVILY_COUNTRY = {
+    "au": "australia",
+    "ca": "canada",
+    "de": "germany",
+    "fr": "france",
+    "gb": "united kingdom",
+    "jp": "japan",
+    "uk": "united kingdom",
+    "us": "united states",
+}
+
+
+def _clean_optional_search_param(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
+def _country_code_from_location(location: Optional[str]) -> Optional[str]:
+    location = _clean_optional_search_param(location)
+    if not location:
+        return None
+    token = location.split(",")[-1].strip().lower().replace(".", "")
+    if token in COUNTRY_NAME_TO_CODE:
+        return COUNTRY_NAME_TO_CODE[token]
+    if token == "uk":
+        return "gb"
+    if len(token) == 2 and token.isalpha():
+        return token
+    return None
+
+
+def _tavily_country_from_location(location: Optional[str]) -> Optional[str]:
+    location = _clean_optional_search_param(location)
+    if not location:
+        return None
+    country_code = _country_code_from_location(location)
+    if country_code:
+        return COUNTRY_CODE_TO_TAVILY_COUNTRY.get(country_code)
+    normalized = location.split(",")[-1].strip().lower()
+    if normalized in COUNTRY_CODE_TO_TAVILY_COUNTRY.values():
+        return normalized
+    return None
+
+
+def _brave_freshness_from_after_date(after_date: Optional[str]) -> Optional[str]:
+    after_date = _clean_optional_search_param(after_date)
+    if not after_date:
+        return None
+    return f"{after_date}to{date.today().isoformat()}"
+
+
+def _brave_location_headers(location: Optional[str]) -> dict[str, str]:
+    location = _clean_optional_search_param(location)
+    if not location:
+        return {}
+
+    parts = [part.strip() for part in location.split(",") if part.strip()]
+    if not parts:
+        return {}
+
+    headers = {}
+    if len(parts) == 1:
+        country_code = _country_code_from_location(parts[0])
+        if country_code:
+            headers["X-Loc-Country"] = country_code.upper()
+        else:
+            headers["X-Loc-City"] = parts[0]
+        return headers
+
+    headers["X-Loc-City"] = parts[0]
+    if len(parts) == 2:
+        country_code = _country_code_from_location(parts[1])
+        if country_code:
+            headers["X-Loc-Country"] = country_code.upper()
+        else:
+            headers["X-Loc-State"] = parts[1]
+        return headers
+
+    headers["X-Loc-State"] = parts[1]
+    country_code = _country_code_from_location(parts[-1])
+    if country_code:
+        headers["X-Loc-Country"] = country_code.upper()
+    return headers
+
+
+def _query_with_search_constraints(
+    query: str,
+    after_date: Optional[str],
+    location: Optional[str],
+) -> str:
+    constraints = []
+    after_date = _clean_optional_search_param(after_date)
+    location = _clean_optional_search_param(location)
+    if after_date:
+        constraints.append(f"Prefer sources published on or after {after_date}.")
+    if location:
+        constraints.append(f"Use location context: {location}.")
+    if not constraints:
+        return query
+    return f"{query}\n\nSearch constraints:\n" + "\n".join(f"- {item}" for item in constraints)
+
 
 class SearchProvider(ABC):
     """
@@ -39,12 +156,19 @@ class SearchProvider(ABC):
     """
 
     @abstractmethod
-    async def search(self, query: str) -> str:
+    async def search(
+        self,
+        query: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
         """
         Search for the given query.
 
         Args:
             query (str): what to search for.
+            after_date (Optional[str]): prefer or filter results on or after YYYY-MM-DD.
+            location (Optional[str]): prefer or filter results for a country or place.
 
         Returns:
             str: The search result.
@@ -69,7 +193,12 @@ class Google(SearchProvider):
             " ".join(element.text_content() for element in elements) if elements else ""
         )
 
-    async def search(self, term: str) -> str:
+    async def search(
+        self,
+        term: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
         start_time = time.time()
         tree = await self._fetch_data(term, "en")
         logger.debug(f"Google search fetch_data time: {time.time() - start_time}")
@@ -102,13 +231,21 @@ class GoogleCustomSearch(SearchProvider):
         self.cs_key = os.environ.get("GOOGLE_CUSTOMSEARCH_KEY")
         self.api_key = os.environ.get("GOOGLE_API_KEY")
 
-    async def search(self, term: str) -> str:
+    async def search(
+        self,
+        term: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
         start_time = time.time()
         params = {
             "q": term,
             "key": self.api_key,
             "cx": self.cs_key,
         }
+        country_code = _country_code_from_location(location)
+        if country_code:
+            params["gl"] = country_code
 
         try:
             async with httpx.AsyncClient() as client:
@@ -139,12 +276,17 @@ class Perplexity(SearchProvider):
 
         self.model = PerplexityModel(config)
 
-    async def search(self, query: str) -> str:
+    async def search(
+        self,
+        query: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
         start_time = time.time()
         messages = [
             {
                 "role": "user",
-                "content": (query),
+                "content": _query_with_search_constraints(query, after_date, location),
             },
         ]
         response = "".join([r async for r in self.model.get_response_async(messages)])
@@ -170,13 +312,27 @@ class GeminiSearch(SearchProvider):
         parts = candidate.get("content", {}).get("parts", [])
         return "".join(part.get("text", "") for part in parts if part.get("text")).strip()
 
-    async def search(self, query: str) -> str:
+    async def search(
+        self,
+        query: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
         start_time = time.time()
-        prompt = (
-            "Use Google Search grounding only when it improves factual accuracy. "
-            "Return only the plain answer text without citations or source annotations.\n\n"
-            f"Query: {query}"
-        )
+        prompt_parts = [
+            (
+                "Use Google Search grounding only when it improves factual accuracy. "
+                "Return only the plain answer text without citations or source annotations."
+            )
+        ]
+        after_date = _clean_optional_search_param(after_date)
+        location = _clean_optional_search_param(location)
+        if after_date:
+            prompt_parts.append(f"Prefer sources published on or after {after_date}.")
+        if location:
+            prompt_parts.append(f"Use search context relevant to {location} when geography affects the answer.")
+        prompt_parts.append(f"Query: {query}")
+        prompt = "\n\n".join(prompt_parts)
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {
@@ -211,8 +367,16 @@ class Tavily(SearchProvider):
         self.api_key = os.environ.get("TAVILY_API_KEY")
         if not self.api_key:
             raise ValueError("Tavily API key is not provided in environment variables")
+        self.search_depth = config.get("tavily_search_depth", "advanced")
+        self.topic = config.get("tavily_search_topic", "news")
+        self.country = config.get("tavily_search_country")
 
-    async def search(self, query: str):
+    async def search(
+        self,
+        query: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ):
         url = "https://api.tavily.com/search"
 
         start_time = time.time()
@@ -222,9 +386,22 @@ class Tavily(SearchProvider):
             "api_key": self.api_key,
             "query": query,
             "include_answer": True,
-            "search_depth": "advanced",
-            "topic": "news",
+            "search_depth": self.search_depth,
+            "topic": self.topic,
         }
+        after_date = _clean_optional_search_param(after_date)
+        if after_date:
+            payload["start_date"] = after_date
+
+        country = (
+            _tavily_country_from_location(location)
+            or _tavily_country_from_location(self.country)
+        )
+        if country:
+            if self.topic == "general":
+                payload["country"] = country
+            else:
+                logger.debug("Tavily location skipped because country is only supported for general topic")
 
         try:
             # Make the POST request to the API
@@ -252,6 +429,131 @@ class Tavily(SearchProvider):
         except json.JSONDecodeError as e:
             print(f"Error decoding JSON response: {e}")
             raise
+
+
+class ParallelSearch(SearchProvider):
+    """
+    Parallel Search API provider.
+
+    Requires PARALLEL_API_KEY in the environment or parallel_api_key in config.
+    """
+
+    BASE_URL = "https://api.parallel.ai/v1/search"
+
+    def __init__(self, config: Config):
+        self.api_key = os.environ.get("PARALLEL_API_KEY") or config.get("parallel_api_key")
+        if not self.api_key:
+            raise ValueError("PARALLEL_API_KEY is not set in environment variables")
+        self.mode = str(config.get("parallel_search_mode", "advanced"))
+        self.max_results = int(config.get("parallel_search_max_results", 10))
+        self.location = config.get("parallel_search_location", "us")
+        self.after_date = config.get("parallel_search_after_date")
+        self.max_chars_per_result = config.get("parallel_search_max_chars_per_result")
+        self.timeout = float(config.get("parallel_search_timeout_sec", 30))
+
+    def _build_payload(
+        self,
+        query: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> dict:
+        after_date = _clean_optional_search_param(after_date) or self.after_date
+        location = _clean_optional_search_param(location) or self.location
+        advanced_settings = {
+            "max_results": self.max_results,
+        }
+        if location:
+            advanced_settings["location"] = str(location).lower()
+        if after_date:
+            advanced_settings["source_policy"] = {
+                "after_date": str(after_date),
+            }
+        if self.max_chars_per_result:
+            advanced_settings["excerpt_settings"] = {
+                "max_chars_per_result": int(self.max_chars_per_result),
+            }
+
+        return {
+            "search_queries": [query],
+            "mode": self.mode,
+            "advanced_settings": advanced_settings,
+        }
+
+    @staticmethod
+    def _format_excerpts(excerpts) -> str:
+        if isinstance(excerpts, str):
+            excerpts = [excerpts]
+        if not isinstance(excerpts, list):
+            return ""
+
+        parts = []
+        for excerpt in excerpts:
+            if isinstance(excerpt, dict):
+                text = excerpt.get("text") or excerpt.get("content") or excerpt.get("excerpt")
+                if not text:
+                    text = json.dumps(excerpt, ensure_ascii=False)
+            else:
+                text = str(excerpt)
+            text = text.strip()
+            if text:
+                parts.append(text)
+        return "\n".join(parts)
+
+    @classmethod
+    def _format_results(cls, data: dict) -> str:
+        results = data.get("results", [])
+        if not results:
+            return ""
+
+        parts = []
+        for item in results:
+            title = str(item.get("title") or "Search result").strip()
+            url = str(item.get("url") or "").strip()
+            publish_date = item.get("publish_date")
+            excerpts = cls._format_excerpts(item.get("excerpts", []))
+
+            meta = []
+            if url:
+                meta.append(f"**URL:** {url}")
+            if publish_date:
+                meta.append(f"**Published:** {publish_date}")
+            body = "\n".join([f"### {title}", *meta, excerpts]).strip()
+            if body:
+                parts.append(body)
+        return "\n\n".join(parts)
+
+    async def search(
+        self,
+        query: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
+        start_time = time.time()
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": self.api_key,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    self.BASE_URL,
+                    headers=headers,
+                    json=self._build_payload(query, after_date, location),
+                )
+            if response.status_code >= 400:
+                logger.error(
+                    "Parallel Search API returned %s: %s",
+                    response.status_code,
+                    response.text[:1000],
+                )
+            response.raise_for_status()
+            result = self._format_results(response.json())
+            duration = time.time() - start_time
+            logger.debug(f"Parallel search took {duration:.2f} seconds")
+            return result
+        except Exception as e:
+            logger.error(f"Parallel search failed: {e}")
+            return ""
 
 
 class PersistentDDGS(DDGS):
@@ -290,7 +592,12 @@ class DuckDuckGoSearch(SearchProvider):
             logger.error(f"DDGS search could not be initialized: {e}")
             self.ddgs = None
 
-    async def search(self, query: str) -> str:
+    async def search(
+        self,
+        query: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
         start_time = time.time()
         if not self.ddgs:
             return ""
@@ -341,10 +648,14 @@ class BraveLLMContext(SearchProvider):
         self.count = config.get("brave_count", 10)
         self.max_tokens = config.get("brave_max_tokens", 4096)
         self.threshold_mode = config.get("brave_threshold_mode", "balanced")
+        self.country = config.get("brave_country")
+        self.freshness = config.get("brave_freshness")
 
     @classmethod
-    def _get_location_headers(cls) -> dict:
+    def _get_location_headers(cls, location: Optional[str] = None) -> dict:
         """Resolve location via IP once per process and cache the result."""
+        if location:
+            return _brave_location_headers(location)
         if cls._cached_location_headers is not None:
             return cls._cached_location_headers
         try:
@@ -368,13 +679,18 @@ class BraveLLMContext(SearchProvider):
             cls._cached_location_headers = {}
         return cls._cached_location_headers
 
-    async def search(self, query: str) -> str:
+    async def search(
+        self,
+        query: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
         start_time = time.time()
         headers = {
             "X-Subscription-Token": self.api_key,
             "Accept": "application/json",
             "Accept-Encoding": "gzip",
-            **self._get_location_headers(),
+            **self._get_location_headers(location),
         }
         params = {
             "q": query,
@@ -382,6 +698,14 @@ class BraveLLMContext(SearchProvider):
             "maximum_number_of_tokens": self.max_tokens,
             "context_threshold_mode": self.threshold_mode,
         }
+        country_code = _country_code_from_location(location) or _country_code_from_location(
+            self.country
+        )
+        if country_code:
+            params["country"] = country_code
+        freshness = _brave_freshness_from_after_date(after_date) or self.freshness
+        if freshness:
+            params["freshness"] = freshness
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.get(self.BASE_URL, headers=headers, params=params)
@@ -415,6 +739,7 @@ class BraveLLMContext(SearchProvider):
 class WebSearcher:
     def __init__(self, config):
         """Initializes multi-provider search engines with fallback for missing API key"""
+        self.config = config
         try:
             self.tavily = Tavily(config)
         except ValueError:
@@ -426,21 +751,36 @@ class WebSearcher:
         self.perplexity = Perplexity(config)
         self.gemini = GeminiSearch(config)
         self.ddgs = DuckDuckGoSearch(config)
-        self.config = config
+        try:
+            self.parallel = ParallelSearch(config)
+        except ValueError:
+            self.parallel = None
+            logger.debug("Parallel search disabled: PARALLEL_API_KEY not set")
         try:
             self.brave = BraveLLMContext(config)
         except ValueError:
             self.brave = None
             logger.debug("Brave LLM Context disabled: BRAVE_API_KEY not set")
 
-    async def search_providers_async(self, query: str, enabled_providers):
+    async def search_providers_async(
+        self,
+        query: str,
+        enabled_providers,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ):
         logger.debug(f"Searching for {query} with providers: {enabled_providers}")
 
         # Run search in a thread pool to avoid HTTP event loop saturation
         # This prevents search from competing with TTS HTTP requests
         loop = asyncio.get_event_loop()
         results = await loop.run_in_executor(
-            None, self._search_providers_sync, query, enabled_providers
+            None,
+            self._search_providers_sync,
+            query,
+            enabled_providers,
+            after_date,
+            location,
         )
 
         combined_result = ""
@@ -449,26 +789,48 @@ class WebSearcher:
                 logger.error(
                     f"Error while searching with provider {provider}: {str(result)}"
                 )
-            else:
+            elif result:
                 logger.debug(f"\n---------\n{provider} result: {result}")
                 combined_result += f"Result from {provider}: \n{result}\n"
 
         return combined_result
 
-    def _search_providers_sync(self, query: str, enabled_providers):
+    def _search_providers_sync(
+        self,
+        query: str,
+        enabled_providers,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ):
         """
         Synchronous wrapper for searching providers in a separate thread.
         This avoids HTTP event loop saturation when combined with TTS requests.
         """
         import concurrent.futures
 
-        results = []
+        if not enabled_providers:
+            return []
+
+        results_by_provider = {}
+        max_workers = min(
+            len(enabled_providers),
+            max(1, int(self.config.get("web_search_max_workers", 3))),
+        )
 
         # Create a thread pool for concurrent search
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="search") as executor:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="search",
+        ) as executor:
             # Submit all search tasks to the thread pool
             future_to_provider = {
-                executor.submit(self._search_single_provider, provider, query): provider
+                executor.submit(
+                    self._search_single_provider,
+                    provider,
+                    query,
+                    after_date,
+                    location,
+                ): provider
                 for provider in enabled_providers
             }
 
@@ -477,14 +839,20 @@ class WebSearcher:
                 provider = future_to_provider[future]
                 try:
                     result = future.result()
-                    results.append(result)
+                    results_by_provider[provider] = result
                 except Exception as e:
                     logger.error(f"Error in thread for provider {provider}: {str(e)}")
-                    results.append(e)
+                    results_by_provider[provider] = e
 
-        return results
+        return [results_by_provider.get(provider, "") for provider in enabled_providers]
 
-    def _search_single_provider(self, provider_name: str, query: str):
+    def _search_single_provider(
+        self,
+        provider_name: str,
+        query: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ):
         """
         Execute search for a single provider synchronously.
         Creates a new event loop for this thread since provider.search() is async.
@@ -494,24 +862,61 @@ class WebSearcher:
             logger.warning(f"Provider '{provider_name}' is not available (disabled or missing API key)")
             return ""
         # Run the async search in a new event loop for this thread
-        return asyncio.run(provider.search(query))
+        return asyncio.run(provider.search(query, after_date=after_date, location=location))
 
-    async def search_async(self, query: str) -> str:
+    def _get_enabled_providers(self) -> list[str]:
+        configured = self.config.get("web_search_providers", ["parallel", "brave", "tavily"])
+        if isinstance(configured, str):
+            providers = [p.strip() for p in configured.split(",")]
+        else:
+            providers = list(configured)
+
+        enabled = []
+        for provider in providers:
+            if not provider:
+                continue
+            provider_name = str(provider).strip()
+            if getattr(self, provider_name, None) is None:
+                logger.debug("Skipping unavailable search provider: %s", provider_name)
+                continue
+            enabled.append(provider_name)
+        return enabled
+
+    def search(
+        self,
+        query: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
+        return asyncio.run(
+            self.search_async(query, after_date=after_date, location=location)
+        )
+
+    async def search_async(
+        self,
+        query: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
         logger.debug(f"Searching for {query}")
         start_time = time.time()
 
-        # providers = ["gemini", "perplexity", "tavily", "brave"]
-        providers = ["brave", "tavily"]
+        providers = self._get_enabled_providers()
 
         try:
-            combined_result = await self.search_providers_async(query, providers)
+            combined_result = await self.search_providers_async(
+                query,
+                providers,
+                after_date=after_date,
+                location=location,
+            )
 
-            # logger.info(f"\n---------\n{query} combined result: {combined_result}")
-            #
-            # prompt = (f"Answer short. Based on result from internet search below, what is the answer to the question: "
-            #           f"{query}\n\n{combined_result}")
-            # result = self.ai_model.get_response([{"role": "user", "content": prompt}])
-            result = combined_result
+            logger.info(f"\n---------\n{query} combined result: {combined_result}")
+
+            prompt = (f"Based on result from internet search below, what is the answer to the question: "
+                      f"{query}\n\n{combined_result}")
+            result = self.ai_model.get_response([{"role": "user", "content": prompt}])
+            # result = combined_result
 
             duration = time.time() - start_time
             logger.debug(
@@ -528,9 +933,11 @@ async def loop():
     config = Config()
     web_searcher = WebSearcher(config)
     while True:
-        query = input(">")
-        result = await web_searcher.search_providers_async(query, ["brave"])
+        # query = input(">")
+        query = "today news"
+        result = await web_searcher.search_async(query)
         print(result)
+        break
 
 
 if __name__ == "__main__":
