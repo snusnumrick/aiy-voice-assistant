@@ -13,6 +13,7 @@ import httpx
 import requests
 from duckduckgo_search import DDGS
 from lxml import html
+from openai import AuthenticationError
 
 if __name__ == "__main__":
     # add current directory to python path
@@ -915,8 +916,11 @@ class WebSearcher:
 
             prompt = (f"Based on result from internet search below, what is the answer to the question: "
                       f"{query}\n\n{combined_result}")
-            result = self.ai_model.get_response([{"role": "user", "content": prompt}])
-            # result = combined_result
+            try:
+                result = self.ai_model.get_response([{"role": "user", "content": prompt}])
+            except AuthenticationError as e:
+                logger.warning(f"web search summary: Authentication error: {e}, passing raw result")
+                result = combined_result
 
             duration = time.time() - start_time
             logger.debug(
