@@ -1,10 +1,12 @@
 import logging
 import os
+import smtplib
 import uuid
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import Optional
 
 if __name__ == "__main__":
     # add the current directory to the python path
@@ -15,6 +17,84 @@ from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
 
 logger = logging.getLogger(__name__)
+
+
+def _decode_smtp_message(message) -> str:
+    if isinstance(message, bytes):
+        return message.decode("utf-8", errors="replace")
+    return str(message)
+
+
+def _extract_recipient_refusals(error_or_recipients) -> list[tuple[str, Optional[int], str]]:
+    recipients = getattr(error_or_recipients, "recipients", error_or_recipients)
+
+    if isinstance(recipients, dict):
+        refusals = []
+        for recipient, response in recipients.items():
+            code = None
+            message = response
+            if isinstance(response, tuple) and len(response) >= 2:
+                code = response[0]
+                message = response[1]
+            elif all(hasattr(response, attr) for attr in ("code", "message")):
+                code = getattr(response, "code")
+                message = getattr(response, "message")
+            refusals.append((str(recipient), code, _decode_smtp_message(message)))
+        return refusals
+
+    if isinstance(recipients, (list, tuple)):
+        refusals = []
+        for refusal in recipients:
+            recipient = getattr(refusal, "recipient", "")
+            code = getattr(refusal, "code", None)
+            message = getattr(refusal, "message", refusal)
+            refusals.append((str(recipient), code, _decode_smtp_message(message)))
+        return refusals
+
+    if all(hasattr(error_or_recipients, attr) for attr in ("recipient", "code", "message")):
+        return [
+            (
+                str(getattr(error_or_recipients, "recipient")),
+                getattr(error_or_recipients, "code"),
+                _decode_smtp_message(getattr(error_or_recipients, "message")),
+            )
+        ]
+
+    return []
+
+
+def _format_email_failure(
+    error,
+    *,
+    smtp_server: str,
+    sender: str,
+    recipient: str,
+    subject: str,
+) -> str:
+    context = (
+        f"Failed to send email via {smtp_server} from {sender} to {recipient} "
+        f'with subject "{subject}".'
+    )
+    refusals = _extract_recipient_refusals(error)
+    if not refusals:
+        return f"{context} SMTP error: {error}"
+
+    details = []
+    sender_verify_failed = False
+    for refused_recipient, code, message in refusals:
+        if "sender verify failed" in message.lower():
+            sender_verify_failed = True
+        status = f"{code} " if code is not None else ""
+        details.append(f"{refused_recipient}: {status}{message}")
+
+    hint = ""
+    if sender_verify_failed:
+        hint = (
+            f" The mail server rejected sender verification for {sender}; "
+            "check that mailbox's quota/storage and sender account state."
+        )
+
+    return f"{context} Recipient refused: {'; '.join(details)}.{hint}"
 
 
 def clean_body_for_attachments(body: str) -> str:
@@ -43,7 +123,13 @@ def clean_body_for_attachments(body: str) -> str:
     return '\n'.join(cleaned_lines)
 
 
-def send_email(subject: str, body: str, config: Config, sendto: str = None, attachments: list = None):
+def send_email(
+    subject: str,
+    body: str,
+    config: Config,
+    sendto: str = None,
+    attachments: list = None,
+) -> str:
     """
     Sends an email to the user with the given subject and body using the provided email configuration.
     If the `sendto` parameter is not provided, the email will be sent to the default user_email_address from the config.
@@ -54,11 +140,9 @@ def send_email(subject: str, body: str, config: Config, sendto: str = None, atta
     :param sendto: Optional string representing the recipient's email address. If not specified, falls back to the
                   user's default email address (`user_email_address`) in the configuration.
     :param attachments: Optional list of file paths to attach to the email.
-    :return: None
+    :return: A human-readable success or failure message.
 
     """
-    import smtplib
-
     assistant_email_address = config.get(
         "assistant_email_address", "cubick@treskunov.net"
     )
@@ -139,13 +223,39 @@ def send_email(subject: str, body: str, config: Config, sendto: str = None, atta
             server.login(username, password)
 
             # Send email
-            server.send_message(msg)
+            refused = server.send_message(msg)
+        if refused:
+            message = _format_email_failure(
+                smtplib.SMTPRecipientsRefused(refused),
+                smtp_server=smtp_server,
+                sender=assistant_email_address,
+                recipient=user_email_address,
+                subject=subject,
+            )
+            logger.error(message)
+            return message
+        message = f"Email sent successfully to {user_email_address}."
         logger.info(f"sent email about {subject}")
+        return message
     except Exception as e:
-        logger.error(f"An error occurred: {str(e)}")
+        message = _format_email_failure(
+            e,
+            smtp_server=smtp_server,
+            sender=assistant_email_address,
+            recipient=user_email_address,
+            subject=subject,
+        )
+        logger.error(message)
+        return message
 
 
-async def send_email_async(subject: str, body: str, config: Config, sendto: str = None, attachments: list = None):
+async def send_email_async(
+    subject: str,
+    body: str,
+    config: Config,
+    sendto: str = None,
+    attachments: list = None,
+) -> str:
     """
     Sends an email to the user asynchronously with the given subject and body using the provided email configuration.
     Sends an email to the user asynchronously with the given subject and body using the provided email configuration.
@@ -156,7 +266,7 @@ async def send_email_async(subject: str, body: str, config: Config, sendto: str 
     :param sendto: Optional string representing the recipient's email address. If not specified, falls back to the
                    user's default email address (`user_email_address`) in the configuration.
     :param attachments: Optional list of file paths to attach to the email.
-    :return: None
+    :return: A human-readable success or failure message.
     """
     import aiosmtplib
 
@@ -243,10 +353,31 @@ async def send_email_async(subject: str, body: str, config: Config, sendto: str 
                 pass
 
             await server.login(username, password)
-            await server.send_message(msg)
+            result = await server.send_message(msg)
+        refused = result[0] if isinstance(result, tuple) and len(result) > 0 else None
+        if refused:
+            message = _format_email_failure(
+                refused,
+                smtp_server=smtp_server,
+                sender=assistant_email_address,
+                recipient=user_email_address,
+                subject=subject,
+            )
+            logger.error(message)
+            return message
+        message = f"Email sent successfully to {user_email_address}."
         logger.info(f"sent email about {subject}")
+        return message
     except Exception as e:
-        logger.error(f"An error occurred: {str(e)}")
+        message = _format_email_failure(
+            e,
+            smtp_server=smtp_server,
+            sender=assistant_email_address,
+            recipient=user_email_address,
+            subject=subject,
+        )
+        logger.error(message)
+        return message
 
 
 class SendEmailTool:
@@ -257,7 +388,7 @@ class SendEmailTool:
         return Tool(
             name="send_email_to_user",
             description="Send an email with given subject and body to the user",
-            iterative=False,
+            iterative=True,
             parameters=[
                 ToolParameter(
                     name="subject", type="string", description="Email subject"
@@ -288,7 +419,7 @@ class SendEmailTool:
         body = parameters.get("body", "")
         to = parameters.get("to", None)
         attachments = parameters.get("attachments", None)
-        await send_email_async(subject, body, self.config, sendto=to, attachments=attachments)
+        return await send_email_async(subject, body, self.config, sendto=to, attachments=attachments)
 
 
 async def main():
