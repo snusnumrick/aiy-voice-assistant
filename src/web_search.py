@@ -371,6 +371,26 @@ class Tavily(SearchProvider):
         self.search_depth = config.get("tavily_search_depth", "advanced")
         self.topic = config.get("tavily_search_topic", "news")
         self.country = config.get("tavily_search_country")
+        self.timeout = float(config.get("tavily_search_timeout_sec", 30))
+
+    @staticmethod
+    def _format_results(data: dict) -> str:
+        results = data.get("results", [])
+        if not results:
+            return ""
+
+        parts = []
+        for item in results:
+            title = str(item.get("title") or "Search result").strip()
+            url = str(item.get("url") or "").strip()
+            content = str(item.get("content") or "").strip()
+            meta = [f"### {title}"]
+            if url:
+                meta.append(f"**URL:** {url}")
+            if content:
+                meta.append(content)
+            parts.append("\n".join(meta))
+        return "\n\n".join(parts)
 
     async def search(
         self,
@@ -384,11 +404,14 @@ class Tavily(SearchProvider):
 
         # Prepare the request payload
         payload = {
-            "api_key": self.api_key,
             "query": query,
             "include_answer": True,
             "search_depth": self.search_depth,
             "topic": self.topic,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
         }
         after_date = _clean_optional_search_param(after_date)
         if after_date:
@@ -406,8 +429,8 @@ class Tavily(SearchProvider):
 
         try:
             # Make the POST request to the API
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=payload)
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(url, headers=headers, json=payload)
             if response.status_code == 400:
                 try:
                     logger.error(
@@ -415,21 +438,30 @@ class Tavily(SearchProvider):
                     )
                 except Exception:
                     pass
+            if response.status_code >= 400:
+                logger.error(
+                    "Tavily API returned %s: %s",
+                    response.status_code,
+                    response.text[:1000],
+                )
             response.raise_for_status()  # Raise an exception for bad status codes
 
             # Parse and return the JSON response
-            answer = response.json()["answer"]
+            data = response.json()
+            answer = data.get("answer") or self._format_results(data)
             duration = time.time() - start_time
             logger.debug(f"Tavily search took {duration:.2f} seconds")
             return answer
 
-        except requests.exceptions.RequestException as e:
-            print(f"Error making request to Tavily API: {e}")
-            raise
-
-        except json.JSONDecodeError as e:
-            print(f"Error decoding JSON response: {e}")
-            raise
+        except httpx.TimeoutException as e:
+            logger.warning("Tavily search timed out after %.1fs: %r", self.timeout, e)
+            return ""
+        except httpx.HTTPError as e:
+            logger.error("Tavily search HTTP error: %r", e)
+            return ""
+        except (KeyError, TypeError, json.JSONDecodeError) as e:
+            logger.error("Tavily search returned an unexpected response: %r", e)
+            return ""
 
 
 class ParallelSearch(SearchProvider):
@@ -788,7 +820,9 @@ class WebSearcher:
         for provider, result in zip(enabled_providers, results):
             if isinstance(result, Exception):
                 logger.error(
-                    f"Error while searching with provider {provider}: {str(result)}"
+                    "Error while searching with provider %s: %r",
+                    provider,
+                    result,
                 )
             elif result:
                 logger.debug(f"\n---------\n{provider} result: {result}")
@@ -842,7 +876,7 @@ class WebSearcher:
                     result = future.result()
                     results_by_provider[provider] = result
                 except Exception as e:
-                    logger.error(f"Error in thread for provider {provider}: {str(e)}")
+                    logger.error("Error in thread for provider %s: %r", provider, e)
                     results_by_provider[provider] = e
 
         return [results_by_provider.get(provider, "") for provider in enabled_providers]

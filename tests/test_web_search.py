@@ -4,6 +4,8 @@ import unittest
 from datetime import date
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
+
 from src.config import Config
 from src.web_search import BraveLLMContext, GeminiSearch, ParallelSearch, Tavily, WebSearcher
 from src.web_search_tool import WebSearchTool
@@ -213,6 +215,25 @@ class TestWebSearcherProviders(unittest.TestCase):
 
         self.assertEqual(searcher._get_enabled_providers(), ["brave", "tavily"])
 
+    def test_threaded_provider_errors_include_exception_repr(self):
+        class BlankMessageError(Exception):
+            def __str__(self):
+                return ""
+
+        searcher = WebSearcher.__new__(WebSearcher)
+        searcher.config = self._config(web_search_max_workers=1)
+
+        def search_single_provider(provider_name, query, after_date=None, location=None):
+            raise BlankMessageError("hidden detail")
+
+        searcher._search_single_provider = search_single_provider
+
+        with self.assertLogs("src.web_search", level="ERROR") as logs:
+            results = searcher._search_providers_sync("query", ["tavily"])
+
+        self.assertIsInstance(results[0], BlankMessageError)
+        self.assertIn("BlankMessageError('hidden detail')", "\n".join(logs.output))
+
 
 class TestTavilySearch(unittest.TestCase):
     def _config(self, **kwargs):
@@ -223,7 +244,7 @@ class TestTavilySearch(unittest.TestCase):
         )
 
     @patch("src.web_search.httpx.AsyncClient.post", new_callable=AsyncMock)
-    def test_search_maps_after_date_and_location_when_supported(self, mock_post):
+    def test_search_uses_bearer_auth_and_maps_optional_filters(self, mock_post):
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.raise_for_status.return_value = None
@@ -241,10 +262,47 @@ class TestTavilySearch(unittest.TestCase):
             )
 
         self.assertEqual(result, "fresh answer")
+        headers = mock_post.call_args.kwargs["headers"]
+        self.assertEqual(headers["Authorization"], "Bearer test-tavily-key")
         sent_payload = mock_post.call_args.kwargs["json"]
+        self.assertNotIn("api_key", sent_payload)
         self.assertEqual(sent_payload["start_date"], "2026-04-23")
         self.assertEqual(sent_payload["country"], "united states")
         self.assertEqual(sent_payload["topic"], "general")
+
+    @patch("src.web_search.httpx.AsyncClient.post", new_callable=AsyncMock)
+    def test_search_returns_formatted_results_when_answer_missing(self, mock_post):
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "results": [
+                {
+                    "title": "Bremen exhibition",
+                    "url": "https://example.com/bremen",
+                    "content": "Exhibition details",
+                }
+            ]
+        }
+        mock_post.return_value = mock_response
+
+        with patch.dict("os.environ", {"TAVILY_API_KEY": "test-tavily-key"}):
+            result = asyncio.run(Tavily(self._config()).search("Bremen exhibitions"))
+
+        self.assertIn("### Bremen exhibition", result)
+        self.assertIn("**URL:** https://example.com/bremen", result)
+        self.assertIn("Exhibition details", result)
+
+    @patch("src.web_search.httpx.AsyncClient.post", new_callable=AsyncMock)
+    def test_search_timeout_returns_empty_result(self, mock_post):
+        mock_post.side_effect = httpx.ReadTimeout("timed out")
+
+        with patch.dict("os.environ", {"TAVILY_API_KEY": "test-tavily-key"}):
+            result = asyncio.run(
+                Tavily(self._config(tavily_search_timeout_sec=1)).search("slow query")
+            )
+
+        self.assertEqual(result, "")
 
 
 class TestBraveSearch(unittest.TestCase):
