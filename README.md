@@ -80,7 +80,147 @@ For a complete list of Python dependencies, refer to the pyproject.toml file in 
 
 ## Setup
 
-Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
+If you already have a working assistant, cloning its SD card is usually the fastest way
+to provision a new device. Use the first-time setup steps below when building a device
+from a fresh Raspberry Pi OS image.
+
+### Clone an existing SD card for a new device
+
+Cloning copies the full system image, including this repository, local config,
+`.env`, `user.json`, logs, SSH host keys, and Tailscale state. Only clone cards into
+devices you control, and keep the source device powered down until the clone has its
+own hostname and network identity.
+
+1. **Shut down the working Raspberry Pi cleanly:**
+   ```bash
+   sudo shutdown -h now
+   ```
+   Wait until the activity LED stops blinking, then remove the source SD card.
+
+2. **Create an image from the source card on your computer.**
+
+   Double-check every device name before running `dd`: `if=` is the source and `of=`
+   is overwritten.
+
+   On macOS:
+   ```bash
+   diskutil list
+   diskutil unmountDisk /dev/diskN
+   sudo dd if=/dev/rdiskN of=~/aiy-voice-source.img bs=4m status=progress
+   diskutil eject /dev/diskN
+   ```
+
+   On Linux:
+   ```bash
+   lsblk
+   sudo umount /dev/sdX*
+   sudo dd if=/dev/sdX of=~/aiy-voice-source.img bs=4M status=progress conv=fsync
+   sync
+   ```
+
+   Replace `diskN` or `sdX` with the whole SD-card device, not a partition such as
+   `diskNs1` or `sdX1`. On macOS, use the same number for `diskN` and `rdiskN`;
+   `rdiskN` is the raw-device path for the same SD card.
+
+3. **Write the image to the new SD card.**
+
+   Use a destination card with the same or larger capacity than the source.
+   Raspberry Pi Imager is the recommended way to write the clone because it gives
+   you a safer target-card picker and verifies the write.
+   Newer Imager versions do not offer OS customization when writing an existing
+   image, so do hostname, SSH, and Tailscale cleanup after the first boot.
+
+   In Raspberry Pi Imager:
+   1. Choose **Choose Device** and select the Raspberry Pi model.
+   2. Choose **Choose OS** -> **Use custom**.
+   3. Select `aiy-voice-source.img`.
+   4. Choose **Choose Storage** and select the new SD card.
+   5. Click **Write** and wait for verification to finish.
+   6. Eject the SD card when Imager completes.
+
+   If you prefer a terminal-only restore, use `dd`.
+
+   On macOS:
+   ```bash
+   diskutil list
+   diskutil unmountDisk /dev/diskM
+   sudo dd if=~/aiy-voice-source.img of=/dev/rdiskM bs=4m status=progress
+   sync
+   diskutil eject /dev/diskM
+   ```
+
+   On Linux:
+   ```bash
+   lsblk
+   sudo umount /dev/sdY*
+   sudo dd if=~/aiy-voice-source.img of=/dev/sdY bs=4M status=progress conv=fsync
+   sync
+   ```
+
+   On macOS, use the same destination-card number for `diskM` and `rdiskM`.
+
+4. **Boot the new Raspberry Pi and give it a unique identity.**
+
+   SSH into the new device, then set a new hostname:
+   ```bash
+   sudo hostnamectl set-hostname aiy-voice-2
+   sudo nano /etc/hosts
+   sudo reboot
+   ```
+
+   In `/etc/hosts`, update the `127.0.1.1` entry to match the new hostname.
+
+5. **Regenerate SSH host keys on the cloned device:**
+   ```bash
+   sudo rm /etc/ssh/ssh_host_*
+   sudo dpkg-reconfigure openssh-server
+   sudo systemctl restart ssh
+   ```
+
+   On your computer, remove the old host key for the cloned device if SSH warns about
+   a changed fingerprint:
+   ```bash
+   ssh-keygen -R <new-device-hostname-or-ip>
+   ```
+
+6. **Reset Tailscale identity if the source card had Tailscale configured:**
+   ```bash
+   sudo tailscale logout || true
+   sudo rm -rf /var/lib/tailscale
+   sudo systemctl restart tailscaled
+   sudo tailscale up --hostname aiy-voice-2
+   ```
+
+   This prevents the new device from appearing as the original assistant in the
+   Tailscale admin console.
+
+7. **Expand the filesystem if the destination SD card is larger:**
+   ```bash
+   sudo raspi-config
+   ```
+
+   Choose **Advanced Options** -> **Expand Filesystem**, reboot, then verify space:
+   ```bash
+   df -h /
+   ```
+
+8. **Review per-device configuration and service health:**
+   ```bash
+   cd ~/aiy-voice-assistant
+   nano user.json
+   nano .env
+   sudo systemctl status aiy.service
+   sudo crontab -l
+   tailscale status
+   ```
+
+   Check that API keys, email settings, location, reminders, and any child/user
+   profile details are correct for the new physical device.
+
+### First-time setup
+
+Follow these steps to set up the AI Voice Assistant on your Raspberry Pi from a
+fresh OS image:
 
 1. **Set up the Google Voice Kit V2:**
    - Follow the official guide at https://aiyprojects.withgoogle.com/voice/
@@ -130,6 +270,7 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
    mkdir $ZSH_CUSTOM/plugins/poetry
    poetry completions zsh > $ZSH_CUSTOM/plugins/poetry/_poetry
    # Add 'poetry' to your plugins array in ~/.zshrc
+   ```
 
 8. **Install Python 3.9 using pyenv:**
    ```bash
@@ -233,7 +374,7 @@ Follow these steps to set up the AI Voice Assistant on your Raspberry Pi:
     1. Make sure to keep your `.env` file secure and never commit it to version control.
     2. Depending on configuration, some of these API keys may be unnecessary.
     3. GOOGLE_API_KEY should support the timezone API.
-    4. `web_search_providers` controls the search provider order. Parallel Search is used when `PARALLEL_API_KEY` is set; optional config keys include `parallel_search_mode`, `parallel_search_max_results`, `parallel_search_location`, and `parallel_search_after_date`. The `internet_search` tool also accepts optional `after_date` (`YYYY-MM-DD`) and `location` parameters when a request needs freshness or local context.
+    4. `web_search_providers` controls the search provider order. Parallel Search is used when `PARALLEL_API_KEY` is set; optional config keys include `parallel_search_mode`, `parallel_search_max_results`, `parallel_search_location`, and `parallel_search_after_date`. The `internet_search` tool also accepts optional `after_date` (`YYYY-MM-DD`) and `location` parameters when a request needs freshness or local context. Additional query variants are pooled into one evidence set and one final answer extraction, capped by `web_search_max_query_variants` (default 3). Final answer extraction uses one model call by default; `web_search_structured_extraction` can be `auto`, `direct`, or `structured`, with `auto` suggesting structured output from evidence shape such as multiple sources, dates, and explicit freshness/location constraints. Use `web_search_max_sources` and `web_search_max_evidence_chars` to cap final-prompt evidence size.
 
 
 13. **Set up the systemd service:**

@@ -26,11 +26,6 @@ import grpc
 from aiy.board import Button, ButtonState
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import AudioFormat, Recorder
-
-try:
-    from google.cloud import speech
-except Exception:
-    speech = None
 from src.background_tasks import BackgroundTaskManager
 from src.config import Config
 from src.emotion_engine import EmotionEngine, format_annotation, get_annotation_options
@@ -63,11 +58,14 @@ class SpeechRecognitionService(ABC):
 
 class GoogleSpeechRecognition(SpeechRecognitionService):
     def setup_client(self, config):
+        try:
+            from google.cloud import speech
+        except ImportError as exc:
+            raise ImportError("google-cloud-speech is not installed") from exc
         from google.oauth2 import service_account
 
         logger.debug("Setting up Google Speech client")
-        if speech is None:
-            raise ImportError("google-cloud-speech is not installed")
+        self.speech = speech
         service_account_file = config.get(
             "google_service_account_file", "~/gcloud.json"
         )
@@ -90,6 +88,7 @@ class GoogleSpeechRecognition(SpeechRecognitionService):
 
     def _transcribe_stream_sync(self, audio_generator: Iterator[bytes], config) -> str:
         logger.debug("Transcribing audio stream (google)")
+        speech = self.speech
         streaming_config = speech.types.StreamingRecognitionConfig(
             config=speech.types.RecognitionConfig(
                 encoding=speech.types.RecognitionConfig.AudioEncoding.LINEAR16,

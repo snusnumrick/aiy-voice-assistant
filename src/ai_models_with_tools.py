@@ -1656,7 +1656,7 @@ async def main_async():
         #     )},
         # {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4. Use code interpreter tool"},
         # {"role": "user", "content": "how many r in word strawberry? think it through"},
-        {"role": "user", "content": "что нового сегодня в мире"},
+        {"role": "user", "content": "что интересного будет в Бремене в выходные 24-27 мая"},
         # {"role": "user", "content": "где именно встретятся трамп с путиным, проверь свежие новости"},
         # {"role": "user", "content": "Что такое бегство декурионов в Поздней Римской империи?"},
     ]

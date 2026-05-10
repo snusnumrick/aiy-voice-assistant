@@ -151,6 +151,76 @@ def _query_with_search_constraints(
     return f"{query}\n\nSearch constraints:\n" + "\n".join(f"- {item}" for item in constraints)
 
 
+def _positive_int(value, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _json_object_from_text(text: str) -> Optional[dict]:
+    cleaned = str(text or "").strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines:
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        try:
+            data = json.loads(cleaned[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+    return data if isinstance(data, dict) else None
+
+
+def _json_objects_from_text(text: str, limit: int = 50) -> list[dict]:
+    decoder = json.JSONDecoder()
+    objects = []
+    source = str(text or "")
+    index = 0
+    while len(objects) < limit:
+        start = source.find("{", index)
+        if start == -1:
+            break
+        try:
+            parsed, offset = decoder.raw_decode(source[start:])
+        except json.JSONDecodeError:
+            index = start + 1
+            continue
+        if isinstance(parsed, dict):
+            objects.append(parsed)
+        index = start + max(offset, 1)
+    return objects
+
+
+def _json_objects_with_sources_from_evidence(
+    evidence: str,
+    limit: int = 50,
+) -> list[tuple[dict, str]]:
+    objects = []
+    current_source = ""
+    for raw_line in str(evidence or "").splitlines():
+        line = raw_line.strip()
+        if line.startswith("**URL:**"):
+            current_source = line.removeprefix("**URL:**").strip()
+            continue
+        for item in _json_objects_from_text(line, limit=limit - len(objects)):
+            objects.append((item, current_source))
+            if len(objects) >= limit:
+                return objects
+    return objects
+
+
 class SearchProvider(ABC):
     """
     Abstract base class for internet search.
@@ -369,7 +439,7 @@ class Tavily(SearchProvider):
         if not self.api_key:
             raise ValueError("Tavily API key is not provided in environment variables")
         self.search_depth = config.get("tavily_search_depth", "advanced")
-        self.topic = config.get("tavily_search_topic", "news")
+        self.topic = config.get("tavily_search_topic", "general")
         self.country = config.get("tavily_search_country")
         self.timeout = float(config.get("tavily_search_timeout_sec", 30))
 
@@ -405,7 +475,7 @@ class Tavily(SearchProvider):
         # Prepare the request payload
         payload = {
             "query": query,
-            "include_answer": True,
+            "include_answer": False,
             "search_depth": self.search_depth,
             "topic": self.topic,
         }
@@ -448,7 +518,7 @@ class Tavily(SearchProvider):
 
             # Parse and return the JSON response
             data = response.json()
-            answer = data.get("answer") or self._format_results(data)
+            answer = self._format_results(data)
             duration = time.time() - start_time
             logger.debug(f"Tavily search took {duration:.2f} seconds")
             return answer
@@ -917,6 +987,340 @@ class WebSearcher:
             enabled.append(provider_name)
         return enabled
 
+    @staticmethod
+    def _evidence_metadata(evidence: str) -> dict:
+        urls = set()
+        published_dates = set()
+        title_count = 0
+        for raw_line in str(evidence or "").splitlines():
+            line = raw_line.strip()
+            if line.startswith("### "):
+                title_count += 1
+            elif line.startswith("**URL:**"):
+                url = line.removeprefix("**URL:**").strip()
+                if url:
+                    urls.add(url)
+            elif line.startswith("**Published:**"):
+                published = line.removeprefix("**Published:**").strip()
+                if published:
+                    published_dates.add(published)
+
+        return {
+            "source_count": len(urls) or title_count,
+            "title_count": title_count,
+            "published_date_count": len(published_dates),
+            "char_count": len(str(evidence or "")),
+        }
+
+    @staticmethod
+    def _is_event_json_object(value: dict) -> bool:
+        event_type = value.get("@type")
+        if isinstance(event_type, list):
+            return any("event" in str(item).lower() for item in event_type)
+        return "event" in str(event_type or "").lower()
+
+    @staticmethod
+    def _format_event_location(location) -> str:
+        if isinstance(location, str):
+            return location.strip()
+        if not isinstance(location, dict):
+            return ""
+
+        parts = []
+        name = str(location.get("name") or "").strip()
+        if name:
+            parts.append(name)
+        address = location.get("address")
+        if isinstance(address, dict):
+            for key in ("streetAddress", "addressLocality", "addressRegion", "addressCountry"):
+                value = str(address.get(key) or "").strip()
+                if value and value not in parts:
+                    parts.append(value)
+        return ", ".join(parts)
+
+    @staticmethod
+    def _first_table_value(row: dict, keys: tuple[str, ...]) -> str:
+        for key in keys:
+            value = row.get(key)
+            if value is not None:
+                value = str(value).strip()
+                if value:
+                    return value
+        return ""
+
+    @staticmethod
+    def _table_event_candidates(item: dict, source: str) -> list[dict[str, str]]:
+        table = item.get("table")
+        if not isinstance(table, list):
+            return []
+
+        candidates = []
+        fallback_source = source or str(item.get("url") or item.get("@id") or "").strip()
+        for row in table:
+            if not isinstance(row, dict):
+                continue
+            name = WebSearcher._first_table_value(
+                row,
+                ("Event", "Veranstaltung", "Title", "Titel", "Name", "name", "title"),
+            )
+            date_time = WebSearcher._first_table_value(
+                row,
+                ("Termin", "Datum", "Date", "date", "When", "Zeit", "startDate"),
+            )
+            location = WebSearcher._first_table_value(
+                row,
+                ("Ort", "Venue", "Location", "location", "Wo", "Adresse"),
+            )
+            if not name or not date_time:
+                continue
+            candidates.append(
+                {
+                    "name": name,
+                    "date_time": date_time,
+                    "location": location,
+                    "source": fallback_source or str(item.get("title") or "").strip(),
+                }
+            )
+        return candidates
+
+    def _extract_event_candidates(self, evidence: str) -> list[dict[str, str]]:
+        max_candidates = _positive_int(
+            self.config.get("web_search_max_structured_candidates", 24),
+            24,
+        )
+        candidates = []
+        seen = set()
+        for item, surrounding_source in _json_objects_with_sources_from_evidence(
+            evidence,
+            limit=max_candidates * 4,
+        ):
+            extracted = []
+            if self._is_event_json_object(item):
+                name = str(item.get("name") or "").strip()
+                start_date = str(item.get("startDate") or "").strip()
+                end_date = str(item.get("endDate") or "").strip()
+                source = str(item.get("url") or item.get("@id") or surrounding_source).strip()
+                location = self._format_event_location(item.get("location"))
+                if name or start_date:
+                    extracted.append(
+                        {
+                            "name": name,
+                            "date_time": (
+                                f"{start_date} to {end_date}"
+                                if end_date and end_date != start_date
+                                else start_date
+                            ),
+                            "location": location,
+                            "source": source,
+                        }
+                    )
+            extracted.extend(self._table_event_candidates(item, surrounding_source))
+
+            for candidate in extracted:
+                identity = (
+                    candidate.get("name", ""),
+                    candidate.get("date_time", ""),
+                    candidate.get("source", ""),
+                )
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                candidates.append(candidate)
+                if len(candidates) >= max_candidates:
+                    return candidates
+        return candidates
+
+    def _format_event_candidates_for_prompt(self, evidence: str) -> str:
+        lines = []
+        for candidate in self._extract_event_candidates(evidence):
+            parts = [
+                candidate.get("name", ""),
+                candidate.get("date_time", ""),
+                candidate.get("location", ""),
+                candidate.get("source", ""),
+            ]
+            line = " | ".join(part for part in parts if part)
+            if line:
+                lines.append(f"- {line}")
+        if not lines:
+            return ""
+        return (
+            "Structured event candidates extracted from evidence:\n"
+            + "\n".join(lines)
+        )
+
+    def _suggest_answer_mode(
+        self,
+        evidence: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
+        setting = str(
+            self.config.get("web_search_structured_extraction", "auto")
+        ).strip().lower()
+        if setting in {"structured", "always", "true", "yes"}:
+            return "structured"
+        if setting in {"direct", "off", "false", "no", "none"}:
+            return "direct"
+
+        metadata = self._evidence_metadata(evidence)
+        source_threshold = _positive_int(
+            self.config.get("web_search_structured_source_threshold", 5),
+            5,
+        )
+        if self._extract_event_candidates(evidence):
+            return "structured"
+        has_explicit_constraints = bool(
+            _clean_optional_search_param(after_date)
+            or _clean_optional_search_param(location)
+        )
+        if has_explicit_constraints and metadata["source_count"] > 1:
+            return "structured"
+        if metadata["published_date_count"] > 1:
+            return "structured"
+        if metadata["source_count"] >= source_threshold:
+            return "structured"
+        return "direct"
+
+    def _compact_search_evidence(self, evidence: str) -> str:
+        max_chars = _positive_int(
+            self.config.get("web_search_max_evidence_chars", 12000),
+            12000,
+        )
+        max_sources = _positive_int(
+            self.config.get("web_search_max_sources", 8),
+            8,
+        )
+        lines = str(evidence or "").splitlines()
+        compacted_lines = []
+        source_count = 0
+        skip_current_source = False
+
+        for line in lines:
+            if line.strip().startswith("### "):
+                source_count += 1
+                skip_current_source = source_count > max_sources
+            if not skip_current_source:
+                compacted_lines.append(line)
+
+        compacted = "\n".join(compacted_lines).strip()
+        if len(compacted) > max_chars:
+            compacted = compacted[:max_chars].rstrip() + "\n[Search evidence truncated.]"
+        return compacted
+
+    def _build_answer_prompt(
+        self,
+        query: str,
+        evidence: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
+        compacted_evidence = self._compact_search_evidence(evidence)
+        suggested_mode = self._suggest_answer_mode(
+            evidence,
+            after_date=after_date,
+            location=location,
+        )
+        event_candidates = self._format_event_candidates_for_prompt(evidence)
+        event_candidate_section = (
+            f"\n{event_candidates}\n"
+            if event_candidates
+            else "\nStructured event candidates extracted from evidence:\n- None found.\n"
+        )
+        constraints = []
+        after_date = _clean_optional_search_param(after_date)
+        location = _clean_optional_search_param(location)
+        if after_date:
+            constraints.append(f"- Prefer or require sources on or after {after_date}.")
+        if location:
+            constraints.append(f"- Prefer or require sources relevant to {location}.")
+        constraint_text = "\n".join(constraints) if constraints else "- No explicit constraints."
+
+        return f"""
+You are a strict search-result extraction and answer-composition tool.
+
+User question:
+{query}
+
+Search constraints:
+{constraint_text}
+
+{event_candidate_section}
+Search evidence:
+{compacted_evidence}
+
+Suggested response mode: {suggested_mode}
+
+Return only valid JSON. The JSON must use this shape:
+{{
+  "mode": "direct",
+  "answer": "short direct user-facing answer",
+  "items": [
+    {{
+      "name": "event, fact, place, article, or result name",
+      "date_time": "date/time if available",
+      "location": "venue or location if available",
+      "source": "source URL or source name",
+      "confidence": "high, medium, or low"
+    }}
+  ],
+  "notes": ["brief ignored/noisy-result notes when useful"]
+}}
+
+Rules:
+1. The mode value must be either "direct" or "structured".
+2. Use "direct" for simple questions with one clear answer.
+3. Use "structured" when the evidence contains several dated, location-specific, or conflicting items.
+4. Do not summarize the whole result set.
+5. Exclude date-mismatched, location-mismatched, generic, or duplicate results.
+6. Prefer official venue, city, museum, or event pages over aggregators.
+7. Use aggregators only when no official source is present, and mark them lower confidence.
+8. Keep "answer" concise because it may be spoken aloud.
+9. Include only items that directly answer the user question.
+10. If the user question names a date window, include only items inside that window.
+11. Do not claim that no specific events are listed when the structured event candidates contain dated items matching the question.
+12. If the evidence is insufficient, say that in "answer" and leave "items" empty.
+"""
+
+    @staticmethod
+    def _render_answer_json(data: dict) -> str:
+        answer = str(data.get("answer") or "").strip()
+        mode = str(data.get("mode") or "direct").strip().lower()
+        if mode != "structured":
+            return answer
+
+        lines = [answer] if answer else []
+        items = data.get("items")
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                parts = [
+                    str(item.get("name") or "").strip(),
+                    str(item.get("date_time") or "").strip(),
+                    str(item.get("location") or "").strip(),
+                    str(item.get("source") or "").strip(),
+                ]
+                line = " - ".join(part for part in parts if part)
+                confidence = str(item.get("confidence") or "").strip()
+                if confidence:
+                    line = f"{line} ({confidence})" if line else f"({confidence})"
+                if line:
+                    lines.append(f"- {line}")
+
+        notes = data.get("notes")
+        if isinstance(notes, list):
+            note_text = " ".join(str(note).strip() for note in notes if str(note).strip())
+            if note_text:
+                lines.append(f"Notes: {note_text}")
+        return "\n".join(lines).strip()
+
+    def _render_answer_response(self, response: str) -> str:
+        data = _json_object_from_text(response)
+        if not data:
+            return str(response or "").strip()
+        return self._render_answer_json(data) or str(response or "").strip()
+
     def search(
         self,
         query: str,
@@ -926,6 +1330,106 @@ class WebSearcher:
         return asyncio.run(
             self.search_async(query, after_date=after_date, location=location)
         )
+
+    def search_many(
+        self,
+        queries: list[str],
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
+        return asyncio.run(
+            self.search_many_async(queries, after_date=after_date, location=location)
+        )
+
+    async def _search_evidence_async(
+        self,
+        query: str,
+        providers: list[str],
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
+        combined_result = await self.search_providers_async(
+            query,
+            providers,
+            after_date=after_date,
+            location=location,
+        )
+        logger.info(f"\n---------\n{query} combined result: {combined_result}")
+        return combined_result
+
+    def _combined_question(self, queries: list[str]) -> str:
+        if len(queries) <= 1:
+            return queries[0] if queries else ""
+        additional = "\n".join(f"- {query}" for query in queries[1:])
+        return f"{queries[0]}\n\nAdditional search variants used:\n{additional}"
+
+    async def search_many_async(
+        self,
+        queries: list[str],
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
+        cleaned_queries = []
+        for query in queries:
+            query = str(query).strip()
+            if query and query not in cleaned_queries:
+                cleaned_queries.append(query)
+        if not cleaned_queries:
+            return ""
+        max_query_variants = _positive_int(
+            self.config.get("web_search_max_query_variants", 3),
+            3,
+        )
+        cleaned_queries = cleaned_queries[:max_query_variants]
+
+        logger.debug(f"Searching for {cleaned_queries}")
+        start_time = time.time()
+        providers = self._get_enabled_providers()
+
+        try:
+            evidence_results = await asyncio.gather(
+                *[
+                    self._search_evidence_async(
+                        query,
+                        providers,
+                        after_date=after_date,
+                        location=location,
+                    )
+                    for query in cleaned_queries
+                ]
+            )
+            combined_result = "\n\n".join(
+                f"Query: {query}\n{result}"
+                for query, result in zip(cleaned_queries, evidence_results)
+                if result
+            )
+            if not combined_result:
+                return ""
+
+            result = combined_result
+            prompt = self._build_answer_prompt(
+                self._combined_question(cleaned_queries),
+                combined_result,
+                after_date=after_date,
+                location=location,
+            )
+            try:
+                response = self.ai_model.get_response([{"role": "user", "content": prompt}])
+                result = self._render_answer_response(response)
+            except AuthenticationError as e:
+                logger.warning(f"web search summary: Authentication error: {e}, passing raw result")
+
+            duration = time.time() - start_time
+            logger.debug(
+                "Final search took %.2f seconds; result for queries %s is: %s",
+                duration,
+                cleaned_queries,
+                result,
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Error performing web search: {e}")
+            raise
 
     async def search_async(
         self,
@@ -939,22 +1443,25 @@ class WebSearcher:
         providers = self._get_enabled_providers()
 
         try:
-            combined_result = await self.search_providers_async(
+            combined_result = await self._search_evidence_async(
                 query,
                 providers,
                 after_date=after_date,
                 location=location,
             )
 
-            logger.info(f"\n---------\n{query} combined result: {combined_result}")
-
-            prompt = (f"Based on result from internet search below, what is the answer to the question: "
-                      f"{query}\n\n{combined_result}")
+            result = combined_result
+            prompt = self._build_answer_prompt(
+                query,
+                combined_result,
+                after_date=after_date,
+                location=location,
+            )
             try:
-                result = self.ai_model.get_response([{"role": "user", "content": prompt}])
+                response = self.ai_model.get_response([{"role": "user", "content": prompt}])
+                result = self._render_answer_response(response)
             except AuthenticationError as e:
                 logger.warning(f"web search summary: Authentication error: {e}, passing raw result")
-                result = combined_result
 
             duration = time.time() - start_time
             logger.debug(

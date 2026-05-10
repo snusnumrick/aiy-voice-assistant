@@ -7,6 +7,25 @@ from src.web_search import WebSearcher
 logger = logging.getLogger(__name__)
 
 
+def _queries_from_parameters(parameters: dict[str, any]) -> list[str]:
+    queries = []
+    query = str(parameters.get("query", "")).strip()
+    if query:
+        queries.append(query)
+
+    additional_queries = parameters.get("additional_queries")
+    if additional_queries:
+        if isinstance(additional_queries, list):
+            candidates = additional_queries
+        else:
+            candidates = str(additional_queries).replace("\n", ",").split(",")
+        for candidate in candidates:
+            candidate = str(candidate).strip()
+            if candidate and candidate not in queries:
+                queries.append(candidate)
+    return queries
+
+
 class WebSearchTool:
     """
 
@@ -45,7 +64,12 @@ class WebSearchTool:
                 ToolParameter(
                     name="query",
                     type="string",
-                    description="A query to search for, preferable in English",
+                    description="A query to search for. Use the local-language wording most likely to return relevant results.",
+                ),
+                ToolParameter(
+                    name="additional_queries",
+                    type="string",
+                    description="Optional comma-separated additional search queries to run and combine with the main query, for local-language or venue-specific variants.",
                 ),
                 ToolParameter(
                     name="after_date",
@@ -89,8 +113,8 @@ class WebSearchTool:
         logger.info(f"searching for {parameters['query']}")
         if "query" in parameters:
             self._start_processing()
-            result = self.web_searcher.search(
-                parameters["query"],
+            result = self.web_searcher.search_many(
+                _queries_from_parameters(parameters),
                 after_date=parameters.get("after_date"),
                 location=parameters.get("location"),
             )
@@ -104,8 +128,8 @@ class WebSearchTool:
         if "query" in parameters:
             self._start_processing()
             logger.info(f"searching for {parameters['query']}")
-            result = await self.web_searcher.search_async(
-                parameters["query"],
+            result = await self.web_searcher.search_many_async(
+                _queries_from_parameters(parameters),
                 after_date=parameters.get("after_date"),
                 location=parameters.get("location"),
             )
