@@ -192,3 +192,4 @@ gemini-native-image*.png
 tmp*.wav
 
 /test_wav/
+/images/

@@ -1,16 +1,17 @@
-import unittest
-from unittest.mock import patch, AsyncMock
 import asyncio
-from src.config import Config
+import unittest
+from unittest.mock import patch
+
 from src.ai_models import (
-    MessageModel,
-    normalize_messages,
     AIModel,
-    OpenAIModel,
     ClaudeAIModel,
+    MessageModel,
+    OpenAIModel,
     OpenRouterModel,
     PerplexityModel,
+    normalize_messages,
 )
+from src.config import Config
 
 
 class TestAIModels(unittest.TestCase):
@@ -103,7 +104,7 @@ class TestAIModels(unittest.TestCase):
             mock_init.assert_called_once()
             _, kwargs = mock_init.call_args
             self.assertEqual(kwargs['base_url'], 'https://openrouter.ai/api/v1')
-            self.assertEqual(kwargs['model_id'], 'anthropic/claude-3.5-sonnet')
+            self.assertEqual(kwargs['model_id'], self.config.get('openrouter_model'))
 
     def test_perplexity_model(self):
         with patch('src.ai_models.OpenAIModel.__init__') as mock_init:

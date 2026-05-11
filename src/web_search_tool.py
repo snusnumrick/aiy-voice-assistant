@@ -72,11 +72,6 @@ class WebSearchTool:
                     description="Optional comma-separated additional search queries to run and combine with the main query, for local-language or venue-specific variants.",
                 ),
                 ToolParameter(
-                    name="after_date",
-                    type="string",
-                    description="Optional freshness filter as YYYY-MM-DD. Use when the user asks for recent results after a specific date.",
-                ),
-                ToolParameter(
                     name="location",
                     type="string",
                     description="Optional country or place for localized search, for example 'us' or 'San Francisco, CA, US'.",
