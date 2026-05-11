@@ -33,6 +33,8 @@ PROFILE_TOOL_NAMES = {
     PROFILE_RESEARCH: {
         "internet_search",
         "web_search",
+        "list_web_search_reports",
+        "get_web_search_report",
         "wise_wizard",
         "list_wizard_reports",
         "get_wizard_report",

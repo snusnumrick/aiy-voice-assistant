@@ -6,7 +6,8 @@ import random
 import sys
 import time
 from abc import ABC, abstractmethod
-from datetime import date
+from datetime import date, datetime
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -18,8 +19,9 @@ if __name__ == "__main__":
     # add current directory to python path
     sys.path.append(os.getcwd())
 
-from src.ai_models import OpenRouterModel, ClaudeAIModel, ReasoningEffort
+from src.ai_models import ClaudeAIModel
 from src.config import Config
+from src.server_utils import get_server_url
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,44 @@ def _clean_optional_search_param(value: Optional[str]) -> Optional[str]:
         return None
     cleaned = str(value).strip()
     return cleaned or None
+
+
+def _discover_doc_folder(timeout: int = 2) -> Optional[Path]:
+    """Discover cubie-server and return its shared documents folder."""
+    server_url = get_server_url()
+    try:
+        logger.info("Discovering cubie-server at %s", server_url)
+        response = requests.get(f"{server_url}/api/config/folders", timeout=timeout)
+        if response.status_code != 200:
+            logger.warning("cubie-server returned status %s", response.status_code)
+            return None
+
+        doc_folder = response.json().get("documents", "")
+        if doc_folder and os.path.exists(doc_folder):
+            logger.info("Using documents folder from cubie-server: %s", doc_folder)
+            return Path(doc_folder)
+        logger.warning("cubie-server returned missing documents folder: %s", doc_folder)
+    except requests.exceptions.RequestException as e:
+        logger.warning("Cannot connect to cubie-server: %s", e)
+    except Exception as e:
+        logger.warning("Error discovering documents folder: %s", e)
+    return None
+
+
+def _sanitize_report_title(title: str) -> str:
+    safe_title = "".join(c if c.isalnum() or c.isspace() else "_" for c in title)
+    safe_title = "_".join(safe_title.split())
+    return safe_title or "web_search"
+
+
+def _truncate_filename(filename: str, max_bytes: int = 250) -> str:
+    if len(filename.encode("utf-8")) <= max_bytes:
+        return filename
+
+    stem, suffix = os.path.splitext(filename)
+    while stem and len(f"{stem}{suffix}".encode()) > max_bytes:
+        stem = stem[:-1]
+    return f"{stem or 'web_search'}{suffix}"
 
 
 def _country_code_from_location(location: Optional[str]) -> Optional[str]:
@@ -917,6 +957,113 @@ class WebSearcher:
             enabled.append(provider_name)
         return enabled
 
+    def _format_search_report(
+        self,
+        queries: list[str],
+        result: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
+        title = queries[0] if queries else "web search"
+        timestamp = datetime.now().isoformat(timespec="seconds")
+        metadata = [
+            f"# Web search: {title}",
+            "",
+            f"- Saved: {timestamp}",
+        ]
+        if queries:
+            metadata.append(f"- Query: {queries[0]}")
+        if len(queries) > 1:
+            metadata.append("- Additional queries: " + "; ".join(queries[1:]))
+        if after_date:
+            metadata.append(f"- After date: {after_date}")
+        if location:
+            metadata.append(f"- Location: {location}")
+
+        return "\n".join(metadata) + "\n\n## Results\n\n" + result.strip() + "\n"
+
+    def save_search_report(
+        self,
+        queries: list[str],
+        result: str,
+        after_date: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> str:
+        """Save returned markdown search evidence for later retrieval/viewing."""
+        report = self._format_search_report(queries, result, after_date, location)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_title = _sanitize_report_title(queries[0] if queries else "web search")
+        filename = _truncate_filename(f"{timestamp}_{safe_title}.md")
+
+        reports_dir = Path(self.config.get("web_search_reports_dir", "web_search_reports"))
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        filepath = reports_dir / filename
+        filepath.write_text(report, encoding="utf-8")
+        logger.info("Web search report saved to: %s", filepath)
+
+        if self.config.get("web_search_save_to_documents", True):
+            doc_folder = _discover_doc_folder(
+                timeout=int(self.config.get("web_search_doc_folder_timeout_sec", 2))
+            )
+            if doc_folder:
+                doc_path = doc_folder / filename
+                doc_path.write_text(report, encoding="utf-8")
+                logger.info("Saved web search doc file: %s", doc_path)
+
+        return str(filepath)
+
+    def list_search_reports(self) -> str:
+        """Return comma-separated saved web search report filenames."""
+        reports_dir = Path(self.config.get("web_search_reports_dir", "web_search_reports"))
+        if not reports_dir.exists():
+            logger.warning("Web search reports directory %s does not exist", reports_dir)
+            return ""
+        reports = [filepath.name for filepath in reports_dir.glob("*.md")]
+        logger.info("Found %d web search reports in %s", len(reports), reports_dir)
+        return ",".join(reports)
+
+    def cleanup_old_search_reports(self) -> int:
+        """Remove saved search reports older than the configured retention window."""
+        retention_days = int(self.config.get("web_search_reports_retention_days", 30))
+        if retention_days < 0:
+            logger.info("Web search report cleanup disabled by negative retention")
+            return 0
+
+        reports_dir = Path(self.config.get("web_search_reports_dir", "web_search_reports"))
+        if not reports_dir.exists():
+            return 0
+
+        cutoff = time.time() - retention_days * 24 * 60 * 60
+        removed = 0
+        for filepath in reports_dir.glob("*.md"):
+            try:
+                if filepath.stat().st_mtime < cutoff:
+                    filepath.unlink()
+                    removed += 1
+                    logger.debug("Removed old web search report: %s", filepath)
+            except OSError as e:
+                logger.warning("Error removing old web search report %s: %s", filepath, e)
+
+        logger.debug("Removed %d old web search reports", removed)
+        return removed
+
+    async def list_search_reports_async(self, parameters: dict[str, object]) -> str:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.list_search_reports)
+
+    async def get_search_report_async(self, parameters: dict[str, object]) -> str:
+        if "filename" not in parameters:
+            raise ValueError("Missing required parameter 'filename'")
+
+        reports_dir = Path(self.config.get("web_search_reports_dir", "web_search_reports")).resolve()
+        filepath = (reports_dir / str(parameters["filename"])).resolve()
+        if reports_dir not in filepath.parents and filepath != reports_dir:
+            raise ValueError("Invalid report filename")
+        if not filepath.exists():
+            return f"Web search report '{parameters['filename']}' not found"
+
+        return filepath.read_text(encoding="utf-8")
+
     async def search_many_async(
         self,
         queries: list[str],
@@ -959,10 +1106,13 @@ class WebSearcher:
 
             result = combined_result
             logger.debug(f"\n---------\n{query} result: {combined_result}")
-
-            prompt = (f"Format as markdown in russian: "
-                      f"{query}\n\n{combined_result}")
-            result = self.ai_model.get_response([{"role": "user", "content": prompt}])
+            if self.config.get("web_search_save_reports", True):
+                self.save_search_report(
+                    cleaned_queries,
+                    result,
+                    after_date=after_date,
+                    location=location,
+                )
 
 
             duration = time.time() - start_time

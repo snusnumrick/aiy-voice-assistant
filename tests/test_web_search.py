@@ -1,7 +1,10 @@
 import asyncio
+import os
 import time
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
@@ -13,10 +16,15 @@ from src.web_search_tool import WebSearchTool
 
 class TestGeminiSearchGrounding(unittest.TestCase):
     def _config(self, **kwargs):
+        defaults = {
+            "web_search_save_reports": False,
+            "web_search_save_to_documents": False,
+        }
+        defaults.update(kwargs)
         return Config(
             config_file="__missing_config__.json",
             user_config_file="__missing_user__.json",
-            **kwargs,
+            **defaults,
         )
 
     def test_search_model_uses_config_override(self):
@@ -177,10 +185,15 @@ class TestParallelSearch(unittest.TestCase):
 
 class TestWebSearcherProviders(unittest.TestCase):
     def _config(self, **kwargs):
+        defaults = {
+            "web_search_save_reports": False,
+            "web_search_save_to_documents": False,
+        }
+        defaults.update(kwargs)
         return Config(
             config_file="__missing_config__.json",
             user_config_file="__missing_user__.json",
-            **kwargs,
+            **defaults,
         )
 
     def test_threaded_provider_results_keep_configured_order(self):
@@ -314,6 +327,88 @@ Morning event details.
         self.assertEqual(result, "Query: query one\nfirst evidence\n\nQuery: query two\nsecond evidence")
         self.assertEqual(searcher.search_providers_async.await_count, 2)
         searcher.ai_model.get_response.assert_not_called()
+
+    def test_search_many_async_saves_markdown_report_without_changing_result(self):
+        with TemporaryDirectory() as reports_dir, TemporaryDirectory() as docs_dir:
+            searcher = WebSearcher.__new__(WebSearcher)
+            searcher.config = self._config(
+                web_search_save_reports=True,
+                web_search_save_to_documents=True,
+                web_search_reports_dir=reports_dir,
+            )
+            searcher._get_enabled_providers = Mock(return_value=["parallel"])
+            searcher.search_providers_async = AsyncMock(return_value="### Source\nEvidence.")
+            searcher.ai_model = Mock()
+
+            with patch("src.web_search._discover_doc_folder", return_value=Path(docs_dir)):
+                result = asyncio.run(
+                    searcher.search_many_async(
+                        ["Bremen events", "Bremen Veranstaltungen"],
+                        after_date="2026-05-01",
+                        location="Bremen, DE",
+                    )
+                )
+
+            expected_result = (
+                "Query: Bremen events\n### Source\nEvidence.\n\n"
+                "Query: Bremen Veranstaltungen\n### Source\nEvidence."
+            )
+            self.assertEqual(result, expected_result)
+            report_files = list(Path(reports_dir).glob("*.md"))
+            doc_files = list(Path(docs_dir).glob("*.md"))
+            self.assertEqual(len(report_files), 1)
+            self.assertEqual(len(doc_files), 1)
+            self.assertEqual([doc_files[0].name], [report_files[0].name])
+            saved = report_files[0].read_text(encoding="utf-8")
+            self.assertIn("# Web search: Bremen events", saved)
+            self.assertIn("- Additional queries: Bremen Veranstaltungen", saved)
+            self.assertIn("- After date: 2026-05-01", saved)
+            self.assertIn("- Location: Bremen, DE", saved)
+            self.assertIn("## Results", saved)
+            self.assertIn(expected_result, saved)
+            self.assertEqual(doc_files[0].read_text(encoding="utf-8"), saved)
+            searcher.ai_model.get_response.assert_not_called()
+
+    def test_cleanup_old_search_reports_removes_only_expired_markdown_files(self):
+        with TemporaryDirectory() as reports_dir:
+            old_report = Path(reports_dir) / "old.md"
+            fresh_report = Path(reports_dir) / "fresh.md"
+            old_text = Path(reports_dir) / "old.txt"
+            old_report.write_text("old", encoding="utf-8")
+            fresh_report.write_text("fresh", encoding="utf-8")
+            old_text.write_text("not a report", encoding="utf-8")
+
+            old_mtime = (datetime.now() - timedelta(days=31)).timestamp()
+            fresh_mtime = datetime.now().timestamp()
+            os.utime(old_report, (old_mtime, old_mtime))
+            os.utime(fresh_report, (fresh_mtime, fresh_mtime))
+            os.utime(old_text, (old_mtime, old_mtime))
+
+            searcher = WebSearcher.__new__(WebSearcher)
+            searcher.config = self._config(web_search_reports_dir=reports_dir)
+
+            removed = searcher.cleanup_old_search_reports()
+
+            self.assertEqual(removed, 1)
+            self.assertFalse(old_report.exists())
+            self.assertTrue(fresh_report.exists())
+            self.assertTrue(old_text.exists())
+
+    def test_cleanup_old_search_reports_uses_configured_retention_days(self):
+        with TemporaryDirectory() as reports_dir:
+            report = Path(reports_dir) / "ten_days_old.md"
+            report.write_text("old enough for custom retention", encoding="utf-8")
+            mtime = (datetime.now() - timedelta(days=10)).timestamp()
+            os.utime(report, (mtime, mtime))
+
+            searcher = WebSearcher.__new__(WebSearcher)
+            searcher.config = self._config(
+                web_search_reports_dir=reports_dir,
+                web_search_reports_retention_days=7,
+            )
+
+            self.assertEqual(searcher.cleanup_old_search_reports(), 1)
+            self.assertFalse(report.exists())
 
 
 class TestTavilySearch(unittest.TestCase):
@@ -456,6 +551,21 @@ class TestWebSearchTool(unittest.TestCase):
         )
         self.assertIn("local-language", query_param.description)
         self.assertNotIn("English", query_param.description)
+
+    def test_tool_definitions_expose_saved_search_report_tools(self):
+        tool = WebSearchTool.__new__(WebSearchTool)
+        tool.web_searcher = Mock()
+
+        names = [definition.name for definition in tool.tool_definitions()]
+
+        self.assertEqual(
+            names,
+            [
+                "internet_search",
+                "list_web_search_reports",
+                "get_web_search_report",
+            ],
+        )
 
     def test_async_processor_combines_primary_and_additional_queries_in_one_extraction(self):
         tool = WebSearchTool.__new__(WebSearchTool)

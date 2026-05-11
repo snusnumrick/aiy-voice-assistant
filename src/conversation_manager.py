@@ -1020,6 +1020,8 @@ class ConversationManager:
         if new_rules:
             logger.debug(f"new rules: \n{newline.join(new_rules)}")
 
+        self.searcher.cleanup_old_search_reports()
+
         # remove temp wav files
         num_removed = 0
         for dir in ["/tmp", "."]:

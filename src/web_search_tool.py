@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from src.ai_models_with_tools import Tool, ToolParameter
 from src.config import Config
@@ -7,7 +8,7 @@ from src.web_search import WebSearcher
 logger = logging.getLogger(__name__)
 
 
-def _queries_from_parameters(parameters: dict[str, any]) -> list[str]:
+def _queries_from_parameters(parameters: dict[str, Any]) -> list[str]:
     queries = []
     query = str(parameters.get("query", "")).strip()
     if query:
@@ -51,6 +52,34 @@ class WebSearchTool:
 
     """
 
+    def tool_definitions(self) -> list[Tool]:
+        return [
+            self.tool_definition(),
+            Tool(
+                name="list_web_search_reports",
+                description="Lists saved web search result reports with filenames. Use this to find previous internet_search results before repeating a similar search.",
+                iterative=True,
+                parameters=[],
+                required=[],
+                processor=self.web_searcher.list_search_reports_async,
+            ),
+            Tool(
+                name="get_web_search_report",
+                description="Retrieves the full markdown content of a saved web search result report by filename.",
+                iterative=True,
+                programmatic_code_execution_candidate=False,
+                parameters=[
+                    ToolParameter(
+                        name="filename",
+                        type="string",
+                        description="The filename of the saved web search report to retrieve",
+                    )
+                ],
+                required=["filename"],
+                processor=self.web_searcher.get_search_report_async,
+            ),
+        ]
+
     def tool_definition(self) -> Tool:
         return Tool(
             name="internet_search",
@@ -82,8 +111,14 @@ class WebSearchTool:
             required=["query"],
             processor=self.do_search_async,
             rule_instructions={
-                "russian": ("Перед поиском в интернете скажи что собираешься поискать. "),
-                "english": ("Before searching the internet, say that you are going to search. "),
+                "russian": (
+                    "Перед поиском в интернете скажи что собираешься поискать. "
+                    "Если нужен прошлый результат, сначала проверь list_web_search_reports."
+                ),
+                "english": (
+                    "Before searching the internet, say that you are going to search. "
+                    "If a previous result may answer the request, check list_web_search_reports first."
+                ),
             },
         )
 
@@ -102,7 +137,7 @@ class WebSearchTool:
     def _stop_processing(self):
         pass
 
-    async def do_search_async(self, parameters: dict[str, any]) -> str:
+    async def do_search_async(self, parameters: dict[str, Any]) -> str:
         logger.info(f"searching async for {parameters['query']}")
         if "query" in parameters:
             self._start_processing()

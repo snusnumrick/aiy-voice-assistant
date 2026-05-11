@@ -156,7 +156,7 @@ def main():
             *reminder_tool.tool_definitions(),
         ] + wizard_tool.tool_definitions()
         if not use_builtin_search:
-            tools.append(search_tool.tool_definition())
+            tools.extend(search_tool.tool_definitions())
 
         # Initial LED feedback
         leds.update(Leds.rgb_on(Color.WHITE))

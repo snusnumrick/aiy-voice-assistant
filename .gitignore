@@ -173,6 +173,7 @@ reminders.json
 .DS_Store
 logs/*
 wizard_reports/*
+web_search_reports/*
 
 # IDE / tools
 .idea/

@@ -2,7 +2,7 @@
 
 import sys
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 mock_duckduckgo_search = Mock()
 mock_duckduckgo_search.DDGS = Mock()
@@ -117,6 +117,29 @@ class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(batches[0]["emotion"])
         self.assertEqual(batches[1]["emotion"]["light"]["color"], [255, 80, 0])
         self.assertEqual(batches[1]["emotion"]["light"]["brightness"], "dark")
+
+    async def test_nightly_cleanup_prunes_old_web_search_reports(self):
+        with patch("src.conversation_manager.WebSearcher") as mock_searcher_class:
+            with patch("src.conversation_manager.ClaudeAIModel"):
+                with patch("src.conversation_manager.get_location", return_value="In Test."):
+                    with patch("src.conversation_manager.get_tool_usage_stats", return_value=None):
+                        with patch.object(ConversationManager, "load_facts", return_value=[]):
+                            with patch.object(ConversationManager, "load_rules", return_value=[]):
+                                manager = ConversationManager(
+                                    self._config(
+                                        form_new_memories_at_night=False,
+                                        clean_message_history_at_night=False,
+                                    ),
+                                    _StreamingModel([]),
+                                    timezone="UTC",
+                                    enabled_tools=[],
+                                )
+
+        with patch.object(manager, "_process_facts", new=AsyncMock()):
+            with patch.object(manager, "_process_rules", new=AsyncMock()):
+                await manager.process_and_clean()
+
+        mock_searcher_class.return_value.cleanup_old_search_reports.assert_called_once_with()
 
 
 if __name__ == "__main__":
