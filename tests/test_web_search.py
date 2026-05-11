@@ -194,7 +194,7 @@ class TestWebSearcherProviders(unittest.TestCase):
 
         searcher._search_single_provider = search_single_provider
 
-        results = searcher._search_providers_sync(
+        results = searcher._search_providers(
             "query",
             ["slow", "fast"],
             after_date="2026-04-23",
@@ -229,7 +229,7 @@ class TestWebSearcherProviders(unittest.TestCase):
         searcher._search_single_provider = search_single_provider
 
         with self.assertLogs("src.web_search", level="ERROR") as logs:
-            results = searcher._search_providers_sync("query", ["tavily"])
+            results = searcher._search_providers("query", ["tavily"])
 
         self.assertIsInstance(results[0], BlankMessageError)
         self.assertIn("BlankMessageError('hidden detail')", "\n".join(logs.output))

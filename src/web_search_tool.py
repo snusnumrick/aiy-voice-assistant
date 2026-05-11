@@ -46,9 +46,6 @@ class WebSearchTool:
     - _stop_processing(self)
         (Private method) Stops the processing indicator (e.g. LED off).
 
-    - do_search(self, parameters: Dict[str, any]) -> str
-        Performs a synchronous web search using the given parameters. It starts the processing indicator, performs the search using the web_searcher object, stops the processing indicator, and returns the result.
-
     - do_search_async(self, parameters: Dict[str, any]) -> str
         Performs an asynchronous web search using the given parameters. It starts the processing indicator, performs the asynchronous search using the web_searcher object, stops the processing indicator, and returns the result.
 
@@ -66,26 +63,27 @@ class WebSearchTool:
                     type="string",
                     description="A query to search for. Use the local-language wording most likely to return relevant results.",
                 ),
-                ToolParameter(
-                    name="additional_queries",
-                    type="string",
-                    description="Optional comma-separated additional search queries to run and combine with the main query, for local-language or venue-specific variants.",
-                ),
+                # ToolParameter(
+                #     name="additional_queries",
+                #     type="string",
+                #     description="Optional comma-separated additional search queries to run and combine with the main query, for local-language or venue-specific variants.",
+                # ),
+                # ToolParameter(
+                #     name="after_date",
+                #     type="string",
+                #     description="Optional freshness filter as YYYY-MM-DD. Use when the user asks for recent results after a specific date.",
+                # ),
                 ToolParameter(
                     name="location",
                     type="string",
                     description="Optional country or place for localized search, for example 'us' or 'San Francisco, CA, US'.",
-                )
+                ),
             ],
             required=["query"],
             processor=self.do_search_async,
             rule_instructions={
-                "russian": (
-                    "Перед поиском в интернете скажи что собираешься поискать. "
-                ),
-                "english": (
-                    "Before searching the internet, say that you are going to search. "
-                )
+                "russian": ("Перед поиском в интернете скажи что собираешься поискать. "),
+                "english": ("Before searching the internet, say that you are going to search. "),
             },
         )
 
@@ -103,20 +101,6 @@ class WebSearchTool:
 
     def _stop_processing(self):
         pass
-
-    def do_search(self, parameters: dict[str, any]) -> str:
-        logger.info(f"searching for {parameters['query']}")
-        if "query" in parameters:
-            self._start_processing()
-            result = self.web_searcher.search_many(
-                _queries_from_parameters(parameters),
-                after_date=parameters.get("after_date"),
-                location=parameters.get("location"),
-            )
-            self._stop_processing()
-            return result
-        logger.error(f"missing  parameter  query:  {parameters}")
-        return ""
 
     async def do_search_async(self, parameters: dict[str, any]) -> str:
         logger.info(f"searching async for {parameters['query']}")

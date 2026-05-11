@@ -809,7 +809,7 @@ class WebSearcher:
         loop = asyncio.get_event_loop()
         results = await loop.run_in_executor(
             None,
-            self._search_providers_sync,
+            self._search_providers,
             query,
             enabled_providers,
             after_date,
@@ -830,7 +830,7 @@ class WebSearcher:
 
         return combined_result
 
-    def _search_providers_sync(
+    def _search_providers(
         self,
         query: str,
         enabled_providers,
@@ -917,16 +917,6 @@ class WebSearcher:
             enabled.append(provider_name)
         return enabled
 
-    def search_many(
-        self,
-        queries: list[str],
-        after_date: Optional[str] = None,
-        location: Optional[str] = None,
-    ) -> str:
-        return asyncio.run(
-            self.search_many_async(queries, after_date=after_date, location=location)
-        )
-
     async def search_many_async(
         self,
         queries: list[str],
@@ -987,31 +977,7 @@ class WebSearcher:
         after_date: Optional[str] = None,
         location: Optional[str] = None,
     ) -> str:
-        logger.debug(f"Searching for {query}")
-        start_time = time.time()
-
-        providers = self._get_enabled_providers()
-
-        try:
-            combined_result = await self.search_providers_async(
-                query,
-                providers,
-                after_date=after_date,
-                location=location,
-            )
-
-            result = combined_result
-
-            duration = time.time() - start_time
-            logger.debug(
-                f"Final search took {duration:.2f} seconds; result for query '{query}' is: {result}"
-            )
-            return result
-
-        except Exception as e:
-            logger.error(f"Error performing web search: {e}")
-            raise
-
+        return await self.search_many_async([query], after_date, location)
 
 async def loop():
     config = Config()
