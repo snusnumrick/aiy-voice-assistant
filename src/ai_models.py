@@ -114,6 +114,34 @@ def _to_openai_reasoning_effort(value: Optional[Union[str, ReasoningEffort]]) ->
     return mapping.get(key)
 
 
+def _to_claude_reasoning_effort(value: Optional[Union[str, ReasoningEffort]]) -> Optional[str]:
+    """Normalize internal reasoning effort to Claude adaptive thinking effort string.
+
+    Accepts:
+    - ReasoningEffort enum (preferred)
+    - Internal strings: "quick", "thorough", "comprehensive"
+    - Claude strings: "low", "medium", "high", "xhigh", "max" (pass-through)
+    - "disabled" to omit Claude thinking configuration
+
+    Returns one of: "low", "medium", "high", "xhigh", "max", "disabled" or None.
+    """
+    if value is None:
+        return None
+    if isinstance(value, ReasoningEffort):
+        v = value.value
+    else:
+        v = str(value)
+    key = v.strip().lower()
+    if key in {"low", "medium", "high", "xhigh", "max", "disabled"}:
+        return key
+    mapping = {
+        "quick": "low",
+        "thorough": "medium",
+        "comprehensive": "high",
+    }
+    return mapping.get(key)
+
+
 def normalize_messages(messages: MessageList) -> list[dict[str, Any]]:
     """
     Normalize messages to ensure they are in the correct format for API calls.
@@ -747,6 +775,7 @@ class ClaudeAIModel(AIModel):
         timezone: str = "",
         model_id: Optional[str] = None,
         max_tokens: Optional[int] = None,
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ):
         """
         Initialize the Claude AI model.
@@ -756,11 +785,18 @@ class ClaudeAIModel(AIModel):
             timezone (str): The timezone to use for timestamps.
             model_id (Optional[str]): The specific model ID to use.
             max_tokens (Optional[int]): The maximum number of tokens to generate.
+            reasoning_effort (Optional[Union[str, ReasoningEffort]]): Preferred reasoning effort.
         """
         self.model = model_id or config.get("claude_model", "claude-sonnet-4-5")
 
         logging.info(f"Using model: {self.model}")
         self.max_tokens = max_tokens or config.get("max_tokens", 4096)
+        _eff = (
+            reasoning_effort
+            if reasoning_effort is not None
+            else config.get("claude_reasoning_effort", "medium")
+        )
+        self.reasoning_effort = _to_claude_reasoning_effort(_eff) or "medium"
         self.url = "https://api.anthropic.com/v1/messages"
         self.headers = {
             "content-type": "application/json",
@@ -779,7 +815,29 @@ class ClaudeAIModel(AIModel):
         """
         return f"({time_string_ms(self.timezone)}) " if self.timezone else ""
 
-    def _get_response(self, messages: list[dict[str, str]]) -> dict:
+    def _apply_reasoning_config(
+        self,
+        data: dict,
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
+    ) -> None:
+        """
+        Add Claude adaptive thinking options to a request payload.
+        """
+        effort = (
+            _to_claude_reasoning_effort(reasoning_effort)
+            if reasoning_effort is not None
+            else self.reasoning_effort
+        )
+        if not effort or effort == "disabled":
+            return
+        data["thinking"] = {"type": "adaptive"}
+        data["output_config"] = {"effort": effort}
+
+    def _get_response(
+        self,
+        messages: list[dict[str, str]],
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
+    ) -> dict:
         """
         Send a request to the Claude API and get the response.
 
@@ -798,6 +856,7 @@ class ClaudeAIModel(AIModel):
             "max_tokens": self.max_tokens,
             "messages": non_system_message,
         }
+        self._apply_reasoning_config(data, reasoning_effort=reasoning_effort)
         if system_message_combined:
             data["system"] = system_message_combined
 
@@ -813,7 +872,11 @@ class ClaudeAIModel(AIModel):
             raise NonRetryableError(f"Claude error: {msg}")
         return json.loads(response.content.decode("utf-8"))
 
-    async def _get_response_async(self, messages: list[dict[str, str]]) -> dict:
+    async def _get_response_async(
+        self,
+        messages: list[dict[str, str]],
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
+    ) -> dict:
         """
         Asynchronously send a request to the Claude API and get the response.
 
@@ -833,6 +896,7 @@ class ClaudeAIModel(AIModel):
             "max_tokens": self.max_tokens,
             "messages": non_system_message,
         }
+        self._apply_reasoning_config(data, reasoning_effort=reasoning_effort)
         if system_message_combined:
             data["system"] = system_message_combined
 
@@ -865,7 +929,7 @@ class ClaudeAIModel(AIModel):
             str: The generated response.
         """
         messages = normalize_messages(messages)
-        response_dict = self._get_response(messages)
+        response_dict = self._get_response(messages, reasoning_effort=reasoning_effort)
         response_text = ""
         for content in response_dict["content"]:
             if content["type"] == "text":
@@ -892,7 +956,7 @@ class ClaudeAIModel(AIModel):
             Exception: If there's an error in the API response.
         """
         messages = normalize_messages(messages)
-        response_dict = await self._get_response_async(messages)
+        response_dict = await self._get_response_async(messages, reasoning_effort=reasoning_effort)
         if "error" in response_dict:
             raise Exception(response_dict["error"])
         for content in response_dict["content"]:
@@ -919,6 +983,7 @@ class ClaudeAIModel(AIModel):
             "model": self.model,
             "messages": non_system_message,
         }
+        self._apply_reasoning_config(data)
         if system_message_combined:
             data["system"] = system_message_combined
 

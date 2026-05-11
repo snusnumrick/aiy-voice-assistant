@@ -89,6 +89,9 @@ class TestAIModels(unittest.TestCase):
         model = ClaudeAIModel(self.config)
         response = model.get_response([{"role": "user", "content": "Hello"}])
         self.assertEqual(response, "Claude response")
+        payload = mock_requests_post.call_args.kwargs["json"]
+        self.assertEqual(payload["thinking"], {"type": "adaptive"})
+        self.assertEqual(payload["output_config"], {"effort": "medium"})
 
         async def test_async():
             async_response = ""
@@ -97,6 +100,68 @@ class TestAIModels(unittest.TestCase):
             self.assertEqual(async_response, "Async Claude response")
 
         asyncio.run(test_async())
+
+    @patch('requests.post')
+    def test_claude_ai_model_uses_configured_reasoning_effort(self, mock_requests_post):
+        mock_requests_post.return_value.content.decode.return_value = (
+            '{"content": [{"type": "text", "text": "Claude response"}]}'
+        )
+        config = Config(claude_reasoning_effort="low")
+
+        model = ClaudeAIModel(config)
+        response = model.get_response([{"role": "user", "content": "Hello"}])
+
+        self.assertEqual(response, "Claude response")
+        payload = mock_requests_post.call_args.kwargs["json"]
+        self.assertEqual(payload["thinking"], {"type": "adaptive"})
+        self.assertEqual(payload["output_config"], {"effort": "low"})
+
+    @patch('requests.post')
+    def test_claude_ai_model_constructor_reasoning_effort_overrides_config(self, mock_requests_post):
+        mock_requests_post.return_value.content.decode.return_value = (
+            '{"content": [{"type": "text", "text": "Claude response"}]}'
+        )
+        config = Config(claude_reasoning_effort="low")
+
+        model = ClaudeAIModel(config, reasoning_effort="high")
+        response = model.get_response([{"role": "user", "content": "Hello"}])
+
+        self.assertEqual(response, "Claude response")
+        payload = mock_requests_post.call_args.kwargs["json"]
+        self.assertEqual(payload["output_config"], {"effort": "high"})
+
+    @patch('requests.post')
+    def test_claude_ai_model_per_call_reasoning_effort_overrides_constructor(
+        self,
+        mock_requests_post,
+    ):
+        mock_requests_post.return_value.content.decode.return_value = (
+            '{"content": [{"type": "text", "text": "Claude response"}]}'
+        )
+
+        model = ClaudeAIModel(self.config, reasoning_effort="comprehensive")
+        response = model.get_response(
+            [{"role": "user", "content": "Hello"}],
+            reasoning_effort="quick",
+        )
+
+        self.assertEqual(response, "Claude response")
+        payload = mock_requests_post.call_args.kwargs["json"]
+        self.assertEqual(payload["output_config"], {"effort": "low"})
+
+    @patch('requests.post')
+    def test_claude_ai_model_can_disable_thinking(self, mock_requests_post):
+        mock_requests_post.return_value.content.decode.return_value = (
+            '{"content": [{"type": "text", "text": "Claude response"}]}'
+        )
+
+        model = ClaudeAIModel(self.config, reasoning_effort="disabled")
+        response = model.get_response([{"role": "user", "content": "Hello"}])
+
+        self.assertEqual(response, "Claude response")
+        payload = mock_requests_post.call_args.kwargs["json"]
+        self.assertNotIn("thinking", payload)
+        self.assertNotIn("output_config", payload)
 
     def test_open_router_model(self):
         with patch('src.ai_models.OpenAIModel.__init__') as mock_init:

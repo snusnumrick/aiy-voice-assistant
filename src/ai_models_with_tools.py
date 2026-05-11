@@ -524,17 +524,26 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         """
         messages = normalize_messages(messages)
 
-        response_dict = self._get_response(messages)
+        response_dict = self._get_response(messages, reasoning_effort=reasoning_effort)
         response_text = ""
         messages.append({"role": "assistant", "content": response_dict["content"]})
         for content in response_dict["content"]:
             if content["type"] == "text":
                 response_text += content["text"]
             elif content["type"] == "tool_use":
-                response_text += self._process_tool_use(content, messages)
+                response_text += self._process_tool_use(
+                    content,
+                    messages,
+                    reasoning_effort=reasoning_effort,
+                )
         return response_text
 
-    def _process_tool_use(self, content: dict, messages: list[dict[str, Any]]) -> str:
+    def _process_tool_use(
+        self,
+        content: dict,
+        messages: list[dict[str, Any]],
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
+    ) -> str:
         """Process a tool use request and generate a response."""
         tool_name = content["name"]
         tool_use_id = content["id"]
@@ -557,12 +566,15 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 }
             )
             self._append_programmatic_tool_followup_message(messages)
-            return self.get_response(messages)
+            return self.get_response(messages, reasoning_effort=reasoning_effort)
         return ""
 
     @retry_async_generator()
     async def _get_response_async(
-        self, messages: list[dict[str, Any]], streaming=False
+        self,
+        messages: list[dict[str, Any]],
+        streaming=False,
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[dict, None]:
         """
         Asynchronously get responses from the AI model.
@@ -594,6 +606,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             "messages": non_system_message,
             "stream": streaming,
         }
+        self._apply_reasoning_config(data, reasoning_effort=reasoning_effort)
         if selected_tools:
             data["tools"] = selected_tools
         if self._runtime_system_blocks:
@@ -672,11 +685,17 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         streaming = self.config.get("llm_streaming", False)
         try:
             if streaming:
-                async for response in self._get_response_async_streaming(messages):
+                async for response in self._get_response_async_streaming(
+                    messages,
+                    reasoning_effort=reasoning_effort,
+                ):
                     logger.debug(f"{self._time_str()}Claude: AI response: {response}")
                     yield response
             else:
-                async for response in self._get_response_async_plain(messages):
+                async for response in self._get_response_async_plain(
+                    messages,
+                    reasoning_effort=reasoning_effort,
+                ):
                     logger.debug(f"{self._time_str()}AI response: {response}")
                     yield response
         except Exception as e:
@@ -689,12 +708,18 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 self._last_turn_cost_usd = self._compute_turn_cost_usd(self._last_turn_usage)
 
     async def _get_response_async_plain(
-        self, messages: list[dict[str, str]]
+        self,
+        messages: list[dict[str, str]],
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """Generate a plain (non-streaming) response asynchronously."""
         message_list = [m for m in messages]
 
-        async for response_dict in self._get_response_async(message_list, streaming=False):
+        async for response_dict in self._get_response_async(
+            message_list,
+            streaming=False,
+            reasoning_effort=reasoning_effort,
+        ):
             logger.debug(
                 f"get_response_async: {json.dumps(response_dict, indent=2, ensure_ascii=False)}"
             )
@@ -717,11 +742,18 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 if content["type"] == "text":
                     yield content["text"]
                 elif content["type"] == "tool_use":
-                    async for response in self._process_tool_use_async(content, message_list):
+                    async for response in self._process_tool_use_async(
+                        content,
+                        message_list,
+                        reasoning_effort=reasoning_effort,
+                    ):
                         yield response
 
     async def _process_tool_use_async(
-        self, content: dict, message_list: list[dict[str, Any]]
+        self,
+        content: dict,
+        message_list: list[dict[str, Any]],
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """Process a tool use request asynchronously and generate a response."""
         tool_name = content["name"]
@@ -745,11 +777,17 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 }
             )
             self._append_programmatic_tool_followup_message(message_list)
-            async for response in self.get_response_async(message_list):
+            async for response in self.get_response_async(
+                message_list,
+                reasoning_effort=reasoning_effort,
+            ):
                 yield response
 
     async def _get_response_async_streaming(
-        self, messages: list[dict[str, Any]], _is_continuation: bool = False
+        self,
+        messages: list[dict[str, Any]],
+        _is_continuation: bool = False,
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Generate a streaming response asynchronously.
@@ -846,7 +884,11 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             if _current_tool_use:
                 if not _current_tool_use.get("input", ""):
                     _current_tool_use["input"] = {}
-                async for r in self._process_tool_use_streaming(_current_tool_use, _message_list):
+                async for r in self._process_tool_use_streaming(
+                    _current_tool_use,
+                    _message_list,
+                    reasoning_effort=reasoning_effort,
+                ):
                     yield r
 
         async def process_message_stop(
@@ -872,7 +914,11 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             _message_list.append({"role": "assistant", "content": _assistant_message})
 
         try:
-            async for event in self._get_response_async(message_list, streaming=True):
+            async for event in self._get_response_async(
+                message_list,
+                streaming=True,
+                reasoning_effort=reasoning_effort,
+            ):
                 logger.debug(f"{self._time_str()}Received event: {event}")
                 # Guard against unexpected None or non-dict events
                 if not isinstance(event, dict):
@@ -954,7 +1000,9 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 message_list.append({"role": "user", "content": "Continue"})
                 try:
                     async for response in self._get_response_async_streaming(
-                        message_list, _is_continuation=True
+                        message_list,
+                        _is_continuation=True,
+                        reasoning_effort=reasoning_effort,
                     ):
                         yield response
                     return
@@ -966,7 +1014,10 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             raise
 
     async def _process_tool_use_streaming(
-        self, tool_use: dict, message_list: list[dict[str, Any]]
+        self,
+        tool_use: dict,
+        message_list: list[dict[str, Any]],
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
     ) -> AsyncGenerator[str, None]:
         """Process a tool use request in streaming mode and generate a response."""
 
@@ -1001,7 +1052,10 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     }
                 )
                 self._append_programmatic_tool_followup_message(message_list)
-                async for response in self.get_response_async(message_list):
+                async for response in self.get_response_async(
+                    message_list,
+                    reasoning_effort=reasoning_effort,
+                ):
                     logger.debug(f"Yielding after tool response: {response}")
                     yield response
         except json.JSONDecodeError:
