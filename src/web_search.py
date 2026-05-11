@@ -18,7 +18,7 @@ if __name__ == "__main__":
     # add current directory to python path
     sys.path.append(os.getcwd())
 
-from src.ai_models import OpenRouterModel
+from src.ai_models import OpenRouterModel, ClaudeAIModel, ReasoningEffort
 from src.config import Config
 
 logger = logging.getLogger(__name__)
@@ -780,7 +780,7 @@ class WebSearcher:
             logger.debug("Tavily search disabled: TAVILY_API_KEY not set")
         self.google = Google(config)
         self.google_cs = GoogleCustomSearch(config)
-        self.ai_model = OpenRouterModel(config, use_simple_model=True)
+        self.ai_model = ClaudeAIModel(config)
         self.perplexity = Perplexity(config)
         self.gemini = GeminiSearch(config)
         self.ddgs = DuckDuckGoSearch(config)
@@ -958,6 +958,12 @@ class WebSearcher:
                 return ""
 
             result = combined_result
+            logger.debug(f"\n---------\n{query} result: {combined_result}")
+
+            prompt = (f"Format as markdown in russian: "
+                      f"{query}\n\n{combined_result}")
+            result = self.ai_model.get_response([{"role": "user", "content": prompt}])
+
 
             duration = time.time() - start_time
             logger.debug(

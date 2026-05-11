@@ -63,11 +63,11 @@ class WebSearchTool:
                     type="string",
                     description="A query to search for. Use the local-language wording most likely to return relevant results.",
                 ),
-                # ToolParameter(
-                #     name="additional_queries",
-                #     type="string",
-                #     description="Optional comma-separated additional search queries to run and combine with the main query, for local-language or venue-specific variants.",
-                # ),
+                ToolParameter(
+                    name="additional_queries",
+                    type="string",
+                    description="Optional comma-separated additional search queries to run and combine with the main query, for local-language or venue-specific variants.",
+                ),
                 # ToolParameter(
                 #     name="after_date",
                 #     type="string",
