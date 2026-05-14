@@ -45,7 +45,6 @@ from src.tools import (
     format_message_history,
     get_current_date_time_for_facts,
     get_current_datetime_english,
-    get_location,
     get_timezone,
     get_token_count,
     split_long_sentence,
@@ -265,7 +264,6 @@ class ConversationManager:
         self.summarize_model = ClaudeAIModel(config)
         self.facts = self.load_facts()
         self.rules: list[str] = self.load_rules()
-        self.location = get_location()
         self.timezone = timezone
         self.current_language_code = "ru"
         self.enabled_tools = enabled_tools or []
@@ -449,7 +447,7 @@ class ConversationManager:
             and self.freeze_dynamic_context_for_cache
         )
         if not should_freeze:
-            return f"{get_current_datetime_english(self.timezone)} {self.location} "
+            return f"{get_current_datetime_english(self.timezone)} "
 
         now_ts = time.time()
         if (
@@ -458,7 +456,7 @@ class ConversationManager:
         ):
             return self._cached_dynamic_context_prefix
 
-        prefix = f"{get_current_datetime_english(self.timezone)} {self.location} "
+        prefix = f"{get_current_datetime_english(self.timezone)} "
         ttl = max(1, int(self.prompt_cache_window_seconds))
         self._cached_dynamic_context_prefix = prefix
         self._cached_dynamic_context_expires_at = now_ts + ttl
@@ -645,7 +643,7 @@ class ConversationManager:
             )
 
         # Keep history/debug prompt aligned with the actual split payload mode.
-        # In split mode, dynamic datetime/location is sent separately via system blocks.
+        # In split mode, dynamic datetime is sent separately via system blocks.
         if self.optimize_prompt_split_dynamic and hasattr(self.ai_model, "set_request_options"):
             system_prompt_for_history = self._system_prompt_body()
         else:
