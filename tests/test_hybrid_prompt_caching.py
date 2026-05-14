@@ -67,7 +67,6 @@ class TestHybridPromptCaching(unittest.TestCase):
         cm._cached_dynamic_context_prefix = None
         cm._cached_dynamic_context_expires_at = 0.0
         cm.timezone = "UTC"
-        cm.location = "In Test."
 
         with patch("src.conversation_manager.time.time", side_effect=[1000.0, 1001.0, 1301.0]):
             with patch(
@@ -78,16 +77,16 @@ class TestHybridPromptCaching(unittest.TestCase):
                 p2 = cm._system_prompt_context_prefix()
                 p3 = cm._system_prompt_context_prefix()
 
-        self.assertEqual(p1, "T1 In Test. ")
-        self.assertEqual(p2, "T1 In Test. ")
-        self.assertEqual(p3, "T2 In Test. ")
+        self.assertEqual(p1, "T1 ")
+        self.assertEqual(p2, "T1 ")
+        self.assertEqual(p3, "T2 ")
 
     def test_split_mode_initializes_structured_system_payload_for_dialog(self):
         cfg = self._config(
             optimize_prompt_split_dynamic=True,
             claude_enable_prompt_caching=True,
         )
-        with patch("src.conversation_manager.get_location", return_value="In Test."):
+        with patch("src.conversation_manager.get_location", return_value="In Test.", create=True):
             with patch(
                 "src.conversation_manager.get_current_datetime_english",
                 return_value="Today is T.",

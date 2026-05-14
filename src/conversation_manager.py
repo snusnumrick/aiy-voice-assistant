@@ -37,6 +37,7 @@ from src.llm_tools import (
     optimize_rules,
     summarize_and_compress_history,
 )
+from src.reminder import ReminderManager
 from src.responce_player import extract_emotions, extract_language
 from src.tool_usage_stats import get_tool_usage_stats
 from src.tools import (
@@ -1019,6 +1020,10 @@ class ConversationManager:
             logger.debug(f"new rules: \n{newline.join(new_rules)}")
 
         self.searcher.cleanup_old_search_reports()
+        ReminderManager(
+            self.config.get("reminders_file", "reminders.json"),
+            timezone=self.timezone,
+        ).cleanup_expired_reminders()
 
         # remove temp wav files
         num_removed = 0

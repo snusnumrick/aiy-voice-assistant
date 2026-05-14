@@ -71,6 +71,39 @@ class TestReminderManager(unittest.TestCase):
         self.assertEqual(due[0].message, "Stretch")
         self.assertTrue(self.manager.list_reminders()[0].done)
 
+    def test_cleanup_expired_reminders_removes_done_entries_only(self):
+        with open(self.reminders_file, "w", encoding="utf-8") as f:
+            json.dump(
+                [
+                    {
+                        "id": "1",
+                        "time": "2026-04-23T09:30:00+00:00",
+                        "message": "already fired",
+                        "done": True,
+                    },
+                    {
+                        "id": "2",
+                        "time": "2026-04-23T09:30:00+00:00",
+                        "message": "missed but still pending",
+                        "done": False,
+                    },
+                    {
+                        "id": "3",
+                        "time": "2026-04-24T09:30:00+00:00",
+                        "message": "future reminder",
+                    },
+                ],
+                f,
+            )
+
+        removed = self.manager.cleanup_expired_reminders()
+
+        self.assertEqual(removed, 1)
+        self.assertEqual(
+            [reminder.id for reminder in self.manager.list_reminders()],
+            ["2", "3"],
+        )
+
 
 class TestReminderRequests(unittest.TestCase):
     def test_update_request_rejects_invalid_time_format(self):

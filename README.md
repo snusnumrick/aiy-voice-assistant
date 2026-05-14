@@ -325,6 +325,7 @@ fresh OS image:
 
     Reminders:
     * Reminders are stored in `reminders.json` at the project root.
+    * Nightly cleanup removes completed reminder entries from `reminders.json`.
     * Optional config keys: `reminders_enabled`, `reminders_check_interval_sec`, `reminders_file`,
       `reminder_bell_file`, `reminder_silence_file`, `reminder_speech_delay_sec`.
 

@@ -54,7 +54,7 @@ class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
 
         with patch("src.conversation_manager.WebSearcher"):
             with patch("src.conversation_manager.ClaudeAIModel"):
-                with patch("src.conversation_manager.get_location", return_value="In Test."):
+                with patch("src.conversation_manager.get_location", return_value="In Test.", create=True):
                     with patch("src.conversation_manager.get_tool_usage_stats", return_value=None):
                         with patch.object(ConversationManager, "load_facts", return_value=[]):
                             with patch.object(ConversationManager, "load_rules", return_value=[]):
@@ -92,7 +92,7 @@ class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
 
         with patch("src.conversation_manager.WebSearcher"):
             with patch("src.conversation_manager.ClaudeAIModel"):
-                with patch("src.conversation_manager.get_location", return_value="In Test."):
+                with patch("src.conversation_manager.get_location", return_value="In Test.", create=True):
                     with patch("src.conversation_manager.get_tool_usage_stats", return_value=None):
                         with patch.object(ConversationManager, "load_facts", return_value=[]):
                             with patch.object(ConversationManager, "load_rules", return_value=[]):
@@ -121,7 +121,7 @@ class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
     async def test_nightly_cleanup_prunes_old_web_search_reports(self):
         with patch("src.conversation_manager.WebSearcher") as mock_searcher_class:
             with patch("src.conversation_manager.ClaudeAIModel"):
-                with patch("src.conversation_manager.get_location", return_value="In Test."):
+                with patch("src.conversation_manager.get_location", return_value="In Test.", create=True):
                     with patch("src.conversation_manager.get_tool_usage_stats", return_value=None):
                         with patch.object(ConversationManager, "load_facts", return_value=[]):
                             with patch.object(ConversationManager, "load_rules", return_value=[]):
@@ -140,6 +140,32 @@ class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
                 await manager.process_and_clean()
 
         mock_searcher_class.return_value.cleanup_old_search_reports.assert_called_once_with()
+
+    async def test_nightly_cleanup_prunes_expired_reminders(self):
+        with patch("src.conversation_manager.WebSearcher"):
+            with patch("src.conversation_manager.ClaudeAIModel"):
+                with patch("src.conversation_manager.get_location", return_value="In Test.", create=True):
+                    with patch("src.conversation_manager.get_tool_usage_stats", return_value=None):
+                        with patch.object(ConversationManager, "load_facts", return_value=[]):
+                            with patch.object(ConversationManager, "load_rules", return_value=[]):
+                                manager = ConversationManager(
+                                    self._config(
+                                        form_new_memories_at_night=False,
+                                        clean_message_history_at_night=False,
+                                        reminders_file="test-reminders.json",
+                                    ),
+                                    _StreamingModel([]),
+                                    timezone="UTC",
+                                    enabled_tools=[],
+                                )
+
+        with patch("src.conversation_manager.ReminderManager") as mock_reminder_manager:
+            with patch.object(manager, "_process_facts", new=AsyncMock()):
+                with patch.object(manager, "_process_rules", new=AsyncMock()):
+                    await manager.process_and_clean()
+
+        mock_reminder_manager.assert_called_once_with("test-reminders.json", timezone="UTC")
+        mock_reminder_manager.return_value.cleanup_expired_reminders.assert_called_once_with()
 
 
 if __name__ == "__main__":

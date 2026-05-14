@@ -136,6 +136,16 @@ class ReminderManager:
     def clear_reminders(self) -> None:
         self._save([])
 
+    def cleanup_expired_reminders(self) -> int:
+        """Remove completed reminders from storage and return the number removed."""
+        reminders = self._load()
+        active_reminders = [reminder for reminder in reminders if not reminder.done]
+        removed = len(reminders) - len(active_reminders)
+        if removed:
+            self._save(active_reminders)
+            logger.debug("Removed %d expired reminders from %s", removed, self.file_path)
+        return removed
+
     def check_due(self, now: dt.datetime) -> list[ReminderRecord]:
         now = self._normalize_datetime(now)
         reminders = self._load()
