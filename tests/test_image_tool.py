@@ -89,6 +89,18 @@ class TestOpenAIImageTool(unittest.TestCase):
         self.assertEqual(mock_post.call_args.kwargs["json"]["size"], "1536x1024")
         self.assertEqual(mock_post.call_args.kwargs["json"]["output_format"], "png")
 
+    @patch("src.image_tool.ImageTool._discover_pictures_folder", return_value=Path("/tmp"))
+    @patch("src.image_tool.aiohttp.ClientSession.post")
+    def test_generate_image_timeout_returns_clear_error(self, mock_post, _mock_discover):
+        mock_post.return_value.__aenter__.side_effect = asyncio.TimeoutError()
+
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-openai-key"}, clear=False):
+            tool = OpenAIImageTool(self._config(openai_image_timeout_sec=7))
+            result = asyncio.run(tool.generate_image_async({"prompt": "Draw a slow image"}))
+
+        self.assertEqual(result, "Error generating image: OpenAI request timed out after 7s")
+        self.assertEqual(mock_post.call_args.kwargs["timeout"], 7)
+
 
 class TestGeminiImageTool(unittest.TestCase):
     def _config(self, **kwargs):
@@ -142,6 +154,18 @@ class TestGeminiImageTool(unittest.TestCase):
             mock_post.call_args.kwargs["json"]["contents"][0]["parts"][0]["text"],
             "Draw a mountain lake",
         )
+
+    @patch("src.image_tool.ImageTool._discover_pictures_folder", return_value=Path("/tmp"))
+    @patch("src.image_tool.aiohttp.ClientSession.post")
+    def test_generate_image_timeout_returns_clear_error(self, mock_post, _mock_discover):
+        mock_post.return_value.__aenter__.side_effect = asyncio.TimeoutError()
+
+        with patch.dict("os.environ", {"GEMINI_API_KEY": "test-gemini-key"}, clear=False):
+            tool = GeminiImageTool(self._config(gemini_image_timeout_sec=9))
+            result = asyncio.run(tool.generate_image_async({"prompt": "Draw a slow image"}))
+
+        self.assertEqual(result, "Error generating image: Gemini request timed out after 9s")
+        self.assertEqual(mock_post.call_args.kwargs["timeout"], 9)
 
 
 class TestImageMetadataSaving(unittest.TestCase):
