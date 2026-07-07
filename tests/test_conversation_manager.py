@@ -31,6 +31,17 @@ class _StreamingModel:
             yield chunk
 
 
+class _ToolProvenanceStreamingModel(_StreamingModel):
+    def __init__(self, chunks, provenance_messages):
+        super().__init__(chunks)
+        self._provenance_messages = provenance_messages
+
+    def consume_tool_provenance_messages(self):
+        messages = self._provenance_messages
+        self._provenance_messages = []
+        return messages
+
+
 class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
     def _config(self, **kwargs):
         return Config(
@@ -140,6 +151,42 @@ class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
                 await manager.process_and_clean()
 
         mock_searcher_class.return_value.cleanup_old_search_reports.assert_called_once_with()
+
+    async def test_appends_tool_provenance_to_history_after_response(self):
+        with patch("src.conversation_manager.WebSearcher"):
+            with patch("src.conversation_manager.ClaudeAIModel"):
+                with patch("src.conversation_manager.get_location", return_value="In Test.", create=True):
+                    with patch("src.conversation_manager.get_tool_usage_stats", return_value=None):
+                        with patch.object(ConversationManager, "load_facts", return_value=[]):
+                            with patch.object(ConversationManager, "load_rules", return_value=[]):
+                                manager = ConversationManager(
+                                    self._config(),
+                                    _ToolProvenanceStreamingModel(
+                                        ["Answer from search."],
+                                        [
+                                            {
+                                                "role": "assistant",
+                                                "content": (
+                                                    "[Tool context retained: internet_search "
+                                                    "query='Taylor Swift wedding']"
+                                                ),
+                                            }
+                                        ],
+                                    ),
+                                    timezone="UTC",
+                                    enabled_tools=[],
+                                )
+
+        batches = []
+        async for batch in manager.get_response("Tell me"):
+            batches.extend(batch)
+
+        self.assertEqual([item["text"] for item in batches], ["Answer from search."])
+        self.assertEqual(manager.message_history[-2]["content"], "Answer from search.")
+        self.assertEqual(
+            manager.message_history[-1]["content"],
+            "[Tool context retained: internet_search query='Taylor Swift wedding']",
+        )
 
     async def test_nightly_cleanup_prunes_expired_reminders(self):
         with patch("src.conversation_manager.WebSearcher"):

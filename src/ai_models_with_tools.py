@@ -172,6 +172,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self._turn_usage_accumulator: dict[str, int] = self._new_usage_totals()
         self._last_turn_usage: Optional[dict[str, int]] = None
         self._last_turn_cost_usd: Optional[float] = None
+        self._tool_provenance_messages: list[dict[str, str]] = []
 
         # Optional prompt caching/programmatic beta headers; default off.
         beta_values = []
@@ -242,6 +243,49 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self._runtime_tool_names = None
         self._runtime_response_max_tokens = None
         self._runtime_system_blocks = None
+
+    def consume_tool_provenance_messages(self) -> list[dict[str, str]]:
+        """Return and clear compact tool context that should persist in dialog history."""
+        messages = self._tool_provenance_messages
+        self._tool_provenance_messages = []
+        return messages
+
+    @staticmethod
+    def _compact_tool_text(value: object, max_length: int = 700) -> str:
+        text = str(value or "").replace("\n", " ").strip()
+        text = " ".join(text.split())
+        if len(text) <= max_length:
+            return text
+        return text[: max_length - 3].rstrip() + "..."
+
+    def _record_tool_provenance(
+        self, tool_name: str, tool_parameters: object, tool_result: object
+    ) -> None:
+        if tool_name not in {
+            "internet_search",
+            "list_web_search_reports",
+            "get_web_search_report",
+        }:
+            return
+
+        if isinstance(tool_parameters, dict):
+            params = ", ".join(
+                f"{key}={value!r}"
+                for key, value in tool_parameters.items()
+                if value not in (None, "")
+            )
+        else:
+            params = self._compact_tool_text(tool_parameters, max_length=160)
+
+        preview = self._compact_tool_text(tool_result)
+        content = (
+            "[Tool context retained for follow-up: "
+            f"{tool_name}({params}) returned evidence this turn."
+        )
+        if preview:
+            content += f" Evidence preview: {preview}"
+        content += " Use this context before repeating a similar search.]"
+        self._tool_provenance_messages.append({"role": "assistant", "content": content})
 
     @staticmethod
     def _merge_beta_headers(values: list[str]) -> str:
@@ -552,6 +596,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             self.tool_usage_stats.record_call(tool_name)
         tool_processor = self.tools_processors[tool_name]
         tool_result = asyncio.run(tool_processor(tool_parameters))
+        self._record_tool_provenance(tool_name, tool_parameters, tool_result)
         if self.tools[tool_name].iterative:
             messages.append(
                 {
@@ -678,6 +723,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         self._usage_depth += 1
         is_outer_call = self._usage_depth == 1
         if is_outer_call:
+            self._tool_provenance_messages = []
             self._turn_usage_accumulator = self._new_usage_totals()
             self._last_turn_usage = None
             self._last_turn_cost_usd = None
@@ -763,6 +809,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             self.tool_usage_stats.record_call(tool_name)
         tool_processor = self.tools_processors[tool_name]
         tool_result = await tool_processor(tool_parameters)
+        self._record_tool_provenance(tool_name, tool_parameters, tool_result)
         if self.tools[tool_name].iterative:
             message_list.append(
                 {
@@ -1035,6 +1082,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 self.tool_usage_stats.record_call(tool_name)
             tool_processor = self.tools_processors[tool_name]
             tool_result = await tool_processor(tool_input)
+            self._record_tool_provenance(tool_name, tool_input, tool_result)
             logger.debug(
                 f"{self._time_str()}tool result: {json.dumps(tool_result, indent=2, ensure_ascii=False)}"
             )

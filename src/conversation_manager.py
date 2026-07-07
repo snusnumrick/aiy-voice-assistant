@@ -848,6 +848,10 @@ class ConversationManager:
                     f"({buffer_chars} chars)"
                 )
                 yield combine_buffer()
+            if hasattr(self.ai_model, "consume_tool_provenance_messages"):
+                for message in self.ai_model.consume_tool_provenance_messages():
+                    if message.get("role") and message.get("content"):
+                        self.message_history.append(message)
             self._log_turn_cost_metrics()
         finally:
             if hasattr(self.ai_model, "clear_request_options"):

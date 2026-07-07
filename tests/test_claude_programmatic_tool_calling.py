@@ -176,6 +176,28 @@ class TestClaudeProgrammaticToolCalling(unittest.TestCase):
         model._append_programmatic_tool_followup_message(messages)
         self.assertEqual(len(messages), 2)
 
+    def test_records_compact_search_tool_provenance(self):
+        model = ClaudeAIModelWithTools(self._config(), tools=[])
+
+        model._record_tool_provenance(
+            "internet_search",
+            {"query": "Taylor Swift Travis Kelce wedding", "location": "us"},
+            "Query: Taylor Swift Travis Kelce wedding\n"
+            + ("Result from brave: Taylor Swift and Travis Kelce are married. " * 30),
+        )
+
+        messages = model.consume_tool_provenance_messages()
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["role"], "assistant")
+        self.assertIn("internet_search", messages[0]["content"])
+        self.assertIn("query='Taylor Swift Travis Kelce wedding'", messages[0]["content"])
+        self.assertIn("Use this context before repeating a similar search", messages[0]["content"])
+        self.assertLess(len(messages[0]["content"]), 1000)
+        self.assertEqual(model.consume_tool_provenance_messages(), [])
+
+        model._record_tool_provenance("send_email", {"subject": "x"}, "sent")
+        self.assertEqual(model.consume_tool_provenance_messages(), [])
+
 
 if __name__ == "__main__":
     unittest.main()
