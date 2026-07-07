@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import logging
@@ -502,6 +503,7 @@ class GeminiImageTool(ImageTool):
         caption = parameters.get("caption", prompt)
         aspect_ratio = parameters.get("aspect_ratio", "1:1")
         model_name = self.config.get("gemini_image_model", "gemini-2.5-flash-image")
+        timeout_sec = int(self.config.get("gemini_image_timeout_sec", 60))
 
         logger.info(
             "Generating image with Gemini: prompt=%r aspect_ratio=%s model=%s",
@@ -524,7 +526,7 @@ class GeminiImageTool(ImageTool):
                         "Content-Type": "application/json",
                     },
                     json=payload,
-                    timeout=60,
+                    timeout=timeout_sec,
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
@@ -564,6 +566,9 @@ class GeminiImageTool(ImageTool):
                 mime_type=mime_type or "image/png",
             )
             return f"Image generated successfully. Saved to: {saved_path}"
+        except asyncio.TimeoutError:
+            logger.warning("Gemini image generation timed out after %ss", timeout_sec)
+            return f"Error generating image: Gemini request timed out after {timeout_sec}s"
         except Exception as exc:
             logger.error("Gemini image generation failed: %s", exc, exc_info=True)
             return f"Error generating image: {exc}"
@@ -604,6 +609,7 @@ class OpenAIImageTool(ImageTool):
         aspect_ratio = parameters.get("aspect_ratio", "1:1")
         model_name = self.config.get("openai_image_model", "gpt-image-2")
         output_format = str(self.config.get("openai_image_output_format", "png")).strip() or "png"
+        timeout_sec = int(self.config.get("openai_image_timeout_sec", 300))
 
         payload = {
             "model": model_name,
@@ -643,7 +649,7 @@ class OpenAIImageTool(ImageTool):
                         "Content-Type": "application/json",
                     },
                     json=payload,
-                    timeout=int(self.config.get("openai_image_timeout_sec", 120)),
+                    timeout=timeout_sec,
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
@@ -669,6 +675,9 @@ class OpenAIImageTool(ImageTool):
                 mime_type=self._mime_type_for_output_format(output_format),
             )
             return f"Image generated successfully. Saved to: {saved_path}"
+        except asyncio.TimeoutError:
+            logger.warning("OpenAI image generation timed out after %ss", timeout_sec)
+            return f"Error generating image: OpenAI request timed out after {timeout_sec}s"
         except Exception as exc:
             logger.error("OpenAI image generation failed: %s", exc, exc_info=True)
             return f"Error generating image: {exc}"
