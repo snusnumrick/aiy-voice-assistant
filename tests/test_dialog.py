@@ -1,6 +1,9 @@
+# ruff: noqa: E402
+
+import asyncio
 import sys
 import unittest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import AsyncMock, Mock, patch
 
 # Import and use the custom mock_aiy
 from mock_aiy import mock_aiy
@@ -30,7 +33,8 @@ sys.modules['speechkit'] = Mock()
 sys.modules['yandex'] = Mock()
 
 # Now it's safe to import from src
-from src.dialog import DialogManager, error_visual, append_suffix, synthesize_with_fallback
+from src.conversation_manager import TOOL_FILLER_RESPONSE_KEY
+from src.dialog import DialogManager, append_suffix, error_visual, synthesize_with_fallback
 
 
 class TestDialogModule(unittest.IsolatedAsyncioTestCase):
@@ -110,13 +114,10 @@ class TestDialogManager(unittest.IsolatedAsyncioTestCase):
         self.combine_audio_files_patcher.stop()
 
     async def test_process_completed_tasks(self):
-        mock_task1 = AsyncMock()
-        mock_task1.done.return_value = True
-        mock_task1.return_value = True
-
-        mock_task2 = AsyncMock()
-        mock_task2.done.return_value = True
-        mock_task2.return_value = True
+        mock_task1 = asyncio.get_running_loop().create_future()
+        mock_task1.set_result(True)
+        mock_task2 = asyncio.get_running_loop().create_future()
+        mock_task2.set_result(True)
 
         synthesis_tasks = [(mock_task1, {"emo": None, "audio_file_name": "test1.wav", "response_text": "Test 1"}),
                            (mock_task2, {"emo": None, "audio_file_name": "test2.wav", "response_text": "Test 2"})]
@@ -126,6 +127,60 @@ class TestDialogManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(next_response_index, 2)
         # mock_task1.result.assert_called()
         # mock_task2.result.assert_called()
+
+    async def test_process_completed_tasks_skips_stale_pre_tool_speech(self):
+        task = asyncio.get_running_loop().create_future()
+        task.set_result(True)
+        response_info = {
+            "emo": None,
+            "audio_file_name": "stale.wav",
+            "response_text": "Let me look.",
+            "skip_playback": True,
+        }
+
+        next_response_index = await self.dialog_manager.process_completed_tasks(
+            [(task, response_info)], 0
+        )
+
+        self.assertEqual(next_response_index, 1)
+        self.dialog_manager.response_player.add.assert_not_called()
+
+    async def test_process_completed_tasks_accepts_cancelled_filler(self):
+        task = asyncio.get_running_loop().create_future()
+        task.cancel()
+
+        next_response_index = await self.dialog_manager.process_completed_tasks(
+            [
+                (
+                    task,
+                    {
+                        "emo": None,
+                        "audio_file_name": "cancelled.wav",
+                        "response_text": "Let me look.",
+                    },
+                )
+            ],
+            0,
+        )
+
+        self.assertEqual(next_response_index, 1)
+        self.dialog_manager.response_player.add.assert_not_called()
+
+    async def test_discard_pending_tool_fillers_leaves_regular_speech_running(self):
+        filler_task = asyncio.get_running_loop().create_future()
+        regular_task = asyncio.get_running_loop().create_future()
+        filler_info = {TOOL_FILLER_RESPONSE_KEY: True}
+        regular_info = {TOOL_FILLER_RESPONSE_KEY: False}
+
+        discarded = self.dialog_manager._discard_pending_tool_fillers(
+            [(filler_task, filler_info), (regular_task, regular_info)]
+        )
+
+        self.assertEqual(discarded, 1)
+        self.assertTrue(filler_task.cancelled())
+        self.assertTrue(filler_info["skip_playback"])
+        self.assertFalse(regular_task.cancelled())
+        self.assertNotIn("skip_playback", regular_info)
 
     async def test_cleaning_routine(self):
         self.dialog_manager.conversation_manager.process_and_clean = AsyncMock()
@@ -174,7 +229,8 @@ class TestDialogManager(unittest.IsolatedAsyncioTestCase):
         self.dialog_manager.create_synthesis_task = Mock(return_value=(AsyncMock(), {}))
         self.dialog_manager.process_completed_tasks = AsyncMock(return_value=1)
 
-        await self.dialog_manager.process_ai_response(mock_session, "Test input")
+        with patch("src.dialog.save_to_conversation", new=AsyncMock()):
+            await self.dialog_manager.process_ai_response(mock_session, "Test input")
 
         self.dialog_manager.create_synthesis_task.assert_called_once()
         self.dialog_manager.process_completed_tasks.assert_called_once()

@@ -19,7 +19,13 @@ sys.modules["lxml"] = mock_lxml
 sys.modules["lxml.html"] = mock_lxml.html
 
 from src.config import Config
-from src.conversation_manager import ConversationManager
+from src.conversation_manager import (
+    RESPONSE_CONTROL_KEY,
+    TOOL_FILLER_RESPONSE_KEY,
+    TOOL_FINISHED,
+    TOOL_STARTED,
+    ConversationManager,
+)
 
 
 class _StreamingModel:
@@ -128,6 +134,39 @@ class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(batches[0]["emotion"])
         self.assertEqual(batches[1]["emotion"]["light"]["color"], [255, 80, 0])
         self.assertEqual(batches[1]["emotion"]["light"]["brightness"], "dark")
+
+    async def test_tool_boundaries_mark_pre_tool_speech_and_completion(self):
+        chunks = [
+            "$lang: ru$ Привет! $tool_filler: Сейчас посмотрю.$",
+            "[[TOOL_USE]]",
+            "[[TOOL_RESULT]]",
+            "$lang: ru$ Вот результат.",
+        ]
+
+        with patch("src.conversation_manager.WebSearcher"):
+            with patch("src.conversation_manager.ClaudeAIModel"):
+                with patch("src.conversation_manager.get_location", return_value="In Test.", create=True):
+                    with patch("src.conversation_manager.get_tool_usage_stats", return_value=None):
+                        with patch.object(ConversationManager, "load_facts", return_value=[]):
+                            with patch.object(ConversationManager, "load_rules", return_value=[]):
+                                manager = ConversationManager(
+                                    self._config(),
+                                    _StreamingModel(chunks),
+                                    timezone="UTC",
+                                    enabled_tools=[],
+                                )
+
+        self.assertIn("$tool_filler:", manager._system_prompt_body())
+        batches = [batch async for batch in manager.get_response("Проверь")]
+
+        self.assertEqual(batches[0][0]["text"], "Привет!")
+        self.assertNotIn(TOOL_FILLER_RESPONSE_KEY, batches[0][0])
+        self.assertEqual(batches[1][0]["text"], "Сейчас посмотрю.")
+        self.assertTrue(batches[1][0][TOOL_FILLER_RESPONSE_KEY])
+        self.assertEqual(batches[2], [{RESPONSE_CONTROL_KEY: TOOL_STARTED}])
+        self.assertEqual(batches[3], [{RESPONSE_CONTROL_KEY: TOOL_FINISHED}])
+        self.assertEqual(batches[4][0]["text"], "Вот результат.")
+        self.assertNotIn(TOOL_FILLER_RESPONSE_KEY, batches[4][0])
 
     async def test_nightly_cleanup_prunes_old_web_search_reports(self):
         with patch("src.conversation_manager.WebSearcher") as mock_searcher_class:

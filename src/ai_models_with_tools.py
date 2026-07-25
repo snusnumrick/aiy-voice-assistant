@@ -1086,6 +1086,9 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             logger.debug(
                 f"{self._time_str()}tool result: {json.dumps(tool_result, indent=2, ensure_ascii=False)}"
             )
+            # Let the speech pipeline discard a pre-tool filler that was not ready
+            # before this (fast) tool completed.
+            yield "[[TOOL_RESULT]]"
             if self.tools[tool_name].iterative:
                 message_list.append(
                     {

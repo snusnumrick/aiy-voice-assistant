@@ -112,11 +112,13 @@ class WebSearchTool:
             processor=self.do_search_async,
             rule_instructions={
                 "russian": (
-                    "Перед поиском в интернете скажи что собираешься поискать. "
+                    "Перед поиском в интернете скажи что собираешься поискать и оформи эту фразу "
+                    "как $tool_filler: Сейчас поищу$. "
                     "Если нужен прошлый результат, сначала проверь list_web_search_reports."
                 ),
                 "english": (
-                    "Before searching the internet, say that you are going to search. "
+                    "Before searching the internet, say that you are going to search and format "
+                    "that phrase as $tool_filler: Let me search$. "
                     "If a previous result may answer the request, check list_web_search_reports first."
                 ),
             },

@@ -39,7 +39,13 @@ from aiy.leds import Color, Leds
 
 from .audio import SpeechTranscriber
 from .config import Config
-from .conversation_manager import ConversationManager
+from .conversation_manager import (
+    RESPONSE_CONTROL_KEY,
+    TOOL_FILLER_RESPONSE_KEY,
+    TOOL_FINISHED,
+    TOOL_STARTED,
+    ConversationManager,
+)
 from .emotion_engine import EmotionEngine
 from .responce_player import ResponsePlayer
 from .tools import save_to_conversation, time_string_ms
@@ -251,6 +257,13 @@ class DialogManager:
             task, response_info = synthesis_tasks[next_response_index]
             if task.done():
                 logger.debug(f"task {next_response_index} done")
+                if task.cancelled():
+                    logger.debug(
+                        "Synthesis task %s was cancelled before playback",
+                        next_response_index,
+                    )
+                    next_response_index += 1
+                    continue
                 try:
                     completion_time = time.time()
                     creation_time = getattr(task, "creation_time", None)
@@ -261,7 +274,13 @@ class DialogManager:
 
                     if await asyncio.wait_for(task, timeout=20.0):  # 20 second timeout for slow TTS
                         logger.debug(f"Task {next_response_index} completed")
-                        self.handle_successful_synthesis(response_info)
+                        if response_info.get("skip_playback"):
+                            logger.info(
+                                "Skipping pre-tool speech because the tool already finished: %s",
+                                response_info["response_text"],
+                            )
+                        else:
+                            self.handle_successful_synthesis(response_info)
                         next_response_index += 1
                     else:
                         logger.error(
@@ -280,6 +299,21 @@ class DialogManager:
                 # If the next task isn't done, we stop processing to maintain order
                 break
         return next_response_index
+
+    @staticmethod
+    def _discard_pending_tool_fillers(
+        synthesis_tasks: list[tuple[asyncio.Task, dict]],
+    ) -> int:
+        """Prevent marked filler audio from playing after its tool has completed."""
+        discarded = 0
+        for task, response_info in synthesis_tasks:
+            if not response_info.get(TOOL_FILLER_RESPONSE_KEY):
+                continue
+            response_info["skip_playback"] = True
+            if not task.done():
+                task.cancel()
+            discarded += 1
+        return discarded
 
     def handle_successful_synthesis(self, response_info: dict):
         """
@@ -407,6 +441,18 @@ class DialogManager:
                         f"Received AI response chunk with {len(ai_response)} responses"
                     )
                     for response in ai_response:
+                        control = response.get(RESPONSE_CONTROL_KEY)
+                        if control == TOOL_STARTED:
+                            logger.debug("Tool started")
+                            continue
+                        if control == TOOL_FINISHED:
+                            discarded = self._discard_pending_tool_fillers(synthesis_tasks)
+                            logger.debug(
+                                "Tool finished; discarded %s pending filler responses",
+                                discarded,
+                            )
+                            continue
+
                         response_count += 1
                         logger.debug(
                             f'({time_string_ms(self.timezone)}) Processing AI response {response_count}: {response["text"][:50]}...'
@@ -584,6 +630,7 @@ class DialogManager:
             "emo": emo,
             "audio_file_name": audio_file_name,
             "response_text": response_text,
+            TOOL_FILLER_RESPONSE_KEY: bool(response.get(TOOL_FILLER_RESPONSE_KEY)),
         }
 
 
