@@ -16,7 +16,7 @@ import tempfile
 import time
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Awaitable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Iterator
 from enum import Enum
 from typing import Callable, Optional
 
@@ -41,7 +41,37 @@ from src.tts_engine import TTSEngine
 logger = logging.getLogger(__name__)
 
 
+async def _cancel_task(task: asyncio.Task) -> None:
+    """Cancel and drain a task without leaking CancelledError."""
+    if task.done():
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+async def _run_stt_and_timely_emotion(stt_coro, emotion_coro) -> tuple:
+    """Return STT promptly, keeping emotion only when it is already available."""
+    stt_task = asyncio.create_task(stt_coro)
+    emotion_task = asyncio.create_task(emotion_coro)
+    try:
+        text = await stt_task
+        if emotion_task.done():
+            emotion_annotation = await emotion_task
+        else:
+            logger.info("Emotion detection is slower than STT; abandoning it for this turn")
+            await _cancel_task(emotion_task)
+            emotion_annotation = ""
+        return text, emotion_annotation
+    finally:
+        await _cancel_task(emotion_task)
+
+
 class SpeechRecognitionService(ABC):
+    supports_async_audio_generator = False
+
     @abstractmethod
     def setup_client(self, config):
         pass
@@ -936,6 +966,8 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
     Soniox Real-time WebSocket Speech-to-Text implementation.
     """
 
+    supports_async_audio_generator = True
+
     def setup_client(self, config):
         import asyncio
         import json
@@ -1028,14 +1060,25 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
                     )
                 )
 
-                await send_task
-                result = await receive_task
+                done, _ = await self.asyncio.wait(
+                    {send_task, receive_task},
+                    return_when=self.asyncio.FIRST_COMPLETED,
+                )
+                if receive_task in done:
+                    result = await receive_task
+                    await _cancel_task(send_task)
+                else:
+                    await send_task
+                    result = await receive_task
                 return result.strip() if result else ""
             finally:
                 await websocket.close()
 
         except self.ConnectionClosed as e:
-            logger.error(f"Soniox WebSocket closed: {str(e)}")
+            if getattr(e, "code", None) == 1000:
+                logger.info("Soniox WebSocket closed normally: %s", str(e))
+            else:
+                logger.error("Soniox WebSocket closed unexpectedly: %s", str(e))
             return "".join(transcript_parts).strip()
         except Exception as e:
             logger.error(f"Error in Soniox async transcription: {str(e)}")
@@ -1138,9 +1181,11 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
 
             if response.get("error_code"):
                 logger.error(
-                    "Soniox error %s: %s",
+                    "Soniox error %s: %s (type=%s request_id=%s)",
                     response.get("error_code"),
                     response.get("error_message"),
+                    response.get("error_type"),
+                    response.get("request_id"),
                 )
                 return ""
 
@@ -1173,11 +1218,15 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
         logger.warning("No final transcript received from Soniox, returning last partial: %s", last_partial)
         return (last_partial or "").strip()
 
-    async def _async_generator(self, sync_generator: Iterator[bytes]):
+    async def _async_generator(self, audio_generator):
         try:
-            for chunk in sync_generator:
-                await self.asyncio.sleep(0)
-                yield chunk
+            if hasattr(audio_generator, "__aiter__"):
+                async for chunk in audio_generator:
+                    yield chunk
+            else:
+                for chunk in audio_generator:
+                    await self.asyncio.sleep(0)
+                    yield chunk
         except self.asyncio.CancelledError:
             logger.debug("Soniox async generator cancelled")
             raise
@@ -1489,13 +1538,16 @@ class SpeechTranscriber:
                 # Two queues distribute audio chunks to STT and emotion detection.
                 # Different queue types match each consumer's execution model:
                 #
-                # - stt_queue (queue.Queue): STT consumes chunks from a sync generator.
-                #   Sync queue's .get() blocks the thread until chunk arrives.
+                # - stt_queue: thread-backed STT services use queue.Queue; async-native
+                #   services use asyncio.Queue so they never block the event loop.
                 #
                 # - emotion_queue (asyncio.Queue): Emotion detection is async-native,
                 #   using await with websockets. Async queue's .get() yields control
                 #   to event loop while waiting, enabling true concurrency.
-                stt_queue = queue.Queue()
+                stt_uses_async_queue = bool(
+                    getattr(self.speech_service, "supports_async_audio_generator", False)
+                )
+                stt_queue = asyncio.Queue() if stt_uses_async_queue else queue.Queue()
                 emotion_queue = asyncio.Queue()
 
                 async def fill_queues():
@@ -1504,7 +1556,10 @@ class SpeechTranscriber:
                     emotion_chunks_sent = 0
                     emotion_done = False
                     async for chunk in audio_generator:
-                        stt_queue.put(chunk)        # Non-blocking for sync queue
+                        if stt_uses_async_queue:
+                            await stt_queue.put(chunk)
+                        else:
+                            stt_queue.put(chunk)
                         if not emotion_done:
                             if remaining_prebuffer > 0:
                                 remaining_prebuffer -= 1
@@ -1525,7 +1580,10 @@ class SpeechTranscriber:
                         if debug_wav is not None:
                             debug_wav.writeframes(chunk)
                     # Signal end-of-stream to both consumers
-                    stt_queue.put(None)
+                    if stt_uses_async_queue:
+                        await stt_queue.put(None)
+                    else:
+                        stt_queue.put(None)
                     if not emotion_done:
                         await emotion_queue.put(None)
 
@@ -1533,6 +1591,14 @@ class SpeechTranscriber:
                     """Sync generator for STT - blocks on queue.get() in thread."""
                     while True:
                         chunk = stt_queue.get()  # Blocks thread until chunk available
+                        if chunk is None:
+                            break
+                        yield chunk
+
+                async def async_stt_generator() -> AsyncIterator[bytes]:
+                    """Async generator for event-loop-native STT services."""
+                    while True:
+                        chunk = await stt_queue.get()
                         if chunk is None:
                             break
                         yield chunk
@@ -1549,7 +1615,9 @@ class SpeechTranscriber:
                     """Run STT in the event loop (async service interface)."""
                     try:
                         return await self.speech_service.transcribe_stream(
-                            stt_generator(), self.config, context=context
+                            async_stt_generator() if stt_uses_async_queue else stt_generator(),
+                            self.config,
+                            context=context,
                         )
                     except Exception as e:
                         logger.error(f"Error in STT: {str(e)}")
@@ -1584,9 +1652,9 @@ class SpeechTranscriber:
 
                 # Run STT and emotion detection in parallel, both streaming
                 logger.debug("Starting parallel streaming STT and emotion detection")
-                text, emotion_annotation = await asyncio.gather(
+                text, emotion_annotation = await _run_stt_and_timely_emotion(
                     run_stt(),
-                    run_emotion_detection()
+                    run_emotion_detection(),
                 )
 
                 # Ensure fill_queues completes
