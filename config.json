@@ -47,6 +47,7 @@
   "sentence_buffer_enabled": true,
   "sentence_buffer_timeout": 1.5,
   "sentence_buffer_max_length": 240,
+  "soniox_model": "stt-rt-v5",
   "soniox_response_timeout_sec": 60,
   "soniox_send_finalize": true,
   "optimize_prompt_split_dynamic": true,
