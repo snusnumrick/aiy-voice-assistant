@@ -39,6 +39,7 @@ from src.llm_tools import (
 )
 from src.reminder import ReminderManager
 from src.responce_player import extract_emotions, extract_language
+from src.speaker_engine import SpeakerEngine
 from src.tool_usage_stats import get_tool_usage_stats
 from src.tools import (
     clean_response,
@@ -130,6 +131,14 @@ def extract_rules(text: str) -> tuple[str, list[str]]:
     return modified_text, extracted_rules
 
 
+def extract_speaker_annotations(text: str) -> tuple[str, list[str]]:
+    """Extract model-generated speaker IDs from hidden response metadata."""
+    pattern = re.compile(r"\$speaker:\s*([^$]+?)\s*\$", re.IGNORECASE)
+    speaker_ids = [" ".join(match.split()) for match in pattern.findall(text)]
+    modified_text = pattern.sub("", text)
+    return modified_text, [speaker_id for speaker_id in speaker_ids if speaker_id]
+
+
 def split_complete_meta_tag_prefix(text: str) -> tuple[str, str]:
     """
     Split text into a safe-to-process prefix and a trailing incomplete $... meta tag.
@@ -202,6 +211,36 @@ def _get_emotion_awareness_rule_english() -> str:
         "User messages may start with [User emotion: emotion1 (score), ...]. "
         # "Consider these emotions when responding. Match excited energy, "
         # "be supportive when user is sad, stay calm when frustrated. "
+    )
+
+
+def _get_speaker_awareness_rule_russian() -> str:
+    """Rules for passive speaker metadata in Russian prompts."""
+    return (
+        "Сообщения пользователя могут начинаться с [User speaker: имя (оценка)]. "
+        "Это приблизительное имя говорящего для персонализации разговора, а не проверка личности. "
+        "Проверь только последнее сообщение пользователя: если пользователь явно представился, "
+        "начни скрытый исходный ответ с $speaker: имя$, используя указанное имя или идентификатор. "
+        "Поставь этот скрытый тег непосредственно перед обязательным тегом $lang: ...$. "
+        "Распознавай любое естественное выражение и любой язык, без фиксированной фразы. "
+        "Автоматический префикс [User speaker: ...] сам по себе не считается представлением. "
+        "Не добавляй тег для предположений, обращений, цитат или упоминаний других людей. "
+        "Не проси подтверждения и после тега отвечай на остальную часть сообщения как обычно. "
+    )
+
+
+def _get_speaker_awareness_rule_english() -> str:
+    """Rules for passive speaker metadata in English prompts."""
+    return (
+        "User messages may start with [User speaker: name (score)]. "
+        "Treat it as approximate conversational identity for personalization, not authentication. "
+        "Inspect only the immediately preceding user message. If the user explicitly identifies "
+        "themself, begin the hidden raw response with $speaker: stated name or ID$. "
+        "Place this hidden tag immediately before the mandatory $lang: ...$ tag. Understand any "
+        "natural wording and language; do not require a fixed phrase. Do not emit the tag for an "
+        "automatic [User speaker: ...] prefix, an inference, a form of address, quoted speech, or "
+        "a mention of someone else. Do not ask for confirmation, and continue answering the rest "
+        "of the message normally after the tag. "
     )
 
 
@@ -289,6 +328,7 @@ class ConversationManager:
         timezone: str,
         enabled_tools: Optional[list[Any]] = None,
         tts_engine=None,
+        speaker_engine: Optional[SpeakerEngine] = None,
     ):
         """
         Initialize the ConversationManager.
@@ -300,6 +340,7 @@ class ConversationManager:
             enabled_tools (Optional[List]): List of enabled tools for dynamic rule generation
             tts_engine: Optional TTS engine; if it provides rule_instructions, they are
                         injected into the system prompt alongside tool rules.
+            speaker_engine: Optional engine receiving model-extracted speaker IDs.
         """
         self.config = config
         self.searcher = WebSearcher(config)
@@ -312,7 +353,9 @@ class ConversationManager:
         self.enabled_tools = enabled_tools or []
         self.enabled_tools_by_name = {t.name: t for t in self.enabled_tools if hasattr(t, "name")}
         self.tts_engine = tts_engine
+        self.speaker_engine = speaker_engine
         self.emotion_detection_enabled = config.get("emotion_detection_enabled", False)
+        self.speaker_recognition_enabled = config.get("speaker_recognition_enabled", False)
         self.tool_usage_stats = get_tool_usage_stats(config)
         self.optimize_prompt_compact = bool(config.get("optimize_prompt_compact", False))
         self.optimize_prompt_split_dynamic = bool(config.get("optimize_prompt_split_dynamic", False))
@@ -470,6 +513,8 @@ class ConversationManager:
             )
             if self.emotion_detection_enabled:
                 base_rules += _get_emotion_awareness_rule_english()
+            if self.speaker_recognition_enabled:
+                base_rules += _get_speaker_awareness_rule_english()
             rules = _combine_rules(base_rules, _get_tool_filler_rule_english())
             rules = _combine_rules(rules, self._generate_tool_rules("english"))
             return _combine_rules(rules, self._get_tts_rules("english"))
@@ -481,6 +526,8 @@ class ConversationManager:
         )
         if self.emotion_detection_enabled:
             base_rules += _get_emotion_awareness_rule_russian()
+        if self.speaker_recognition_enabled:
+            base_rules += _get_speaker_awareness_rule_russian()
         rules = _combine_rules(base_rules, _get_tool_filler_rule_russian())
         rules = _combine_rules(rules, self._generate_tool_rules("russian"))
         return _combine_rules(rules, self._get_tts_rules("russian"))
@@ -793,6 +840,15 @@ class ConversationManager:
                 return batches
 
             append_assistant_history(response_text)
+
+            response_text, speaker_ids = extract_speaker_annotations(response_text)
+            if speaker_ids and self.speaker_engine:
+                for speaker_id in speaker_ids:
+                    try:
+                        self.speaker_engine.declare_speaker(speaker_id)
+                        logger.info("Extracted speaker ID from LLM response: %s", speaker_id)
+                    except Exception as e:
+                        logger.warning("Failed to apply LLM speaker ID %s: %s", speaker_id, e)
 
             response_text, facts = extract_facts(response_text, self.timezone)
             if facts:

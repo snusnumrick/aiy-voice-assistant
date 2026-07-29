@@ -25,6 +25,7 @@ from src.conversation_manager import (
     TOOL_FINISHED,
     TOOL_STARTED,
     ConversationManager,
+    extract_speaker_annotations,
 )
 
 
@@ -58,6 +59,45 @@ class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
             sentence_buffer_max_length=500,
             **kwargs,
         )
+
+    def test_extract_speaker_annotation_removes_only_hidden_metadata(self):
+        text, speaker_ids = extract_speaker_annotations(
+            "$speaker: Anton$ $lang: en$ Nice to meet you."
+        )
+
+        self.assertEqual(speaker_ids, ["Anton"])
+        self.assertEqual(text, " $lang: en$ Nice to meet you.")
+
+    async def test_llm_speaker_annotation_trains_engine_and_is_not_spoken(self):
+        speaker_engine = Mock()
+        chunks = ["$speaker: An", "ton$$lang: en$ Nice to meet you."]
+
+        with patch("src.conversation_manager.WebSearcher"):
+            with patch("src.conversation_manager.ClaudeAIModel"):
+                with patch(
+                    "src.conversation_manager.get_location",
+                    return_value="In Test.",
+                    create=True,
+                ):
+                    with patch("src.conversation_manager.get_tool_usage_stats", return_value=None):
+                        with patch.object(ConversationManager, "load_facts", return_value=[]):
+                            with patch.object(ConversationManager, "load_rules", return_value=[]):
+                                manager = ConversationManager(
+                                    self._config(speaker_recognition_enabled=True),
+                                    _StreamingModel(chunks),
+                                    timezone="UTC",
+                                    enabled_tools=[],
+                                    speaker_engine=speaker_engine,
+                                )
+
+        batches = []
+        async for batch in manager.get_response("Hi, Anton speaking"):
+            batches.extend(batch)
+
+        speaker_engine.declare_speaker.assert_called_once_with("Anton")
+        self.assertEqual([item["text"] for item in batches], ["Nice to meet you."])
+        self.assertIn("$speaker:", manager._system_prompt_body())
+        self.assertNotIn("$speaker:", manager.message_history[-1]["content"])
 
     async def test_buffer_flushes_when_emotion_changes(self):
         response = (

@@ -169,6 +169,8 @@ facts**
 user.json*
 rules**
 reminders.json
+speaker_profiles.json
+speaker_profiles.json.tmp
 *.cache
 .DS_Store
 logs/*

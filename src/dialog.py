@@ -48,6 +48,7 @@ from .conversation_manager import (
 )
 from .emotion_engine import EmotionEngine
 from .responce_player import ResponsePlayer
+from .speaker_engine import SpeakerEngine
 from .tools import save_to_conversation, time_string_ms
 from .tts_engine import Language, Tone, TTSEngine
 
@@ -170,6 +171,7 @@ class DialogManager:
         response_player: ResponsePlayer,
         emotion_engine: EmotionEngine = None,
         reminder_notifier: Optional[Callable[[dict], Awaitable[None]]] = None,
+        speaker_engine: SpeakerEngine = None,
     ):
         """
         Initialize the DialogManager with necessary components.
@@ -184,12 +186,15 @@ class DialogManager:
             timezone (str): The timezone to use for the conversation loop.
             response_player (ResponsePlayer): The audio response player for playback.
             emotion_engine (EmotionEngine): Optional emotion detection engine.
+            speaker_engine (SpeakerEngine): Optional passive speaker engine.
         """
         self.button = button
         self.leds = leds
         self.tts_engines = tts_engines
         self.fallback_tts_engine = fallback_tts_engine
         self.conversation_manager = conversation_manager
+        if speaker_engine is not None:
+            self.conversation_manager.speaker_engine = speaker_engine
         self.config = config
         self.timezone = timezone
         self.response_player = response_player
@@ -201,6 +206,7 @@ class DialogManager:
             cleaning=self.cleaning_routine,
             timezone=timezone,
             emotion_engine=emotion_engine,
+            speaker_engine=speaker_engine,
             reminder_notifier=reminder_notifier,
         )
         self.last_assistant_response_text: Optional[str] = None
@@ -370,13 +376,13 @@ class DialogManager:
                             prefix, context_text or "", max_len
                         )
 
-                    text, emotion_annotation = await self.transcriber.transcribe_speech(
+                    text, user_annotations = await self.transcriber.transcribe_speech(
                         self.response_player, context=context
                     )
 
-                    # Combine emotion annotation with text for LLM
-                    if emotion_annotation and text:
-                        annotated_text = f"{emotion_annotation} {text}"
+                    # Add non-verbal context for the conversation model only.
+                    if user_annotations and text:
+                        annotated_text = f"{user_annotations} {text}"
                     else:
                         annotated_text = text
 
@@ -645,6 +651,7 @@ async def main_loop_async(
     response_player: ResponsePlayer,
     emotion_engine: EmotionEngine = None,
     reminder_notifier: Optional[Callable[[dict], Awaitable[None]]] = None,
+    speaker_engine: SpeakerEngine = None,
 ) -> None:
     """
     The main entry point for the conversation loop of the AI assistant.
@@ -661,6 +668,7 @@ async def main_loop_async(
         timezone (str): The timezone to use for the conversation loop.
         response_player (ResponsePlayer): The audio response player for playback.
         emotion_engine (EmotionEngine): Optional emotion detection engine.
+        speaker_engine (SpeakerEngine): Optional passive speaker engine.
         reminder_notifier (Callable): Optional callback for due reminders.
     """
     dialog_manager = DialogManager(
@@ -672,7 +680,8 @@ async def main_loop_async(
         config,
         timezone,
         response_player,
-        emotion_engine,
-        reminder_notifier,
+        emotion_engine=emotion_engine,
+        speaker_engine=speaker_engine,
+        reminder_notifier=reminder_notifier,
     )
     await dialog_manager.main_loop_async()

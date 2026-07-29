@@ -30,6 +30,11 @@ from src.background_tasks import BackgroundTaskManager
 from src.config import Config
 from src.emotion_engine import EmotionEngine, format_annotation, get_annotation_options
 from src.responce_player import ResponsePlayer
+from src.speaker_engine import (
+    SpeakerEmbedding,
+    SpeakerEngine,
+    format_speaker_annotation,
+)
 from src.tools import (
     combine_audio_files,
     get_timezone,
@@ -1264,6 +1269,7 @@ class SpeechTranscriber:
         timezone: Optional[str] = None,
         emotion_engine: Optional[EmotionEngine] = None,
         reminder_notifier: Optional[Callable[[dict], Awaitable[None]]] = None,
+        speaker_engine: Optional[SpeakerEngine] = None,
     ) -> None:
         """
         Initialize the SpeechTranscriber.
@@ -1275,11 +1281,14 @@ class SpeechTranscriber:
             cleaning (Optional[Callable]): Optional callback function to clean the audio stream.
             timezone (Optional[str]): The timezone of the current location.
             emotion_engine (Optional[EmotionEngine]): Optional emotion detection engine.
+            speaker_engine (Optional[SpeakerEngine]): Optional passive speaker engine.
         """
         self.button = button
         self.leds = leds
         self.config = config
         self.emotion_engine = emotion_engine
+        self.speaker_engine = speaker_engine
+        self._speaker_background_tasks: set[asyncio.Task] = set()
         self.setup_speech_service()
         self.breathing_period_ms = self.config.get("ready_breathing_period_ms", 10000)
         self.led_breathing_color = self.config.get(
@@ -1316,6 +1325,32 @@ class SpeechTranscriber:
         """Check and run scheduled background tasks."""
         await self.task_manager.check_and_run_tasks()
 
+    def _track_speaker_background_task(self, task: asyncio.Task) -> None:
+        """Keep a late speaker-profile update alive and log unexpected failures."""
+        self._speaker_background_tasks.add(task)
+
+        def completed(completed_task: asyncio.Task) -> None:
+            self._speaker_background_tasks.discard(completed_task)
+            try:
+                completed_task.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error("Background speaker analysis failed: %s", e)
+
+        task.add_done_callback(completed)
+
+    async def _finish_speaker_analysis(
+        self,
+        text: str,
+        embedding_task: asyncio.Task,
+        turn_id: int,
+    ) -> None:
+        """Apply a late embedding to profiles without delaying the conversation."""
+        embedding = await embedding_task
+        if self.speaker_engine and embedding is not None:
+            self.speaker_engine.resolve_transcript(text, embedding, turn_id=turn_id)
+
     def setup_speech_service(self):
         service_name = self.config.get("speech_recognition_service", "yandex").lower()
         if service_name == "google":
@@ -1342,20 +1377,21 @@ class SpeechTranscriber:
     ) -> tuple:
         """
         Transcribe speech from the microphone input, including pre and post buffering.
-        Optionally runs emotion detection in parallel with STT.
+        Optionally runs emotion and speaker analysis in parallel with STT.
 
         Args:
             player_process (Optional[ResponsePlayer]): Object representing a running audio player.
             context (Optional[str]): Optional STT context string.
 
         Returns:
-            tuple: (transcribed_text, emotion_annotation) where emotion_annotation is
-                   a string like "[User emotion: excited (0.82)]" or empty string.
+            tuple: (transcribed_text, user_annotations) where user_annotations may
+                   contain speaker and emotion context for the conversation model.
         """
 
         chunks_deque = deque()
         status = RecordingStatus.NOT_STARTED
         prebuffer_chunks_to_skip = 0
+        speaker_turn_id = self.speaker_engine.begin_turn() if self.speaker_engine else 0
 
         async def generate_audio_chunks():
             nonlocal status, chunks_deque, player_process, prebuffer_chunks_to_skip
@@ -1517,6 +1553,24 @@ class SpeechTranscriber:
                         str(e),
                     )
 
+                speaker_limit_sec = self.config.get("speaker_audio_limit_sec", 15.0)
+                speaker_max_chunks = None
+                try:
+                    if speaker_limit_sec is not None:
+                        limit_sec = float(speaker_limit_sec)
+                        if limit_sec <= 0:
+                            speaker_max_chunks = 0
+                        else:
+                            chunk_duration = float(self.audio_recording_chunk_duration_sec)
+                            if chunk_duration > 0:
+                                speaker_max_chunks = int(limit_sec / chunk_duration)
+                except Exception as e:
+                    logger.error(
+                        "Invalid speaker_audio_limit_sec (%s): %s",
+                        speaker_limit_sec,
+                        str(e),
+                    )
+
                 debug_wav = None
                 debug_wav_path = None
                 if self.config.get("stt_debug_recording_enabled", False):
@@ -1535,7 +1589,7 @@ class SpeechTranscriber:
                     debug_wav.setframerate(self.audio_sample_rate)
                     logger.info("Recording STT debug audio to %s", debug_wav_path)
 
-                # Two queues distribute audio chunks to STT and emotion detection.
+                # Three queues distribute audio to STT, emotion, and speaker analysis.
                 # Different queue types match each consumer's execution model:
                 #
                 # - stt_queue: thread-backed STT services use queue.Queue; async-native
@@ -1549,20 +1603,24 @@ class SpeechTranscriber:
                 )
                 stt_queue = asyncio.Queue() if stt_uses_async_queue else queue.Queue()
                 emotion_queue = asyncio.Queue()
+                speaker_queue = asyncio.Queue()
 
                 async def fill_queues():
-                    """Distribute each audio chunk to both consumers."""
-                    remaining_prebuffer = prebuffer_chunks_to_skip
+                    """Distribute each audio chunk to all consumers."""
+                    emotion_remaining_prebuffer = prebuffer_chunks_to_skip
+                    speaker_remaining_prebuffer = prebuffer_chunks_to_skip
                     emotion_chunks_sent = 0
+                    speaker_chunks_sent = 0
                     emotion_done = False
+                    speaker_done = False
                     async for chunk in audio_generator:
                         if stt_uses_async_queue:
                             await stt_queue.put(chunk)
                         else:
                             stt_queue.put(chunk)
                         if not emotion_done:
-                            if remaining_prebuffer > 0:
-                                remaining_prebuffer -= 1
+                            if emotion_remaining_prebuffer > 0:
+                                emotion_remaining_prebuffer -= 1
                             elif (emotion_max_chunks is None) or (
                                 emotion_chunks_sent < emotion_max_chunks
                             ):
@@ -1577,15 +1635,34 @@ class SpeechTranscriber:
                             else:
                                 await emotion_queue.put(None)
                                 emotion_done = True
+                        if not speaker_done:
+                            if speaker_remaining_prebuffer > 0:
+                                speaker_remaining_prebuffer -= 1
+                            elif (speaker_max_chunks is None) or (
+                                speaker_chunks_sent < speaker_max_chunks
+                            ):
+                                await speaker_queue.put(chunk)
+                                speaker_chunks_sent += 1
+                                if (
+                                    speaker_max_chunks is not None
+                                    and speaker_chunks_sent >= speaker_max_chunks
+                                ):
+                                    await speaker_queue.put(None)
+                                    speaker_done = True
+                            else:
+                                await speaker_queue.put(None)
+                                speaker_done = True
                         if debug_wav is not None:
                             debug_wav.writeframes(chunk)
-                    # Signal end-of-stream to both consumers
+                    # Signal end-of-stream to all consumers.
                     if stt_uses_async_queue:
                         await stt_queue.put(None)
                     else:
                         stt_queue.put(None)
                     if not emotion_done:
                         await emotion_queue.put(None)
+                    if not speaker_done:
+                        await speaker_queue.put(None)
 
                 def stt_generator():
                     """Sync generator for STT - blocks on queue.get() in thread."""
@@ -1607,6 +1684,14 @@ class SpeechTranscriber:
                     """Async generator for emotion - awaits on queue.get() in event loop."""
                     while True:
                         chunk = await emotion_queue.get()  # Yields to event loop
+                        if chunk is None:
+                            break
+                        yield chunk
+
+                async def speaker_generator():
+                    """Yield audio for remote embedding without blocking the event loop."""
+                    while True:
+                        chunk = await speaker_queue.get()
                         if chunk is None:
                             break
                         yield chunk
@@ -1647,11 +1732,27 @@ class SpeechTranscriber:
                         logger.error(f"Error in emotion detection: {str(e)}")
                         return ""
 
+                async def run_speaker_detection() -> Optional[SpeakerEmbedding]:
+                    """Generate a speaker embedding while STT is running."""
+                    if not self.speaker_engine:
+                        async for _ in speaker_generator():
+                            pass
+                        return None
+                    try:
+                        return await self.speaker_engine.embed_stream(
+                            speaker_generator(),
+                            sample_rate=self.audio_sample_rate,
+                        )
+                    except Exception as e:
+                        logger.error("Error in speaker detection: %s", e)
+                        return None
+
                 # Start distributing chunks to both queues
                 fill_queues_task = asyncio.create_task(fill_queues())
+                speaker_task = asyncio.create_task(run_speaker_detection())
 
-                # Run STT and emotion detection in parallel, both streaming
-                logger.debug("Starting parallel streaming STT and emotion detection")
+                # Run all audio analysis concurrently. Only STT remains mandatory.
+                logger.debug("Starting parallel STT, emotion, and speaker analysis")
                 text, emotion_annotation = await _run_stt_and_timely_emotion(
                     run_stt(),
                     run_emotion_detection(),
@@ -1660,15 +1761,52 @@ class SpeechTranscriber:
                 # Ensure fill_queues completes
                 await fill_queues_task
 
+                original_text = text
+                speaker_annotation = ""
+                if self.speaker_engine:
+                    if speaker_task.done():
+                        embedding = await speaker_task
+                        text, speaker_result = self.speaker_engine.resolve_transcript(
+                            original_text,
+                            embedding,
+                            turn_id=speaker_turn_id,
+                        )
+                        speaker_annotation = format_speaker_annotation(speaker_result)
+                    else:
+                        # Recent conversational context can label this turn immediately.
+                        # The late embedding remains available to an LLM declaration.
+                        text, speaker_result = self.speaker_engine.resolve_transcript(
+                            original_text,
+                            None,
+                            turn_id=speaker_turn_id,
+                        )
+                        speaker_annotation = format_speaker_annotation(speaker_result)
+                        background_task = asyncio.create_task(
+                            self._finish_speaker_analysis(
+                                original_text,
+                                speaker_task,
+                                speaker_turn_id,
+                            )
+                        )
+                        self._track_speaker_background_task(background_task)
+                else:
+                    await _cancel_task(speaker_task)
+
+                user_annotations = " ".join(
+                    annotation
+                    for annotation in (speaker_annotation, emotion_annotation)
+                    if annotation
+                )
+
                 logger.debug(
                     f"Parallel processing complete: text={len(text) if text else 0} chars, "
-                    f"emotion={emotion_annotation}"
+                    f"annotations={user_annotations}"
                 )
 
             except Exception as e:
                 logger.error(f"Error transcribing speech: {str(e)}")
                 text = ""
-                emotion_annotation = ""
+                user_annotations = ""
             finally:
                 if debug_wav is not None:
                     try:
@@ -1677,7 +1815,7 @@ class SpeechTranscriber:
                     except Exception as e:
                         logger.error(f"Error closing STT debug audio file: {str(e)}")
 
-        return text, emotion_annotation
+        return text, user_annotations
 
     def wait_for_button_press(self):
         """

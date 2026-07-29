@@ -30,6 +30,7 @@ from src.image_tool import create_image_tool
 from src.music_tool import create_music_tool
 from src.reminder import ReminderAnnouncer, ReminderTool
 from src.responce_player import ResponsePlayer
+from src.speaker_engine import NoOpSpeakerEngine, create_speaker_engine
 from src.stress_tool import StressTool
 from src.tools import get_timezone
 from src.tts_engine import ElevenLabsTTSEngine, Language, YandexTTSEngine
@@ -199,9 +200,18 @@ def main():
             logger.info("Using Claude model")
             ai_model = ClaudeAIModelWithTools(config, tools=tools, timezone=timezone)
 
+        # The same instance receives audio embeddings and LLM speaker annotations.
+        try:
+            speaker_engine = create_speaker_engine(config)
+            logger.info("Speaker engine initialized: %s", speaker_engine.__class__.__name__)
+        except Exception as e:
+            logger.warning("Failed to initialize speaker engine: %s", e)
+            speaker_engine = NoOpSpeakerEngine()
+
         conversation_manager = ConversationManager(
             config, ai_model, timezone, enabled_tools=tools,
             tts_engine=tts_engines.get(Language.RUSSIAN),
+            speaker_engine=speaker_engine,
         )
         reminder_announcer = ReminderAnnouncer(
             config=config,
@@ -232,8 +242,9 @@ def main():
                 config,
                 timezone,
                 response_player,
-                emotion_engine,
-                reminder_announcer.notify,
+                emotion_engine=emotion_engine,
+                speaker_engine=speaker_engine,
+                reminder_notifier=reminder_announcer.notify,
             )
         )
 

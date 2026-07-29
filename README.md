@@ -363,7 +363,7 @@ fresh OS image:
         PERPLEXITY_API_KEY=your_perplexity_api_key
         ELEVENLABS_API_KEY=your_elevenlabs_api_key
         SONIOX_API_KEY=your_soniox_api_key
-        GEMINI_API_KEY=your_gemini_api_key                 # For Gemini models and optional emotion detection
+        GEMINI_API_KEY=your_gemini_api_key                 # For Gemini models, emotion, and speaker embeddings
         TOMORROW_API_KEY=your_tomorrow_io_api_key        # For weather data
         GEOCODE_API_KEY=your_maps_co_geocoding_api_key   # For location lookup
         WAQI_API_KEY=your_waqi_api_key                   # For air quality data
@@ -695,6 +695,29 @@ The assistant uses cron to manage Tailscale for optimal performance:
   * Emotion detection runs in parallel with STT - if STT works but emotions aren't detected, check Hume API connectivity
   * If emotion detection times out, adjust `emotion_detection_timeout` in config (default: 10 seconds)
   * Emotions are added as annotations to user messages, e.g., `[User emotion: excited (0.82)]`
+
+- For passive speaker recognition:
+  * Set `speaker_recognition_enabled` to `true`; it is disabled by default while the
+    suitability of general Gemini audio embeddings is evaluated on real Cubie recordings.
+  * `speaker_embedding_provider` selects the provider (`gemini` or `none`). Providers implement
+    a common embedding interface so a speaker-specific service can replace Gemini later.
+  * Gemini uses `gemini-embedding-2` with 768 dimensions by default and requires
+    `GEMINI_API_KEY`.
+  * Natural self-introductions are interpreted by the existing conversation LLM rather than a
+    fixed phrase parser. When the user explicitly identifies themself, the model adds a hidden
+    `$speaker: Anton$` annotation to its raw response. The annotation is removed before history
+    storage and speech synthesis, then associates the current audio embedding with that name.
+  * Profiles are progressive normalized centroids stored in the untracked
+    `speaker_profiles.json` file. Copy or synchronize that file to share profiles between Cubies.
+  * Tune `speaker_match_threshold` and `speaker_profile_update_threshold` only after comparing
+    same-speaker and different-speaker scores from real microphones. Defaults are 0.8 and 0.7.
+    Run `python scripts/evaluate_speaker_embeddings.py Anton=a.wav Anton=b.wav Maria=c.wav`
+    with several varied recordings per person to print score ranges and a candidate threshold.
+  * Speaker embedding runs alongside STT and emotion analysis. A late result updates profiles in
+    the background and never delays the response. The last recognized conversational speaker is
+    reused for up to `speaker_context_max_age_sec` (default 300 seconds) while the new embedding
+    is in flight, then cleared after repeated mismatches.
+  * Recognized speakers are added to model context, e.g., `[User speaker: Anton (0.82)]`.
 
 ## Performance Considerations
 
