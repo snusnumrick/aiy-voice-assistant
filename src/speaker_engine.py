@@ -199,7 +199,15 @@ class SpeakerProfileStore:
             if score > best_score:
                 best_name = name
                 best_score = score
-        if best_name is None or best_score < minimum_similarity:
+        if best_name is None:
+            return None
+        if best_score < minimum_similarity:
+            logger.info(
+                "Speaker match below threshold: best=%s similarity=%.3f threshold=%.3f",
+                best_name,
+                best_score,
+                minimum_similarity,
+            )
             return None
         return SpeakerResult(name=best_name, confidence=best_score)
 
@@ -390,6 +398,23 @@ class ProfiledSpeakerEngine(SpeakerEngine):
             return False
 
         turn_id = self._active_turn_id
+        existing_id = self._turn_declarations.get(turn_id)
+        if existing_id:
+            if existing_id.casefold() == normalized_id.casefold():
+                logger.debug(
+                    "Ignored repeated LLM speaker declaration for turn %s: %s",
+                    turn_id,
+                    normalized_id,
+                )
+                return False
+            logger.warning(
+                "Ignored conflicting LLM speaker declaration for turn %s: %s then %s",
+                turn_id,
+                existing_id,
+                normalized_id,
+            )
+            return False
+
         self._turn_declarations[turn_id] = normalized_id
         embedding = self._turn_embeddings.get(turn_id)
         if embedding is not None:
@@ -467,6 +492,16 @@ class ProfiledSpeakerEngine(SpeakerEngine):
                 self.current_speaker = None
                 self.current_speaker_at = 0.0
                 self.current_speaker_misses = 0
+            else:
+                context_result = self._context_result()
+                if context_result is not None:
+                    logger.info(
+                        "Retaining contextual speaker %s after embedding mismatch (%s/%s)",
+                        context_result.name,
+                        self.current_speaker_misses,
+                        self.context_misses_to_clear,
+                    )
+                return text, context_result
         return text, None
 
 
@@ -474,7 +509,9 @@ def format_speaker_annotation(result: Optional[SpeakerResult], score_decimals: i
     """Format a speaker result as compact context for the conversation model."""
     if result is None or not result.name:
         return ""
-    if result.source in {"declared", "context"}:
+    if result.source == "context":
+        return ""
+    if result.source == "declared":
         return f"[User speaker: {result.name}]"
     return f"[User speaker: {result.name} ({result.confidence:.{score_decimals}f})]"
 

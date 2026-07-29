@@ -225,6 +225,8 @@ def _get_speaker_awareness_rule_russian() -> str:
         "Распознавай любое естественное выражение и любой язык, без фиксированной фразы. "
         "Автоматический префикс [User speaker: ...] сам по себе не считается представлением. "
         "Не добавляй тег для предположений, обращений, цитат или упоминаний других людей. "
+        "Добавляй тег не более одного раза за ход пользователя и не повторяй его после результата "
+        "инструмента или внутреннего запроса продолжить ответ. "
         "Не проси подтверждения и после тега отвечай на остальную часть сообщения как обычно. "
     )
 
@@ -239,8 +241,9 @@ def _get_speaker_awareness_rule_english() -> str:
         "Place this hidden tag immediately before the mandatory $lang: ...$ tag. Understand any "
         "natural wording and language; do not require a fixed phrase. Do not emit the tag for an "
         "automatic [User speaker: ...] prefix, an inference, a form of address, quoted speech, or "
-        "a mention of someone else. Do not ask for confirmation, and continue answering the rest "
-        "of the message normally after the tag. "
+        "a mention of someone else. Emit it at most once per user turn; never repeat it after a "
+        "tool result or an internal continuation request. Do not ask for confirmation, and "
+        "continue answering the rest of the message normally after the tag. "
     )
 
 
@@ -845,8 +848,11 @@ class ConversationManager:
             if speaker_ids and self.speaker_engine:
                 for speaker_id in speaker_ids:
                     try:
-                        self.speaker_engine.declare_speaker(speaker_id)
-                        logger.info("Extracted speaker ID from LLM response: %s", speaker_id)
+                        applied = self.speaker_engine.declare_speaker(speaker_id)
+                        if applied:
+                            logger.info("Extracted speaker ID from LLM response: %s", speaker_id)
+                        else:
+                            logger.debug("Ignored repeated speaker ID: %s", speaker_id)
                     except Exception as e:
                         logger.warning("Failed to apply LLM speaker ID %s: %s", speaker_id, e)
 

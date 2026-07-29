@@ -716,7 +716,8 @@ The assistant uses cron to manage Tailscale for optimal performance:
   * Speaker embedding runs alongside STT and emotion analysis. A late result updates profiles in
     the background and never delays the response. The last recognized conversational speaker is
     reused for up to `speaker_context_max_age_sec` (default 300 seconds) while the new embedding
-    is in flight, then cleared after repeated mismatches.
+    is in flight, then cleared after repeated mismatches. Context-only identity remains internal
+    and is not added to the user message; annotations require current-turn evidence.
   * Recognized speakers are added to model context, e.g., `[User speaker: Anton (0.82)]`.
 
 ## Performance Considerations

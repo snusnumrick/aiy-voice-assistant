@@ -1773,8 +1773,8 @@ class SpeechTranscriber:
                         )
                         speaker_annotation = format_speaker_annotation(speaker_result)
                     else:
-                        # Recent conversational context can label this turn immediately.
-                        # The late embedding remains available to an LLM declaration.
+                        # Recent context remains internal until current-turn evidence arrives.
+                        # The late embedding also remains available to an LLM declaration.
                         text, speaker_result = self.speaker_engine.resolve_transcript(
                             original_text,
                             None,

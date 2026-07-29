@@ -114,6 +114,8 @@ class TestProfiledSpeakerEngine(unittest.TestCase):
             )
             self.assertIsNone(recognized)
             self.assertTrue(engine.declare_speaker("Anton"))
+            self.assertFalse(engine.declare_speaker("anton"))
+            self.assertFalse(engine.declare_speaker("Maria"))
 
             second_turn = engine.begin_turn()
             _, recognized = engine.resolve_transcript(
@@ -124,6 +126,8 @@ class TestProfiledSpeakerEngine(unittest.TestCase):
 
             self.assertEqual(original, "Any natural self-introduction can be here")
             self.assertEqual(recognized.name, "Anton")
+            profile = engine.profile_store.data["spaces"]["fake:model:2"]["speakers"]["Anton"]
+            self.assertEqual(profile["sample_count"], 1)
             self.assertEqual(provider.calls[0][1], "audio/wav")
             self.assertTrue(provider.calls[0][0].startswith(b"RIFF"))
 
@@ -160,6 +164,42 @@ class TestProfiledSpeakerEngine(unittest.TestCase):
             )
             self.assertEqual(matched.name, "Anton")
 
+    def test_recent_context_survives_until_mismatch_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = ProfiledSpeakerEngine(
+                FakeEmbeddingProvider(None),
+                DictConfig(
+                    {
+                        "speaker_profiles_path": os.path.join(temp_dir, "profiles.json"),
+                        "speaker_match_threshold": 0.8,
+                        "speaker_context_misses_to_clear": 2,
+                    }
+                ),
+            )
+            enrolled = SpeakerEmbedding([1.0, 0.0], "fake:model:2")
+            different = SpeakerEmbedding([0.0, 1.0], "fake:model:2")
+
+            first_turn = engine.begin_turn()
+            engine.resolve_transcript("Introduction", enrolled, turn_id=first_turn)
+            engine.declare_speaker("Anton")
+
+            second_turn = engine.begin_turn()
+            _, first_mismatch = engine.resolve_transcript(
+                "Continuation",
+                different,
+                turn_id=second_turn,
+            )
+            third_turn = engine.begin_turn()
+            _, second_mismatch = engine.resolve_transcript(
+                "Another speaker",
+                different,
+                turn_id=third_turn,
+            )
+
+            self.assertEqual(first_mismatch.name, "Anton")
+            self.assertEqual(first_mismatch.source, "context")
+            self.assertIsNone(second_mismatch)
+
     def test_annotation_format(self):
         self.assertEqual(
             format_speaker_annotation(SpeakerResult("Anton", 1.0, "declared")),
@@ -168,6 +208,10 @@ class TestProfiledSpeakerEngine(unittest.TestCase):
         self.assertEqual(
             format_speaker_annotation(SpeakerResult("Anton", 0.824)),
             "[User speaker: Anton (0.82)]",
+        )
+        self.assertEqual(
+            format_speaker_annotation(SpeakerResult("Anton", 1.0, "context")),
+            "",
         )
 
 
