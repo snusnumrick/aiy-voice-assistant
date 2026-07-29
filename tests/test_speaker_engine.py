@@ -57,11 +57,15 @@ class TestSpeakerProfiles(unittest.TestCase):
 
             self.assertTrue(store.update("Anton", first, minimum_similarity=0.7))
             self.assertTrue(store.update("Anton", second, minimum_similarity=0.7))
-            result = store.match(second, minimum_similarity=0.7)
+            with self.assertLogs("src.speaker_engine", level="INFO") as captured_logs:
+                result = store.match(second, minimum_similarity=0.7)
 
             self.assertIsNotNone(result)
             self.assertEqual(result.name, "Anton")
             self.assertGreater(result.confidence, 0.9)
+            self.assertTrue(
+                any("Speaker recognized from current audio" in line for line in captured_logs.output)
+            )
             with open(os.path.join(temp_dir, "profiles.json"), encoding="utf-8") as profile_file:
                 saved = json.load(profile_file)
             profile = saved["spaces"]["test:model:2"]["speakers"]["Anton"]
@@ -113,7 +117,8 @@ class TestProfiledSpeakerEngine(unittest.TestCase):
                 turn_id=first_turn,
             )
             self.assertIsNone(recognized)
-            self.assertTrue(engine.declare_speaker("Anton"))
+            with self.assertLogs("src.speaker_engine", level="INFO") as declaration_logs:
+                self.assertTrue(engine.declare_speaker("Anton"))
             self.assertFalse(engine.declare_speaker("anton"))
             self.assertFalse(engine.declare_speaker("Maria"))
 
@@ -126,6 +131,12 @@ class TestProfiledSpeakerEngine(unittest.TestCase):
 
             self.assertEqual(original, "Any natural self-introduction can be here")
             self.assertEqual(recognized.name, "Anton")
+            self.assertTrue(
+                any(
+                    "Applied LLM speaker declaration to current-turn embedding" in line
+                    for line in declaration_logs.output
+                )
+            )
             profile = engine.profile_store.data["spaces"]["fake:model:2"]["speakers"]["Anton"]
             self.assertEqual(profile["sample_count"], 1)
             self.assertEqual(provider.calls[0][1], "audio/wav")
@@ -144,12 +155,13 @@ class TestProfiledSpeakerEngine(unittest.TestCase):
             )
             turn_id = engine.begin_turn()
             engine.resolve_transcript("Unrestricted introduction wording", None, turn_id=turn_id)
-            self.assertTrue(engine.declare_speaker("Anton"))
-            engine.resolve_transcript(
-                "Unrestricted introduction wording",
-                SpeakerEmbedding([1.0, 0.0], "fake:model:2"),
-                turn_id=turn_id,
-            )
+            with self.assertLogs("src.speaker_engine", level="INFO") as declaration_logs:
+                self.assertTrue(engine.declare_speaker("Anton"))
+                engine.resolve_transcript(
+                    "Unrestricted introduction wording",
+                    SpeakerEmbedding([1.0, 0.0], "fake:model:2"),
+                    turn_id=turn_id,
+                )
 
             engine.begin_turn()
             text, result = engine.resolve_transcript("Continue the story", None)
@@ -157,6 +169,15 @@ class TestProfiledSpeakerEngine(unittest.TestCase):
             self.assertEqual(text, "Continue the story")
             self.assertEqual(result.name, "Anton")
             self.assertEqual(result.source, "context")
+            self.assertTrue(
+                any("Stored LLM speaker declaration pending" in line for line in declaration_logs.output)
+            )
+            self.assertTrue(
+                any(
+                    "Applied pending LLM speaker declaration to late embedding" in line
+                    for line in declaration_logs.output
+                )
+            )
 
             matched = engine.profile_store.match(
                 SpeakerEmbedding([1.0, 0.0], "fake:model:2"),

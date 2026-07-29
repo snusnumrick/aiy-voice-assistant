@@ -1792,6 +1792,14 @@ class SpeechTranscriber:
                 else:
                     await _cancel_task(speaker_task)
 
+                if speaker_annotation and speaker_result is not None:
+                    logger.info(
+                        "Using current-turn speaker annotation: name=%s source=%s confidence=%.3f",
+                        speaker_result.name,
+                        speaker_result.source,
+                        speaker_result.confidence,
+                    )
+
                 user_annotations = " ".join(
                     annotation
                     for annotation in (speaker_annotation, emotion_annotation)

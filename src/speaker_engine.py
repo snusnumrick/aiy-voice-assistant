@@ -209,6 +209,12 @@ class SpeakerProfileStore:
                 minimum_similarity,
             )
             return None
+        logger.info(
+            "Speaker recognized from current audio: name=%s similarity=%.3f threshold=%.3f",
+            best_name,
+            best_score,
+            minimum_similarity,
+        )
         return SpeakerResult(name=best_name, confidence=best_score)
 
     def update(
@@ -350,6 +356,7 @@ class ProfiledSpeakerEngine(SpeakerEngine):
         self._active_turn_id = 0
         self._turn_embeddings: dict[int, SpeakerEmbedding] = {}
         self._turn_declarations: dict[int, str] = {}
+        self._trained_declaration_turns: set[int] = set()
         self.profile_store = SpeakerProfileStore(
             config.get("speaker_profiles_path", "speaker_profiles.json"),
             max_centroid_weight=int(config.get("speaker_profile_max_centroid_weight", 20)),
@@ -388,6 +395,11 @@ class ProfiledSpeakerEngine(SpeakerEngine):
             for turn_id, speaker_id in self._turn_declarations.items()
             if turn_id >= oldest_turn_to_keep
         }
+        self._trained_declaration_turns = {
+            turn_id
+            for turn_id in self._trained_declaration_turns
+            if turn_id >= oldest_turn_to_keep
+        }
         return self._active_turn_id
 
     def declare_speaker(self, speaker_id: str) -> bool:
@@ -418,10 +430,24 @@ class ProfiledSpeakerEngine(SpeakerEngine):
         self._turn_declarations[turn_id] = normalized_id
         embedding = self._turn_embeddings.get(turn_id)
         if embedding is not None:
-            self.profile_store.update(
+            profile_updated = self.profile_store.update(
                 normalized_id,
                 embedding,
                 minimum_similarity=self.update_threshold,
+            )
+            logger.info(
+                "Applied LLM speaker declaration to current-turn embedding: "
+                "name=%s turn=%s profile_updated=%s",
+                normalized_id,
+                turn_id,
+                profile_updated,
+            )
+            self._trained_declaration_turns.add(turn_id)
+        else:
+            logger.info(
+                "Stored LLM speaker declaration pending current-turn embedding: name=%s turn=%s",
+                normalized_id,
+                turn_id,
             )
 
         self._remember_current_speaker(
@@ -460,12 +486,26 @@ class ProfiledSpeakerEngine(SpeakerEngine):
             self._turn_embeddings[resolved_turn_id] = embedding
 
         declared_name = self._turn_declarations.get(resolved_turn_id)
-        if declared_name and embedding is not None:
-            self.profile_store.update(
+        if (
+            declared_name
+            and embedding is not None
+            and resolved_turn_id not in self._trained_declaration_turns
+        ):
+            profile_updated = self.profile_store.update(
                 declared_name,
                 embedding,
                 minimum_similarity=self.update_threshold,
             )
+            logger.info(
+                "Applied pending LLM speaker declaration to late embedding: "
+                "name=%s turn=%s profile_updated=%s",
+                declared_name,
+                resolved_turn_id,
+                profile_updated,
+            )
+            self._trained_declaration_turns.add(resolved_turn_id)
+
+        if declared_name and embedding is not None:
             result = SpeakerResult(
                 name=declared_name,
                 confidence=1.0,

@@ -218,7 +218,8 @@ def _get_speaker_awareness_rule_russian() -> str:
     """Rules for passive speaker metadata in Russian prompts."""
     return (
         "Сообщения пользователя могут начинаться с [User speaker: имя (оценка)]. "
-        "Это приблизительное имя говорящего для персонализации разговора, а не проверка личности. "
+        "Этот префикс означает приблизительное совпадение голоса по аудио текущей реплики; "
+        "используй его для персонализации разговора, но не как проверку личности. "
         "Проверь только последнее сообщение пользователя: если пользователь явно представился, "
         "начни скрытый исходный ответ с $speaker: имя$, используя указанное имя или идентификатор. "
         "Поставь этот скрытый тег непосредственно перед обязательным тегом $lang: ...$. "
@@ -235,7 +236,8 @@ def _get_speaker_awareness_rule_english() -> str:
     """Rules for passive speaker metadata in English prompts."""
     return (
         "User messages may start with [User speaker: name (score)]. "
-        "Treat it as approximate conversational identity for personalization, not authentication. "
+        "This prefix means the current utterance's voice embedding approximately matched that "
+        "speaker; use it for conversational personalization, not authentication. "
         "Inspect only the immediately preceding user message. If the user explicitly identifies "
         "themself, begin the hidden raw response with $speaker: stated name or ID$. "
         "Place this hidden tag immediately before the mandatory $lang: ...$ tag. Understand any "
