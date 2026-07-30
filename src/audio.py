@@ -1201,6 +1201,7 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
             tokens = response.get("tokens", [])
             if tokens:
                 partial_parts = []
+                transcription_finished = False
                 for token in tokens:
                     text = token.get("text", "")
                     if not text:
@@ -1208,14 +1209,14 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
                     if token.get("is_final"):
                         if text == "<fin>":
                             logger.debug("Soniox final transcript received")
+                            transcription_finished = True
                             break
                         transcript_parts.append(text)
                     else:
                         partial_parts.append(text)
                 if partial_parts:
                     last_partial = "".join(partial_parts)
-                elif send_done.is_set():
-                    logger.debug("Soniox: all parts are final")
+                if transcription_finished:
                     break
 
         if transcript_parts:

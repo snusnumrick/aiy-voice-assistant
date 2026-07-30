@@ -103,3 +103,25 @@ class TestAudioStreaming(unittest.IsolatedAsyncioTestCase):
         log_text = "\n".join(logs.output)
         self.assertIn("request_timeout", log_text)
         self.assertIn("request-123", log_text)
+
+    async def test_soniox_receive_collects_multiple_final_batches(self):
+        service = audio.SonioxSpeechRecognition()
+        service.asyncio = asyncio
+        service.json = __import__("json")
+        service.response_timeout_sec = 1
+        service.ConnectionClosed = Exception
+        websocket = MagicMock()
+        websocket.recv = AsyncMock(
+            side_effect=[
+                '{"tokens":[{"text":"first ","is_final":true}]}',
+                '{"tokens":[{"text":"second","is_final":true}]}',
+                '{"tokens":[{"text":"<fin>","is_final":true}]}',
+            ]
+        )
+        send_done = asyncio.Event()
+        send_done.set()
+
+        result = await service._receive_transcripts(websocket, send_done, [], "")
+
+        self.assertEqual(result, "first second")
+        self.assertEqual(websocket.recv.await_count, 3)
