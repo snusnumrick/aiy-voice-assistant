@@ -25,6 +25,7 @@ from src.conversation_manager import (
     TOOL_FINISHED,
     TOOL_STARTED,
     ConversationManager,
+    extract_rules,
     extract_speaker_annotations,
 )
 
@@ -67,6 +68,26 @@ class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(speaker_ids, ["Anton"])
         self.assertEqual(text, " $lang: en$ Nice to meet you.")
+
+    def test_extract_rule_preserves_nested_meta_tag_example(self):
+        response = (
+            "$rule: Использовать эмоциональную индикацию светом "
+            "(тег $emotion:...$) чаще и с разнообразными оттенками, "
+            "чтобы полнее выражать эмоции через свет, а не только словами.$\n\n"
+            "Записал, буду теперь светить активнее и разнообразнее."
+        )
+
+        text, rules = extract_rules(response)
+
+        self.assertEqual(
+            rules,
+            [
+                "Использовать эмоциональную индикацию светом "
+                "(тег $emotion:...$) чаще и с разнообразными оттенками, "
+                "чтобы полнее выражать эмоции через свет, а не только словами."
+            ],
+        )
+        self.assertEqual(text, "Записал, буду теперь светить активнее и разнообразнее.")
 
     async def test_llm_speaker_annotation_trains_engine_and_is_not_spoken(self):
         speaker_engine = Mock()

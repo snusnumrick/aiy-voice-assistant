@@ -106,28 +106,56 @@ def extract_rules(text: str) -> tuple[str, list[str]]:
     Returns:
         Tuple[str, List[str]]: A tuple containing the modified text and a list of extracted rules.
     """
-    # Regular expression to match {remember: xxx} pattern
-    pattern = r"\$rule:(.*?)\$"
+    opening = "$rule:"
+    nested_meta_opening = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*:")
+    extracted_rules: list[str] = []
+    spans_to_remove: list[tuple[int, int]] = []
+    search_position = 0
 
-    # Find all matches
-    matches = re.findall(pattern, text, re.DOTALL)
+    while True:
+        start = text.find(opening, search_position)
+        if start < 0:
+            break
 
-    # List to store extracted facts
-    extracted_rules = []
+        content_start = start + len(opening)
+        cursor = content_start
+        closing = -1
+        while True:
+            marker = text.find("$", cursor)
+            if marker < 0:
+                break
 
-    # Process each match
-    for match in matches:
-        logger.debug(f"Extracted rule: {match}")
-        # rule = get_current_date_time_for_facts(current_timezone) + " : " + match
-        rule = match
-        extracted_rules.append(rule)
+            nested_match = nested_meta_opening.match(text, marker)
+            if nested_match:
+                nested_closing = text.find("$", nested_match.end())
+                if nested_closing < 0:
+                    break
+                cursor = nested_closing + 1
+                continue
 
-    # Remove all {remember: xxx} substrings from the input string
-    modified_text = re.sub(pattern, "", text)
+            closing = marker
+            break
 
-    # Remove any extra whitespace that might have been left
-    modified_text = " ".join(modified_text.split())
+        if closing < 0:
+            break
 
+        rule = " ".join(text[content_start:closing].split())
+        if rule:
+            logger.debug("Extracted rule: %s", rule)
+            extracted_rules.append(rule)
+        spans_to_remove.append((start, closing + 1))
+        search_position = closing + 1
+
+    if not spans_to_remove:
+        return text, []
+
+    pieces = []
+    previous_end = 0
+    for start, end in spans_to_remove:
+        pieces.append(text[previous_end:start])
+        previous_end = end
+    pieces.append(text[previous_end:])
+    modified_text = " ".join("".join(pieces).split())
     return modified_text, extracted_rules
 
 
