@@ -133,6 +133,93 @@ class GeminiSpeakerEmbeddingProvider(SpeakerEmbeddingProvider):
         return SpeakerEmbedding(values=normalized, space_id=self.space_id)
 
 
+class WeSpeakerRemoteEmbeddingProvider(SpeakerEmbeddingProvider):
+    """Request dedicated speaker embeddings from a remote WeSpeaker service."""
+
+    def __init__(self, config):
+        self.url = str(config.get("wespeaker_embedding_url", "")).strip()
+        if not self.url:
+            raise ValueError(
+                "WeSpeaker embedding URL is not provided. Set 'wespeaker_embedding_url' "
+                "in configuration."
+            )
+        self.api_key = os.environ.get("WESPEAKER_API_KEY") or config.get(
+            "wespeaker_api_key"
+        )
+        self.model_id = str(
+            config.get(
+                "wespeaker_model_id",
+                "resnet34-lm-voxceleb",
+            )
+        ).strip()
+        self.timeout = float(
+            config.get(
+                "wespeaker_detection_timeout",
+                config.get("speaker_detection_timeout", 10.0),
+            )
+        )
+        configured_dimension = config.get("wespeaker_embedding_dimension")
+        self.expected_dimension = (
+            int(configured_dimension) if configured_dimension is not None else None
+        )
+
+        logger.info(
+            "WeSpeaker remote provider initialized: model=%s timeout=%s url=%s",
+            self.model_id,
+            self.timeout,
+            self.url,
+        )
+
+    async def embed(self, audio_bytes: bytes, mime_type: str) -> Optional[SpeakerEmbedding]:
+        if not audio_bytes:
+            return None
+
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": mime_type,
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=self.timeout)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    self.url,
+                    headers=headers,
+                    data=audio_bytes,
+                ) as response:
+                    response_text = await response.text()
+                    response.raise_for_status()
+        except asyncio.TimeoutError:
+            logger.warning("WeSpeaker embedding timed out after %ss", self.timeout)
+            return None
+        except Exception as e:
+            logger.error("WeSpeaker embedding request failed: %s", e)
+            return None
+
+        try:
+            data = json.loads(response_text)
+            raw_values = data.get("embedding") or data.get("values") or []
+            normalized = normalize_embedding(raw_values)
+            space_id = str(data.get("space_id") or "").strip()
+        except (TypeError, ValueError, json.JSONDecodeError) as e:
+            logger.error("Invalid WeSpeaker embedding response: %s", e)
+            return None
+
+        if not normalized or not space_id:
+            logger.error("WeSpeaker response is missing a valid embedding or space_id")
+            return None
+        if self.expected_dimension is not None and len(normalized) != self.expected_dimension:
+            logger.error(
+                "WeSpeaker returned dimension %s; expected %s",
+                len(normalized),
+                self.expected_dimension,
+            )
+            return None
+        return SpeakerEmbedding(values=normalized, space_id=space_id)
+
+
 def normalize_embedding(values: list[float]) -> list[float]:
     """Return a unit-length float vector."""
     vector = [float(value) for value in values]
@@ -190,15 +277,20 @@ class SpeakerProfileStore:
         self,
         embedding: SpeakerEmbedding,
         minimum_similarity: float,
+        minimum_margin: float = 0.0,
     ) -> Optional[SpeakerResult]:
         best_name = None
         best_score = -1.0
+        second_best_score = -1.0
         for name, profile in self._speakers(embedding.space_id).items():
             centroid = profile.get("centroid", [])
             score = cosine_similarity(embedding.values, centroid)
             if score > best_score:
+                second_best_score = best_score
                 best_name = name
                 best_score = score
+            elif score > second_best_score:
+                second_best_score = score
         if best_name is None:
             return None
         if best_score < minimum_similarity:
@@ -207,6 +299,15 @@ class SpeakerProfileStore:
                 best_name,
                 best_score,
                 minimum_similarity,
+            )
+            return None
+        if second_best_score >= 0 and best_score - second_best_score < minimum_margin:
+            logger.info(
+                "Speaker match is ambiguous: best=%s similarity=%.3f second=%.3f margin=%.3f",
+                best_name,
+                best_score,
+                second_best_score,
+                minimum_margin,
             )
             return None
         logger.info(
@@ -344,6 +445,7 @@ class ProfiledSpeakerEngine(SpeakerEngine):
     def __init__(self, provider: SpeakerEmbeddingProvider, config):
         self.provider = provider
         self.match_threshold = float(config.get("speaker_match_threshold", 0.8))
+        self.match_margin = float(config.get("speaker_match_margin", 0.0))
         self.update_threshold = float(config.get("speaker_profile_update_threshold", 0.7))
         self.context_max_age_sec = float(config.get("speaker_context_max_age_sec", 300))
         self.context_misses_to_clear = max(
@@ -520,6 +622,7 @@ class ProfiledSpeakerEngine(SpeakerEngine):
         result = self.profile_store.match(
             embedding,
             minimum_similarity=self.match_threshold,
+            minimum_margin=self.match_margin,
         )
         if result is not None:
             if resolved_turn_id == self._active_turn_id:
@@ -558,7 +661,14 @@ def format_speaker_annotation(result: Optional[SpeakerResult], score_decimals: i
 
 def normalize_speaker_provider(provider: Optional[str]) -> str:
     value = str(provider or "gemini").strip().lower()
-    return {"off": "none", "noop": "none", "disabled": "none"}.get(value, value)
+    aliases = {
+        "disabled": "none",
+        "noop": "none",
+        "off": "none",
+        "we-speaker": "wespeaker",
+        "wespeaker_remote": "wespeaker",
+    }
+    return aliases.get(value, value)
 
 
 def create_speaker_embedding_provider(provider: str, config) -> SpeakerEmbeddingProvider:
@@ -566,6 +676,8 @@ def create_speaker_embedding_provider(provider: str, config) -> SpeakerEmbedding
     normalized = normalize_speaker_provider(provider)
     if normalized == "gemini":
         return GeminiSpeakerEmbeddingProvider(config)
+    if normalized == "wespeaker":
+        return WeSpeakerRemoteEmbeddingProvider(config)
     raise ValueError(f"Unsupported speaker embedding provider: {provider}")
 
 

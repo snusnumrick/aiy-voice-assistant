@@ -15,6 +15,7 @@ from src.speaker_engine import (
     SpeakerEmbeddingProvider,
     SpeakerProfileStore,
     SpeakerResult,
+    WeSpeakerRemoteEmbeddingProvider,
     cosine_similarity,
     create_speaker_engine,
     format_speaker_annotation,
@@ -87,6 +88,26 @@ class TestSpeakerProfiles(unittest.TestCase):
                     SpeakerEmbedding([0.0, 1.0], "test:model:2"),
                     minimum_similarity=0.7,
                 )
+            )
+
+    def test_ambiguous_match_is_rejected_by_margin(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = SpeakerProfileStore(os.path.join(temp_dir, "profiles.json"))
+            query = SpeakerEmbedding([1.0, 0.0], "test:model:2")
+            near_query = SpeakerEmbedding(normalize_embedding([0.99, 0.1]), "test:model:2")
+            store.update("Anton", query, minimum_similarity=0.7)
+            store.update("Tanya", near_query, minimum_similarity=0.7)
+
+            with self.assertLogs("src.speaker_engine", level="INFO") as captured_logs:
+                result = store.match(
+                    query,
+                    minimum_similarity=0.7,
+                    minimum_margin=0.05,
+                )
+
+            self.assertIsNone(result)
+            self.assertTrue(
+                any("Speaker match is ambiguous" in line for line in captured_logs.output)
             )
 
 
@@ -277,11 +298,74 @@ class TestGeminiSpeakerEmbeddingProvider(unittest.TestCase):
         self.assertEqual(payload["content"]["parts"][0]["inline_data"]["mime_type"], "audio/wav")
 
 
+class TestWeSpeakerRemoteEmbeddingProvider(unittest.TestCase):
+    def setUp(self):
+        self.config = DictConfig(
+            {
+                "wespeaker_embedding_url": "https://speaker.example/v1/embeddings",
+                "wespeaker_model_id": "resnet34-lm-voxceleb",
+                "wespeaker_embedding_dimension": 2,
+                "wespeaker_detection_timeout": 5,
+            }
+        )
+
+    def test_init_requires_service_url(self):
+        with self.assertRaises(ValueError):
+            WeSpeakerRemoteEmbeddingProvider(DictConfig())
+
+    def test_embed_posts_wav_and_parses_normalized_embedding(self):
+        response = MagicMock()
+        response.text = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "embedding": [3, 4],
+                    "space_id": "wespeaker:resnet34-lm-voxceleb:2",
+                }
+            )
+        )
+        response.raise_for_status = MagicMock()
+        post_context = MagicMock()
+        post_context.__aenter__ = AsyncMock(return_value=response)
+        post_context.__aexit__ = AsyncMock(return_value=None)
+        session = MagicMock()
+        session.post.return_value = post_context
+        session_context = MagicMock()
+        session_context.__aenter__ = AsyncMock(return_value=session)
+        session_context.__aexit__ = AsyncMock(return_value=None)
+
+        with patch.dict(os.environ, {"WESPEAKER_API_KEY": "test-key"}):
+            provider = WeSpeakerRemoteEmbeddingProvider(self.config)
+            with patch("src.speaker_engine.aiohttp.ClientSession", return_value=session_context):
+                result = asyncio.run(provider.embed(b"RIFFaudio", "audio/wav"))
+
+        self.assertEqual(result.space_id, "wespeaker:resnet34-lm-voxceleb:2")
+        self.assertAlmostEqual(result.values[0], 0.6)
+        self.assertAlmostEqual(result.values[1], 0.8)
+        request = session.post.call_args
+        self.assertEqual(request.kwargs["data"], b"RIFFaudio")
+        self.assertEqual(request.kwargs["headers"]["Content-Type"], "audio/wav")
+        self.assertEqual(request.kwargs["headers"]["Authorization"], "Bearer test-key")
+
+
 class TestSpeakerFactory(unittest.TestCase):
     def test_disabled_factory_does_not_require_api_key(self):
         with patch.dict(os.environ, {}, clear=True):
             engine = create_speaker_engine(DictConfig({"speaker_recognition_enabled": False}))
         self.assertIsInstance(engine, NoOpSpeakerEngine)
+
+    def test_wespeaker_factory_uses_remote_provider(self):
+        engine = create_speaker_engine(
+            DictConfig(
+                {
+                    "speaker_recognition_enabled": True,
+                    "speaker_embedding_provider": "wespeaker",
+                    "wespeaker_embedding_url": "https://speaker.example/v1/embeddings",
+                }
+            )
+        )
+
+        self.assertIsInstance(engine, ProfiledSpeakerEngine)
+        self.assertIsInstance(engine.provider, WeSpeakerRemoteEmbeddingProvider)
 
 
 if __name__ == "__main__":

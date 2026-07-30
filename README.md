@@ -364,6 +364,7 @@ fresh OS image:
         ELEVENLABS_API_KEY=your_elevenlabs_api_key
         SONIOX_API_KEY=your_soniox_api_key
         GEMINI_API_KEY=your_gemini_api_key                 # For Gemini models, emotion, and speaker embeddings
+        WESPEAKER_API_KEY=your_wespeaker_service_token     # Optional bearer token for the speaker server
         TOMORROW_API_KEY=your_tomorrow_io_api_key        # For weather data
         GEOCODE_API_KEY=your_maps_co_geocoding_api_key   # For location lookup
         WAQI_API_KEY=your_waqi_api_key                   # For air quality data
@@ -697,20 +698,25 @@ The assistant uses cron to manage Tailscale for optimal performance:
   * Emotions are added as annotations to user messages, e.g., `[User emotion: excited (0.82)]`
 
 - For passive speaker recognition:
-  * Set `speaker_recognition_enabled` to `true`; it is disabled by default while the
-    suitability of general Gemini audio embeddings is evaluated on real Cubie recordings.
-  * `speaker_embedding_provider` selects the provider (`gemini` or `none`). Providers implement
-    a common embedding interface so a speaker-specific service can replace Gemini later.
-  * Gemini uses `gemini-embedding-2` with 768 dimensions by default and requires
-    `GEMINI_API_KEY`.
+  * `speaker_embedding_provider` selects `wespeaker`, `gemini`, or `none`. The recommended
+    `wespeaker` provider sends WAV audio to the dedicated speaker embedding service in
+    `speaker_server/`; set its HTTPS endpoint in `wespeaker_embedding_url`.
+  * Store the optional service bearer token in `WESPEAKER_API_KEY`. The server uses the
+    speaker-specific WeSpeaker ResNet34-LM ONNX model by default and returns a
+    model-hash-namespaced embedding, so its profiles cannot be mixed with the old Gemini
+    embedding space.
+  * The Gemini provider remains available for comparison, using `gemini-embedding-2` and
+    `GEMINI_API_KEY`, but real Anton/Tanya profiles showed insufficient speaker separation.
   * Natural self-introductions are interpreted by the existing conversation LLM rather than a
     fixed phrase parser. When the user explicitly identifies themself, the model adds a hidden
     `$speaker: Anton$` annotation to its raw response. The annotation is removed before history
     storage and speech synthesis, then associates the current audio embedding with that name.
   * Profiles are progressive normalized centroids stored in the untracked
     `speaker_profiles.json` file. Copy or synchronize that file to share profiles between Cubies.
-  * Tune `speaker_match_threshold` and `speaker_profile_update_threshold` only after comparing
-    same-speaker and different-speaker scores from real microphones. Defaults are 0.8 and 0.7.
+  * Tune `speaker_match_threshold`, `speaker_match_margin`, and
+    `speaker_profile_update_threshold` only after comparing same-speaker and different-speaker
+    scores from real microphones. Existing values are conservative migration placeholders, not
+    calibrated WeSpeaker thresholds.
     Run `python scripts/evaluate_speaker_embeddings.py Anton=a.wav Anton=b.wav Maria=c.wav`
     with several varied recordings per person to print score ranges and a candidate threshold.
   * Speaker embedding runs alongside STT and emotion analysis. A late result updates profiles in
@@ -719,6 +725,8 @@ The assistant uses cron to manage Tailscale for optimal performance:
     is in flight, then cleared after repeated mismatches. Context-only identity remains internal
     and is not added to the user message; annotations require current-turn evidence.
   * Recognized speakers are added to model context, e.g., `[User speaker: Anton (0.82)]`.
+  * Build and deploy the server using `speaker_server/Dockerfile`; detailed local commands and
+    endpoint configuration are in `speaker_server/README.md`.
 
 ## Performance Considerations
 
