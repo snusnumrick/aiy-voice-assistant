@@ -8,7 +8,7 @@
   "emotion_detection_timeout": 10.0,
   "speaker_recognition_enabled": true,
   "speaker_embedding_provider": "wespeaker",
-  "wespeaker_embedding_url": "",
+  "wespeaker_embedding_url": "http://192.168.50.254:8081/v1/embeddings",
   "wespeaker_model_id": "resnet34-lm-voxceleb",
   "wespeaker_embedding_dimension": 256,
   "wespeaker_detection_timeout": 10.0,
