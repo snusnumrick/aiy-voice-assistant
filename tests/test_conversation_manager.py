@@ -52,14 +52,15 @@ class _ToolProvenanceStreamingModel(_StreamingModel):
 
 class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
     def _config(self, **kwargs):
-        return Config(
-            config_file="__missing_config__.json",
-            user_config_file="__missing_user__.json",
-            token_threshold=999999,
-            sentence_buffer_enabled=True,
-            sentence_buffer_max_length=500,
-            **kwargs,
-        )
+        options = {
+            "config_file": "__missing_config__.json",
+            "user_config_file": "__missing_user__.json",
+            "token_threshold": 999999,
+            "sentence_buffer_enabled": True,
+            "sentence_buffer_max_length": 500,
+        }
+        options.update(kwargs)
+        return Config(**options)
 
     def test_extract_speaker_annotation_removes_only_hidden_metadata(self):
         text, speaker_ids = extract_speaker_annotations(
@@ -195,6 +196,46 @@ class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(batches[0]["emotion"])
         self.assertEqual(batches[1]["emotion"]["light"]["color"], [255, 80, 0])
         self.assertEqual(batches[1]["emotion"]["light"]["brightness"], "dark")
+
+    async def test_emotion_persists_across_plain_stream_chunks_until_reset(self):
+        orange_emotion = (
+            '$emotion:{"light":{"color":[255,200,80],"behavior":"breathing",'
+            '"brightness":"bright","period":2.5},"voice":{"tone":"happy"}}$ '
+        )
+        chunks = [
+            orange_emotion + "Ну вот, показываю.",
+            "Тёплый оранжевый, дышащий.",
+            "$emotion:{}$ Теперь без света.",
+        ]
+
+        with patch("src.conversation_manager.WebSearcher"):
+            with patch("src.conversation_manager.ClaudeAIModel"):
+                with patch("src.conversation_manager.get_location", return_value="In Test.", create=True):
+                    with patch("src.conversation_manager.get_tool_usage_stats", return_value=None):
+                        with patch.object(ConversationManager, "load_facts", return_value=[]):
+                            with patch.object(ConversationManager, "load_rules", return_value=[]):
+                                manager = ConversationManager(
+                                    self._config(sentence_buffer_max_length=20),
+                                    _StreamingModel(chunks),
+                                    timezone="UTC",
+                                    enabled_tools=[],
+                                )
+
+        batches = []
+        async for batch in manager.get_response("Покажи свет"):
+            batches.extend(batch)
+
+        self.assertEqual(
+            [item["text"] for item in batches],
+            [
+                "Ну вот, показываю.",
+                "Тёплый оранжевый, дышащий.",
+                "Теперь без света.",
+            ],
+        )
+        self.assertEqual(batches[0]["emotion"], batches[1]["emotion"])
+        self.assertEqual(batches[1]["emotion"]["light"]["color"], [255, 200, 80])
+        self.assertEqual(batches[2]["emotion"], {})
 
     async def test_tool_boundaries_mark_pre_tool_speech_and_completion(self):
         chunks = [

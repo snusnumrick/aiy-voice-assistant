@@ -819,6 +819,7 @@ class ConversationManager:
         # Buffer for combining sentences
         sentence_buffer: list[dict[str, Any]] = []
         buffer_chars = 0
+        current_emotion: Optional[dict] = None
 
         def combine_buffer() -> list[dict[str, Any]]:
             """Combine buffered sentences into one."""
@@ -849,7 +850,7 @@ class ConversationManager:
                 self.message_history[-1]["content"] += " " + cleaned
 
         def process_response_text(response_text: str) -> list[list[dict[str, Any]]]:
-            nonlocal buffer_chars
+            nonlocal buffer_chars, current_emotion
 
             batches: list[list[dict[str, Any]]] = []
             response_control = response_text.strip()
@@ -900,6 +901,10 @@ class ConversationManager:
                 logger.debug(f"Extracted rules: {rules}")
 
             for emo, t in extract_emotions(response_text):
+                if emo is None:
+                    emo = current_emotion
+                else:
+                    current_emotion = emo
                 logger.debug(f"Emotion: {emo} -> {t}")
                 for lang, clean_text in extract_language(
                     t, default_lang=self.current_language_code
