@@ -158,6 +158,15 @@ class WeSpeakerRemoteEmbeddingProvider(SpeakerEmbeddingProvider):
                 config.get("speaker_detection_timeout", 10.0),
             )
         )
+        self.failure_threshold = max(
+            1, int(config.get("wespeaker_failure_threshold", 3))
+        )
+        self.retry_cooldown = max(
+            0.0, float(config.get("wespeaker_retry_cooldown_sec", 60.0))
+        )
+        self.consecutive_failures = 0
+        self.disabled_until = 0.0
+        self._probe_in_progress = False
         configured_dimension = config.get("wespeaker_embedding_dimension")
         self.expected_dimension = (
             int(configured_dimension) if configured_dimension is not None else None
@@ -173,6 +182,12 @@ class WeSpeakerRemoteEmbeddingProvider(SpeakerEmbeddingProvider):
     async def embed(self, audio_bytes: bytes, mime_type: str) -> Optional[SpeakerEmbedding]:
         if not audio_bytes:
             return None
+
+        is_recovery_probe = self.disabled_until > 0
+        if is_recovery_probe:
+            if time.monotonic() < self.disabled_until or self._probe_in_progress:
+                return None
+            self._probe_in_progress = True
 
         headers = {
             "Accept": "application/json",
@@ -193,10 +208,20 @@ class WeSpeakerRemoteEmbeddingProvider(SpeakerEmbeddingProvider):
                     response.raise_for_status()
         except asyncio.TimeoutError:
             logger.warning("WeSpeaker embedding timed out after %ss", self.timeout)
+            self._record_request_failure()
             return None
         except Exception as e:
             logger.error("WeSpeaker embedding request failed: %s", e)
+            self._record_request_failure()
             return None
+        finally:
+            if is_recovery_probe:
+                self._probe_in_progress = False
+
+        if self.disabled_until > 0:
+            logger.info("WeSpeaker server available again; speaker recognition resumed")
+        self.consecutive_failures = 0
+        self.disabled_until = 0.0
 
         try:
             data = json.loads(response_text)
@@ -218,6 +243,18 @@ class WeSpeakerRemoteEmbeddingProvider(SpeakerEmbeddingProvider):
             )
             return None
         return SpeakerEmbedding(values=normalized, space_id=space_id)
+
+    def _record_request_failure(self) -> None:
+        """Open the circuit temporarily after repeated transport failures."""
+        self.consecutive_failures += 1
+        if self.consecutive_failures < self.failure_threshold:
+            return
+        self.disabled_until = time.monotonic() + self.retry_cooldown
+        logger.warning(
+            "WeSpeaker server unavailable after %s failures; pausing requests for %ss",
+            self.consecutive_failures,
+            self.retry_cooldown,
+        )
 
 
 def normalize_embedding(values: list[float]) -> list[float]:

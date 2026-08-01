@@ -12,6 +12,8 @@
   "wespeaker_model_id": "resnet34-lm-voxceleb",
   "wespeaker_embedding_dimension": 256,
   "wespeaker_detection_timeout": 10.0,
+  "wespeaker_failure_threshold": 3,
+  "wespeaker_retry_cooldown_sec": 60.0,
   "gemini_speaker_embedding_model": "gemini-embedding-2",
   "speaker_embedding_dimension": 768,
   "speaker_detection_timeout": 10.0,

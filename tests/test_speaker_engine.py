@@ -346,6 +346,55 @@ class TestWeSpeakerRemoteEmbeddingProvider(unittest.TestCase):
         self.assertEqual(request.kwargs["headers"]["Content-Type"], "audio/wav")
         self.assertEqual(request.kwargs["headers"]["Authorization"], "Bearer test-key")
 
+    def test_repeated_request_failures_pause_requests_until_cooldown(self):
+        provider = WeSpeakerRemoteEmbeddingProvider(self.config)
+
+        with patch(
+            "src.speaker_engine.aiohttp.ClientSession",
+            side_effect=OSError("server unavailable"),
+        ) as client_session:
+            for _ in range(3):
+                self.assertIsNone(asyncio.run(provider.embed(b"RIFFaudio", "audio/wav")))
+            self.assertIsNone(asyncio.run(provider.embed(b"RIFFaudio", "audio/wav")))
+
+        self.assertEqual(client_session.call_count, 3)
+        self.assertGreater(provider.disabled_until, 0)
+
+    def test_successful_probe_resumes_requests_after_cooldown(self):
+        response = MagicMock()
+        response.text = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "embedding": [3, 4],
+                    "space_id": "wespeaker:resnet34-lm-voxceleb:2",
+                }
+            )
+        )
+        response.raise_for_status = MagicMock()
+        post_context = MagicMock()
+        post_context.__aenter__ = AsyncMock(return_value=response)
+        post_context.__aexit__ = AsyncMock(return_value=None)
+        session = MagicMock()
+        session.post.return_value = post_context
+        session_context = MagicMock()
+        session_context.__aenter__ = AsyncMock(return_value=session)
+        session_context.__aexit__ = AsyncMock(return_value=None)
+        provider = WeSpeakerRemoteEmbeddingProvider(self.config)
+        provider.consecutive_failures = provider.failure_threshold
+        provider.disabled_until = 1.0
+
+        with (
+            patch("src.speaker_engine.time.monotonic", return_value=2.0),
+            patch("src.speaker_engine.aiohttp.ClientSession", return_value=session_context),
+            self.assertLogs("src.speaker_engine", level="INFO") as captured_logs,
+        ):
+            result = asyncio.run(provider.embed(b"RIFFaudio", "audio/wav"))
+
+        self.assertIsNotNone(result)
+        self.assertEqual(provider.consecutive_failures, 0)
+        self.assertEqual(provider.disabled_until, 0.0)
+        self.assertTrue(any("recognition resumed" in line for line in captured_logs.output))
+
 
 class TestSpeakerFactory(unittest.TestCase):
     def test_disabled_factory_does_not_require_api_key(self):
