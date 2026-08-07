@@ -16,6 +16,7 @@ class TestLlmOptimization(unittest.TestCase):
     def test_classify_tool_profile(self):
         self.assertEqual(classify_tool_profile("сделай тише"), PROFILE_HOME_CONTROL)
         self.assertEqual(classify_tool_profile("нарисуй кота"), PROFILE_CREATIVE)
+        self.assertEqual(classify_tool_profile("включи старую"), PROFILE_CREATIVE)
         self.assertEqual(classify_tool_profile("найди новости"), PROFILE_RESEARCH)
         self.assertEqual(classify_tool_profile("просто поболтаем"), PROFILE_CHAT_ONLY)
 
@@ -41,9 +42,16 @@ class TestLlmOptimization(unittest.TestCase):
         self.assertFalse(wants_detailed_response("коротко"))
 
     def test_resolve_tools_for_profile(self):
-        available = {"control_speaker_volume", "generate_image", "recall_memory"}
+        available = {
+            "control_speaker_volume",
+            "generate_image",
+            "play_music",
+            "recall_memory",
+        }
         selected = resolve_tools_for_profile(PROFILE_HOME_CONTROL, available)
         self.assertEqual(selected, {"control_speaker_volume"})
+        selected = resolve_tools_for_profile(PROFILE_CREATIVE, available)
+        self.assertEqual(selected, {"generate_image", "play_music"})
 
 
 if __name__ == "__main__":

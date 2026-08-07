@@ -167,7 +167,7 @@ def main():
         response_player = ResponsePlayer([], leds, timezone)
 
         music_tool = create_music_tool(config=config, response_player=response_player)
-        tools.append(music_tool.tool_definition())
+        tools.extend(music_tool.tool_definitions())
 
         # Initialize components
         elevenlabs_engine = None

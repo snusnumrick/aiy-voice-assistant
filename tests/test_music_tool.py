@@ -1,6 +1,8 @@
 import asyncio
 import base64
 import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -40,6 +42,69 @@ class TestMusicToolFactory(unittest.TestCase):
 
     def test_normalize_music_provider_accepts_lyria_alias(self):
         self.assertEqual(normalize_music_provider("lyria"), "gemini")
+
+    @patch("src.music_tool.MusicTool._discover_music_folder", return_value=Path("/tmp"))
+    def test_exposes_generation_and_saved_music_tools(self, _mock_discover):
+        tool = create_music_tool(self._config(), response_player=MagicMock())
+        self.assertEqual(
+            [definition.name for definition in tool.tool_definitions()],
+            ["generate_music", "play_music"],
+        )
+
+
+class TestSavedMusicLibrary(unittest.TestCase):
+    def _tool(self, music_dir, response_player=None):
+        config = Config(
+            config_file="__missing_config__.json",
+            user_config_file="__missing_user__.json",
+        )
+        with patch("src.music_tool.MusicTool._discover_music_folder", return_value=music_dir):
+            return MiniMaxMusicTool(config, response_player or MagicMock())
+
+    def test_empty_query_plays_newest_saved_wav(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            music_dir = Path(temp_dir)
+            old_song = music_dir / "old_song.wav"
+            new_song = music_dir / "homework_pop.wav"
+            old_song.write_bytes(b"old")
+            new_song.write_bytes(b"new")
+            os.utime(old_song, (1, 1))
+            os.utime(new_song, (2, 2))
+            player = MagicMock()
+            tool = self._tool(music_dir, player)
+
+            result = asyncio.run(tool.play_music_async({}))
+
+            self.assertEqual(result, "Playing saved music: homework_pop")
+            player.add.assert_called_once_with(
+                (None, str(new_song), "saved music: homework_pop")
+            )
+
+    def test_query_filters_saved_music_by_filename(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            music_dir = Path(temp_dir)
+            (music_dir / "bedtime_lullaby.wav").write_bytes(b"lullaby")
+            expected = music_dir / "homework_pop.wav"
+            expected.write_bytes(b"pop")
+            player = MagicMock()
+            tool = self._tool(music_dir, player)
+
+            result = asyncio.run(tool.play_music_async({"query": "homework"}))
+
+            self.assertEqual(result, "Playing saved music: homework_pop")
+            self.assertEqual(player.add.call_args.args[0][1], str(expected))
+
+    def test_list_does_not_queue_audio(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            music_dir = Path(temp_dir)
+            (music_dir / "song.wav").write_bytes(b"song")
+            player = MagicMock()
+            tool = self._tool(music_dir, player)
+
+            result = asyncio.run(tool.play_music_async({"action": "list"}))
+
+            self.assertEqual(result, "Saved music (1 shown): song")
+            player.add.assert_not_called()
 
 
 class TestMiniMaxMusicTool(unittest.TestCase):

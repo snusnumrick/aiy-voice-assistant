@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import os
+import tempfile
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -201,6 +202,131 @@ class MusicTool(ABC):
                 ),
             },
         )
+
+    def library_tool_definition(self) -> "Tool":
+        from src.ai_models_with_tools import Tool, ToolParameter
+
+        return Tool(
+            name="play_music",
+            description=(
+                "Browse and play songs already saved in the local music library. Use this instead "
+                "of generating new music when the user asks for an old, previous, saved, or "
+                "existing song."
+            ),
+            iterative=True,
+            parameters=[
+                ToolParameter(
+                    name="query",
+                    type="string",
+                    description=(
+                        "Optional words from the title, description, lyrics, or filename. Leave "
+                        "empty for requests like 'play the old song' to play the newest saved song."
+                    ),
+                ),
+                ToolParameter(
+                    name="action",
+                    type="string",
+                    description="Use 'play' to play a match or 'list' to browse matching songs.",
+                ),
+                ToolParameter(
+                    name="emotion",
+                    type="object",
+                    description="Optional light/voice emotion dictionary for playback.",
+                ),
+            ],
+            required=[],
+            processor=self.play_music_async,
+            rule_instructions={
+                "russian": (
+                    "Когда пользователь просит найти, перечислить или включить ранее созданную, "
+                    "старую либо сохраненную песню, используй play_music, а не generate_music. "
+                    "Для просьбы вроде 'включи старую' оставь query пустым."
+                ),
+                "english": (
+                    "When the user asks to find, list, or play an old, previous, or saved song, "
+                    "use play_music rather than generate_music. Leave query empty for requests "
+                    "like 'play the old one'."
+                ),
+            },
+        )
+
+    def tool_definitions(self) -> list["Tool"]:
+        return [self.tool_definition(), self.library_tool_definition()]
+
+    @staticmethod
+    def _music_files(music_dir: Path) -> list[Path]:
+        extensions = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
+        try:
+            files = [
+                path
+                for path in music_dir.rglob("*")
+                if path.is_file() and path.suffix.lower() in extensions
+            ]
+        except OSError as exc:
+            logger.warning("Could not browse music folder %s: %s", music_dir, exc)
+            return []
+        return sorted(files, key=lambda path: path.stat().st_mtime, reverse=True)
+
+    @staticmethod
+    def _searchable_music_text(path: Path) -> str:
+        parts = [path.stem.replace("_", " ")]
+        if HAS_MUTAGEN and path.suffix.lower() == ".mp3":
+            try:
+                tags = ID3(path)
+                parts.extend(str(frame) for frame in tags.values())
+            except Exception:
+                pass
+        return " ".join(parts).casefold()
+
+    def _find_music(self, query: str) -> list[Path]:
+        files = self._music_files(self.music_dir)
+        words = [word for word in query.casefold().split() if word]
+        if not words:
+            return files
+
+        scored = []
+        for path in files:
+            text = self._searchable_music_text(path)
+            score = sum(1 for word in words if word in text)
+            if score:
+                scored.append((score, path.stat().st_mtime, path))
+        scored.sort(reverse=True)
+        return [path for _score, _mtime, path in scored]
+
+    def _queue_existing_audio(self, path: Path, emotion) -> None:
+        playback_path = path
+        if path.suffix.lower() != ".wav":
+            if not HAS_PYDUB:
+                raise RuntimeError("pydub is not installed")
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+                playback_path = Path(temp_file.name)
+            AudioSegment.from_file(path).export(playback_path, format="wav")
+            self._cleanup_files.append(str(playback_path))
+
+        self.response_player.add((emotion, str(playback_path), f"saved music: {path.stem}"))
+        logger.info("Added saved music to playback queue: %s", path)
+
+    async def play_music_async(self, parameters: dict) -> str:
+        """Browse or play music already present in the shared library."""
+        query = str(parameters.get("query", "") or "").strip()
+        action = str(parameters.get("action", "play") or "play").strip().lower()
+        matches = self._find_music(query)
+        if not matches:
+            return f"No saved music found matching: {query}" if query else "No saved music found"
+
+        if action == "list":
+            names = ", ".join(path.stem for path in matches[:10])
+            return f"Saved music ({min(len(matches), 10)} shown): {names}"
+        if action != "play":
+            return "Error: action must be 'play' or 'list'"
+
+        selected = matches[0]
+        try:
+            self._queue_existing_audio(selected, parameters.get("emotion"))
+        except Exception as exc:
+            logger.error("Could not play saved music %s: %s", selected, exc, exc_info=True)
+            return f"Error playing saved music: {exc}"
+        return f"Playing saved music: {selected.stem}"
 
     @staticmethod
     def _prompt_from_parameters(parameters: dict) -> str:

@@ -29,6 +29,7 @@ PROFILE_TOOL_NAMES = {
     PROFILE_CREATIVE: {
         "generate_image",
         "generate_music",
+        "play_music",
     },
     PROFILE_RESEARCH: {
         "internet_search",
@@ -113,7 +114,8 @@ def classify_tool_profile(text: str, default_profile: str = PROFILE_CHAT_ONLY) -
         return PROFILE_CREATIVE
 
     if re.search(
-        r"\b(музык|песн|мелоди|трек|sing|song|music|melody|track)\b",
+        r"\b(музык|песн|мелоди|трек|sing|song|music|melody|track)\b"
+        r"|\b(включи|сыграй|play)\b.*\b(старую|старое|сохраненн\w*|previous|saved|old)\b",
         t,
     ):
         return PROFILE_CREATIVE
