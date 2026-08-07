@@ -6,7 +6,7 @@
   "emotion_top_n": 3,
   "emotion_min_score": 0.3,
   "emotion_detection_timeout": 10.0,
-  "speaker_recognition_enabled": true,
+  "speaker_recognition_enabled": false,
   "speaker_embedding_provider": "wespeaker",
   "wespeaker_embedding_url": "http://192.168.50.254:8081/v1/embeddings",
   "wespeaker_model_id": "resnet34-lm-voxceleb",
