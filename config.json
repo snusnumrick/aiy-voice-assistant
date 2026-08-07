@@ -40,7 +40,7 @@
   "openai_use_search":false,
   "admin_email": "treskunov@gmail.com",
   "minimax_base_url": "https://api.minimax.io",
-  "minimax_music_model": "music-2.6-free",
+  "minimax_music_model": "music-3.0-free",
   "minimax_music_timeout": 600,
   "speech_recognition_service": "soniox",
   "openai_transcription_model": "gpt-4o-transcribe",
