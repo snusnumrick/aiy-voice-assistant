@@ -1153,6 +1153,9 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
         last_partial: str,
     ) -> str:
         # Receives and processes transcript messages from websocket
+        messages_received = 0
+        tokens_received = 0
+        end_reason = "unknown"
         while True:
             try:
                 message = await self.asyncio.wait_for(
@@ -1161,12 +1164,15 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
             except self.asyncio.TimeoutError:
                 if send_done.is_set():
                     logger.info("Soniox WebSocket timed out after send_done was set")
+                    end_reason = "timeout_after_audio"
                     break
                 continue
             except self.ConnectionClosed:
                 logger.info("Soniox WebSocket closed")
+                end_reason = "websocket_closed"
                 break
 
+            messages_received += 1
             logger.debug("Received message from Soniox: %s", message)
 
             if not message:
@@ -1196,10 +1202,12 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
 
             if response.get("finished"):
                 logger.info("Soniox transcription finished")
+                end_reason = "finished"
                 break
 
             tokens = response.get("tokens", [])
             if tokens:
+                tokens_received += len(tokens)
                 partial_parts = []
                 transcription_finished = False
                 for token in tokens:
@@ -1217,11 +1225,30 @@ class SonioxSpeechRecognition(SpeechRecognitionService):
                 if partial_parts:
                     last_partial = "".join(partial_parts)
                 if transcription_finished:
+                    end_reason = "fin_token"
                     break
 
         if transcript_parts:
-            return "".join(transcript_parts)
-        logger.warning("No final transcript received from Soniox, returning last partial: %s", last_partial)
+            transcript = "".join(transcript_parts)
+            logger.info(
+                "Soniox receive complete: reason=%s messages=%d tokens=%d "
+                "final_chars=%d partial_chars=%d",
+                end_reason,
+                messages_received,
+                tokens_received,
+                len(transcript),
+                len(last_partial),
+            )
+            return transcript
+        logger.warning(
+            "No final transcript received from Soniox: reason=%s messages=%d "
+            "tokens=%d partial_chars=%d; returning last partial: %s",
+            end_reason,
+            messages_received,
+            tokens_received,
+            len(last_partial),
+            last_partial,
+        )
         return (last_partial or "").strip()
 
     async def _async_generator(self, audio_generator):
@@ -1430,8 +1457,13 @@ class SpeechTranscriber:
 
             def start_processing():
                 nonlocal status, record_more
+                held_duration_sec = max(0.0, time.time() - recoding_started_at)
                 logger.info(
-                    f"({time_string_ms(self.timezone)}) Processing audio... LED blinking"
+                    "(%s) Processing audio... LED blinking; button held %.2fs; "
+                    "post-roll chunks=%d",
+                    time_string_ms(self.timezone),
+                    held_duration_sec,
+                    self.number_of_chuncks_to_record_after_button_depressed,
                 )
                 self.leds.pattern = Pattern.blink(self.led_processing_blink_period_ms)
                 self.leds.update(Leds.rgb_pattern(self.led_processing_color))
@@ -1579,11 +1611,13 @@ class SpeechTranscriber:
 
                     debug_wav_path = self.config.get("stt_debug_recording_path")
                     if not debug_wav_path:
-                        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                         debug_wav_path = os.path.join(
                             "logs", f"stt_debug_{timestamp}.wav"
                         )
-                    os.makedirs(os.path.dirname(debug_wav_path), exist_ok=True)
+                    debug_wav_dir = os.path.dirname(debug_wav_path)
+                    if debug_wav_dir:
+                        os.makedirs(debug_wav_dir, exist_ok=True)
                     debug_wav = wave.open(debug_wav_path, "wb")
                     debug_wav.setnchannels(1)
                     debug_wav.setsampwidth(2)
@@ -1614,11 +1648,15 @@ class SpeechTranscriber:
                     speaker_chunks_sent = 0
                     emotion_done = False
                     speaker_done = False
+                    stt_chunks_sent = 0
+                    stt_bytes_sent = 0
                     async for chunk in audio_generator:
                         if stt_uses_async_queue:
                             await stt_queue.put(chunk)
                         else:
                             stt_queue.put(chunk)
+                        stt_chunks_sent += 1
+                        stt_bytes_sent += len(chunk)
                         if not emotion_done:
                             if emotion_remaining_prebuffer > 0:
                                 emotion_remaining_prebuffer -= 1
@@ -1664,6 +1702,16 @@ class SpeechTranscriber:
                         await emotion_queue.put(None)
                     if not speaker_done:
                         await speaker_queue.put(None)
+                    bytes_per_second = self.audio_sample_rate * 2
+                    audio_duration_sec = (
+                        stt_bytes_sent / bytes_per_second if bytes_per_second else 0.0
+                    )
+                    logger.info(
+                        "STT audio stream complete: chunks=%d bytes=%d duration=%.2fs",
+                        stt_chunks_sent,
+                        stt_bytes_sent,
+                        audio_duration_sec,
+                    )
 
                 def stt_generator():
                     """Sync generator for STT - blocks on queue.get() in thread."""

@@ -125,3 +125,26 @@ class TestAudioStreaming(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, "first second")
         self.assertEqual(websocket.recv.await_count, 3)
+
+    async def test_soniox_empty_finished_response_logs_diagnostics(self):
+        service = audio.SonioxSpeechRecognition()
+        service.asyncio = asyncio
+        service.json = __import__("json")
+        service.response_timeout_sec = 1
+        service.ConnectionClosed = Exception
+        websocket = MagicMock()
+        websocket.recv = AsyncMock(return_value='{"finished":true}')
+
+        with self.assertLogs("src.audio", level="WARNING") as logs:
+            result = await service._receive_transcripts(
+                websocket,
+                asyncio.Event(),
+                [],
+                "",
+            )
+
+        self.assertEqual(result, "")
+        log_text = "\n".join(logs.output)
+        self.assertIn("reason=finished", log_text)
+        self.assertIn("messages=1", log_text)
+        self.assertIn("tokens=0", log_text)

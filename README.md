@@ -644,6 +644,11 @@ The assistant uses cron to manage Tailscale for optimal performance:
 - Ensure proper setup of the Google Voice Kit V2
 - Verify all API keys are correctly set in the `.env` file
 - Check console output for error messages
+- To inspect exactly what was sent to speech recognition, set
+  `stt_debug_recording_enabled` to `true`. Each turn is saved as a timestamped WAV in
+  `logs/`. Optionally set `stt_debug_recording_path` to use a fixed path; that file is
+  overwritten on each turn. The WAV contains microphone audio and may contain private speech,
+  so disable capture again after troubleshooting.
 - For API rate limit issues, consider implementing backoff strategies
 - For email configuration issues, verify SMTP settings in `config.json`
 - Log files are automatically rotated to prevent disk space issues. You can find recent logs in the project directory and older, compressed logs with date suffixes.

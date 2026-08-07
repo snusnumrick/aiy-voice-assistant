@@ -1,6 +1,7 @@
 {
   "llm_streaming": true,
   "audio_recording_chunk_duration_sec": 0.3,
+  "stt_debug_recording_enabled": false,
   "token_threshold": 5000,
   "emotion_detection_enabled": true,
   "emotion_top_n": 3,
