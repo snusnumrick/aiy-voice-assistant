@@ -641,6 +641,8 @@ The assistant uses cron to manage Tailscale for optimal performance:
 
 ## Troubleshooting
 
+- For user-facing LED meanings, safe power-cycle instructions, and basic audio recovery, see
+  [End-User Troubleshooting](docs/END_USER_TROUBLESHOOTING.md).
 - Ensure proper setup of the Google Voice Kit V2
 - Verify all API keys are correctly set in the `.env` file
 - Check console output for error messages
@@ -649,6 +651,15 @@ The assistant uses cron to manage Tailscale for optimal performance:
   `logs/`. Optionally set `stt_debug_recording_path` to use a fixed path; that file is
   overwritten on each turn. The WAV contains microphone audio and may contain private speech,
   so disable capture again after troubleshooting.
+- `Microphone stream ended before button press` means the local `arecord` process exited before
+  producing audio. Check `arecord -l`, then test the configured default ALSA device directly.
+  Empty microphone streams skip remote STT and retry after `audio_recorder_failure_retry_sec`.
+  The LED blinks red briefly only when the user presses the button while capture is unavailable.
+  Configure the signal with `audio_device_error_color`, `audio_device_error_blink_period_ms`, and
+  `audio_device_error_indication_sec`; normal green breathing resumes after the indication or
+  when capture recovers.
+- `button_state_transition_logging_enabled` logs the state when recording starts and only later
+  transitions, such as `DEPRESSED -> PRESSED`, without logging on every audio chunk.
 - For API rate limit issues, consider implementing backoff strategies
 - For email configuration issues, verify SMTP settings in `config.json`
 - Log files are automatically rotated to prevent disk space issues. You can find recent logs in the project directory and older, compressed logs with date suffixes.

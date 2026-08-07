@@ -1,6 +1,11 @@
 {
   "llm_streaming": true,
   "audio_recording_chunk_duration_sec": 0.3,
+  "audio_recorder_failure_retry_sec": 3.0,
+  "audio_device_error_color": [255, 0, 0],
+  "audio_device_error_blink_period_ms": 500,
+  "audio_device_error_indication_sec": 1.5,
+  "button_state_transition_logging_enabled": true,
   "stt_debug_recording_enabled": false,
   "token_threshold": 5000,
   "emotion_detection_enabled": true,

@@ -1353,6 +1353,24 @@ class SpeechTranscriber:
         """Check and run scheduled background tasks."""
         await self.task_manager.check_and_run_tasks()
 
+    async def _wait_for_audio_error_button_press(self, timeout_sec: float) -> bool:
+        """Wait for a user attempt while capture is unavailable."""
+        if self.button.state == ButtonState.PRESSED:
+            return True
+        if timeout_sec <= 0:
+            return False
+        try:
+            loop = asyncio.get_running_loop()
+            pressed = await loop.run_in_executor(
+                None,
+                self.button.wait_for_press,
+                timeout_sec,
+            )
+            return bool(pressed)
+        except Exception as e:
+            logger.warning("Could not wait for button during audio retry: %s", e)
+            return False
+
     def _track_speaker_background_task(self, task: asyncio.Task) -> None:
         """Keep a late speaker-profile update alive and log unexpected failures."""
         self._speaker_background_tasks.add(task)
@@ -1419,10 +1437,20 @@ class SpeechTranscriber:
         chunks_deque = deque()
         status = RecordingStatus.NOT_STARTED
         prebuffer_chunks_to_skip = 0
+        log_button_states = bool(
+            self.config.get("button_state_transition_logging_enabled", True)
+        )
+        last_button_state = self.button.state
+        if log_button_states:
+            logger.info(
+                "Button state at recorder start: %s",
+                getattr(last_button_state, "name", str(last_button_state)),
+            )
         speaker_turn_id = self.speaker_engine.begin_turn() if self.speaker_engine else 0
 
         async def generate_audio_chunks():
             nonlocal status, chunks_deque, player_process, prebuffer_chunks_to_skip
+            nonlocal last_button_state
 
             audio_format = AudioFormat(
                 sample_rate_hz=self.audio_sample_rate,
@@ -1503,6 +1531,15 @@ class SpeechTranscriber:
 
                 await self.check_and_schedule_tasks()
 
+                button_state = self.button.state
+                if log_button_states and button_state != last_button_state:
+                    logger.info(
+                        "Button state transition: %s -> %s",
+                        getattr(last_button_state, "name", str(last_button_state)),
+                        getattr(button_state, "name", str(button_state)),
+                    )
+                    last_button_state = button_state
+
                 if (
                     time.time() - time_breathing_started > self.led_breathing_duration
                 ) and breathing_on:
@@ -1519,7 +1556,10 @@ class SpeechTranscriber:
                     ):
                         chunks_deque.popleft()
 
-                if (status == RecordingStatus.NOT_STARTED) and self.button.state == ButtonState.PRESSED:
+                if (
+                    status == RecordingStatus.NOT_STARTED
+                    and button_state == ButtonState.PRESSED
+                ):
                     stop_playing()
                     start_listening()
                     prebuffer_chunks_to_skip = len(chunks_deque)
@@ -1545,7 +1585,10 @@ class SpeechTranscriber:
                     chunks.append(chunk)
                     yield chunks_deque.popleft()
 
-                if status == RecordingStatus.STARTED and self.button.state != ButtonState.PRESSED:
+                if (
+                    status == RecordingStatus.STARTED
+                    and button_state != ButtonState.PRESSED
+                ):
                     start_processing()
                     status = RecordingStatus.FINISHED
 
@@ -1554,9 +1597,65 @@ class SpeechTranscriber:
         with Recorder() as recorder:
             audio_generator = generate_audio_chunks()
 
-            async for _ in audio_generator:
+            first_stt_chunk = None
+            async for chunk in audio_generator:
                 if status != RecordingStatus.NOT_STARTED:
+                    first_stt_chunk = chunk
                     break
+
+            if status == RecordingStatus.NOT_STARTED:
+                recorder_process = getattr(recorder, "_process", None)
+                recorder_exit_code = (
+                    recorder_process.poll() if recorder_process is not None else None
+                )
+                logger.error(
+                    "Microphone stream ended before button press; arecord_exit_code=%s. "
+                    "Skipping STT and retrying the recorder.",
+                    recorder_exit_code,
+                )
+                retry_sec = self.config.get("audio_recorder_failure_retry_sec", 3.0)
+                try:
+                    retry_sec = max(0.0, float(retry_sec))
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "Invalid audio_recorder_failure_retry_sec=%r; using 3 seconds",
+                        retry_sec,
+                    )
+                    retry_sec = 3.0
+                if await self._wait_for_audio_error_button_press(retry_sec):
+                    error_color = self.config.get(
+                        "audio_device_error_color", (255, 0, 0)
+                    )
+                    error_blink_period_ms = self.config.get(
+                        "audio_device_error_blink_period_ms", 500
+                    )
+                    try:
+                        error_blink_period_ms = max(1, int(error_blink_period_ms))
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "Invalid audio_device_error_blink_period_ms=%r; using 500 ms",
+                            error_blink_period_ms,
+                        )
+                        error_blink_period_ms = 500
+                    self.leds.pattern = Pattern.blink(error_blink_period_ms)
+                    self.leds.update(Leds.rgb_pattern(error_color))
+                    logger.info(
+                        "Audio device unavailable after button press... LED red blinking"
+                    )
+                    indication_sec = self.config.get(
+                        "audio_device_error_indication_sec", 1.5
+                    )
+                    try:
+                        indication_sec = max(0.0, float(indication_sec))
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "Invalid audio_device_error_indication_sec=%r; using 1.5 seconds",
+                            indication_sec,
+                        )
+                        indication_sec = 1.5
+                    if indication_sec:
+                        await asyncio.sleep(indication_sec)
+                return "", ""
 
             logger.info("Processing audio...")
 
@@ -1650,6 +1749,15 @@ class SpeechTranscriber:
                     speaker_done = False
                     stt_chunks_sent = 0
                     stt_bytes_sent = 0
+                    if first_stt_chunk is not None:
+                        if stt_uses_async_queue:
+                            await stt_queue.put(first_stt_chunk)
+                        else:
+                            stt_queue.put(first_stt_chunk)
+                        stt_chunks_sent += 1
+                        stt_bytes_sent += len(first_stt_chunk)
+                        if debug_wav is not None:
+                            debug_wav.writeframes(first_stt_chunk)
                     async for chunk in audio_generator:
                         if stt_uses_async_queue:
                             await stt_queue.put(chunk)
