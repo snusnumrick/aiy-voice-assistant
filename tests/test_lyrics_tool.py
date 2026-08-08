@@ -18,11 +18,18 @@ class TestLyricsTool(unittest.TestCase):
         definition = LyricsTool(self._config()).tool_definition()
 
         self.assertEqual(definition.name, "generate_lyrics")
-        self.assertEqual(definition.required, ["prompt"])
+        self.assertEqual(definition.required, ["intent"])
         self.assertEqual(
             [parameter.name for parameter in definition.parameters],
-            ["prompt", "existing_lyrics"],
+            ["intent", "existing_lyrics"],
         )
+        intent_description = definition.parameters[0].description
+        self.assertIn("minimal normalization", intent_description)
+        self.assertIn("genuine semantic ambiguity", intent_description)
+        self.assertIn("obvious repetitions", intent_description)
+        self.assertIn("speech-recognition artifacts", intent_description)
+        self.assertIn("Do not mention such cleanup", intent_description)
+        self.assertIn("Do not invent", intent_description)
 
     def test_provider_aliases_are_normalized(self):
         self.assertEqual(normalize_lyrics_provider("google"), "gemini")
@@ -44,7 +51,7 @@ class TestLyricsTool(unittest.TestCase):
             result = asyncio.run(
                 tool.generate_lyrics_async(
                     {
-                        "prompt": "Write a hopeful folk song in English",
+                        "intent": "Write a hopeful folk song in English",
                         "existing_lyrics": "Old opening line",
                     }
                 )
@@ -58,7 +65,7 @@ class TestLyricsTool(unittest.TestCase):
             tool.config,
             model_id="gemini-3.1-pro-preview",
             max_tokens=8192,
-            thinking_level="low",
+            thinking_level="medium",
             request_timeout_sec=120,
         )
         messages = model.get_response.call_args.args[0]
@@ -77,7 +84,7 @@ class TestLyricsTool(unittest.TestCase):
                 )
             )
             result = asyncio.run(
-                tool.generate_lyrics_async({"prompt": "Write a song about a forgotten red cup"})
+                tool.generate_lyrics_async({"intent": "Write a song about a forgotten red cup"})
             )
 
         self.assertEqual(result, "[Verse]\nA red cup by the sink")
@@ -91,7 +98,7 @@ class TestLyricsTool(unittest.TestCase):
     def test_requires_configured_model(self):
         tool = LyricsTool(self._config())
         result = asyncio.run(
-            tool.generate_lyrics_async({"prompt": "Write a gentle bedtime lullaby"})
+            tool.generate_lyrics_async({"intent": "Write a gentle bedtime lullaby"})
         )
 
         self.assertEqual(result, "Error: lyrics_model is not configured")

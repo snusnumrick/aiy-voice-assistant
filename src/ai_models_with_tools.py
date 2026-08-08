@@ -1717,16 +1717,15 @@ def main():
         print(model.get_response(messages))
 
 
-async def main_async():
+async def main_async(user_input: Optional[str] = None):
     """
-    Asynchronous main function for testing the ClaudeAIModelWithTools.
+    Exercise the Claude lyrics-to-music tool chain with a real user message.
     """
-    from src.code_interpreter_tool import InterpreterTool
-    from src.web_search_tool import WebSearchTool
-    from src.wizard_tool import WizardTool
+    from src.lyrics_tool import LyricsTool
+    from src.music_tool import MockResponsePlayer, create_music_tool
 
-    # from src.interpreter_tool_judge0 import InterpreterTool
     config = Config()
+    config["lyrics_log_content"] = True
     timezone = get_timezone()
 
     system = """
@@ -1809,34 +1808,29 @@ async def main_async():
     Monday. Now 07:40 AM PDT. In Livermore, California, US.
             """
 
-    InterpreterTool(config)
-    WizardTool(config)
-    search_tool = WebSearchTool(config)
+    lyrics_tool = LyricsTool(config)
+    response_player = MockResponsePlayer()
+    music_tool = create_music_tool(config, response_player=response_player)
+    tool_definitions = [lyrics_tool.tool_definition(), *music_tool.tool_definitions()]
+    tool_rules = "\n".join(
+        tool.rule_instructions.get("russian", "").strip()
+        for tool in tool_definitions
+        if tool.rule_instructions.get("russian", "").strip()
+    )
+    system = f"{system}\n\n{tool_rules}"
+
     model = ClaudeAIModelWithTools(
         config,
-        tools=[
-            # model = OpenAIModelWithTools(config, tools=[
-            search_tool.tool_definition(),
-            # interpreter_tool.tool_definition(),
-        ]
-        # + wizard_tool.tool_definitions(),
-        , timezone=timezone)
-    # for t in wizard_tool.tool_definitions():
-    #     if hasattr(t, "rule_instructions") and language in t.rule_instructions:
-    #         system += t.rule_instructions[language].strip()
-    # model = ClaudeAIModel(config)
+        tools=tool_definitions,
+        timezone=timezone,
+    )
+    user_input = user_input or (
+        "[User emotion: joy (0.8), excitement (0.7), interest (0.3)] "
+        "Создай песню про девочку с пуделем, её маму, и её маму в стиле Цой. Ого."
+    )
     messages = [
         {"role": "system", "content": system},
-        # {"role": "user", "content": (
-        #         "Как связаны время и сознание с точки зрения современной науки? "
-        #         "Какие существуют теории о природе этой связи и "
-        #         "что говорят последние исследования в нейронауке и философии сознания?"
-        #     )},
-        # {"role": "user", "content": "Реши уравнение ИКС в квадрате равно 4. Use code interpreter tool"},
-        # {"role": "user", "content": "how many r in word strawberry? think it through"},
-        {"role": "user", "content": "что интересного будет в Бремене в выходные 24-27 мая"},
-        # {"role": "user", "content": "где именно встретятся трамп с путиным, проверь свежие новости"},
-        # {"role": "user", "content": "Что такое бегство декурионов в Поздней Римской империи?"},
+        {"role": "user", "content": user_input},
     ]
     m = ""
     async for response_part in model.get_response_async(messages):
@@ -1853,5 +1847,6 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     load_dotenv()
-    asyncio.run(main_async())
+    cli_input = " ".join(sys.argv[1:]).strip() or None
+    asyncio.run(main_async(user_input=cli_input))
     # main()

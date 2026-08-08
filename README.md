@@ -518,7 +518,8 @@ Once the assistant is running, here's how to interact with it:
      `gemini`, `openrouter`, `openai`, and `claude`; the default is
      `gemini` with `gemini-3.1-pro-preview`.
    - `lyrics_reasoning_level` controls Gemini thinking (`minimal`, `low`, `medium`, or `high`)
-     and defaults to `low` for faster song generation.
+     and defaults to `medium`. Set `lyrics_log_content` to `true` only when full prompts and
+     generated lyrics should be written to INFO logs.
    - Examples:
      - "Спой колыбельную про звёздочки" (Sing a lullaby about stars)
      - "Спой песню про лето" (Sing a song about summer)

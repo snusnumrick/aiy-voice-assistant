@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 
 from dotenv import load_dotenv
 
@@ -60,6 +61,12 @@ class LyricsTool:
         self.provider = normalize_lyrics_provider(config.get("lyrics_provider", "gemini"))
         self.model = str(config.get("lyrics_model", "") or "").strip()
         self._model = None
+        logger.info(
+            "Lyrics tool configured: provider=%s model=%s reasoning_level=%s",
+            self.provider,
+            self.model or "not configured",
+            config.get("lyrics_reasoning_level", "provider default"),
+        )
 
     def tool_definition(self):
         from src.ai_models_with_tools import Tool, ToolParameter
@@ -68,18 +75,24 @@ class LyricsTool:
             name="generate_lyrics",
             description=(
                 "Write, rewrite, translate, or refine original song lyrics using the configured "
-                "specialist lyrics model. "
+                "specialist lyrics model. Normalize the user's intent with minimal interpretation; "
+                "do not create a detailed songwriting brief. "
                 "Use the returned lyrics as the exact lyrics input for generate_music."
             ),
             iterative=True,
             parameters=[
                 ToolParameter(
-                    name="prompt",
+                    name="intent",
                     type="string",
                     description=(
-                        "Complete songwriting request. Include the language, subject or story, "
-                        "genre, mood, point of view, desired sections or length, rhyme or meter, "
-                        "and any words, ideas, or content to include or avoid."
+                        "A minimal normalization of the user's songwriting intent. Preserve every "
+                        "person, object, relationship, count, genuine semantic ambiguity, style "
+                        "request, emotional cue, and explicit constraint. Remove conversational "
+                        "wrapper text, obvious repetitions, false starts, filler, and likely "
+                        "speech-recognition artifacts when they do not change the most probable "
+                        "meaning. Do not mention such cleanup in the normalized intent. Do not "
+                        "invent a setting, plot, imagery, song references, structure, rhyme, meter, "
+                        "genre conventions, or other creative details the user did not say."
                     ),
                 ),
                 ToolParameter(
@@ -91,39 +104,70 @@ class LyricsTool:
                     ),
                 ),
             ],
-            required=["prompt"],
+            required=["intent"],
             processor=self.generate_lyrics_async,
             rule_instructions={
                 "russian": (
                     "Когда пользователь просит написать, переписать, улучшить или перевести текст "
-                    "песни, используй generate_lyrics. Для новой песни с текстом, если пользователь "
-                    "не дал окончательный текст дословно, сначала вызови generate_lyrics, затем "
-                    "передай полученный текст без изменений в параметре lyrics инструмента "
-                    "generate_music. Для инструментальной музыки generate_lyrics не используй."
+                    "песни, используй generate_lyrics. В параметре intent только нормализуй намерение "
+                    "пользователя с минимальной интерпретацией: сохрани всех людей, предметы, связи, "
+                    "количество, подлинную смысловую неоднозначность, стиль, эмоцию и явно заданные "
+                    "ограничения. Удали разговорную обёртку, очевидные повторы, самоперебивы, "
+                    "слова-паразиты и вероятные артефакты распознавания речи, если они не меняют "
+                    "наиболее вероятный смысл. Не упоминай эту очистку в intent. Не пиши творческий "
+                    "бриф и не добавляй место действия, сюжет, образы, ссылки на песни, структуру, "
+                    "рифму, размер или жанровые детали, которых не было у пользователя. "
+                    "Для новой песни с текстом, если пользователь не дал окончательный текст "
+                    "дословно, сначала вызови generate_lyrics, затем передай полученный текст без "
+                    "изменений в параметре lyrics инструмента generate_music. Для инструментальной "
+                    "музыки generate_lyrics не используй."
                 ),
                 "english": (
                     "When the user asks to write, rewrite, improve, or translate song lyrics, use "
-                    "generate_lyrics. For a new song with lyrics, unless the user supplied final "
-                    "lyrics verbatim, call generate_lyrics first and then pass its returned text "
-                    "unchanged as the lyrics parameter of generate_music. Do not call "
-                    "generate_lyrics for instrumental music."
+                    "generate_lyrics. In intent, only normalize the user's intent with minimal "
+                    "interpretation: preserve every person, object, relationship, count, genuine "
+                    "semantic ambiguity, style request, emotional cue, and explicit constraint. "
+                    "Remove conversational wrapper text, obvious repetitions, false starts, filler, "
+                    "and likely speech-recognition artifacts when they do not change the most "
+                    "probable meaning. Do not mention such cleanup in the normalized intent. Do not "
+                    "write a creative brief or add a setting, plot, imagery, song references, "
+                    "structure, rhyme, meter, or genre details the user did not provide. For a new "
+                    "song with lyrics, unless "
+                    "the user supplied final lyrics verbatim, call generate_lyrics first and then "
+                    "pass its returned text unchanged as the lyrics parameter of generate_music. "
+                    "Do not call generate_lyrics for instrumental music."
                 ),
             },
         )
 
     async def generate_lyrics_async(self, parameters: dict) -> str:
-        prompt = str(parameters.get("prompt", "") or "").strip()
-        if not prompt:
-            return "Error: 'prompt' is required"
-        if len(prompt) < 10:
-            return "Error: 'prompt' should be at least 10 characters"
+        intent = str(parameters.get("intent") or parameters.get("prompt", "") or "").strip()
+        if not intent:
+            return "Error: 'intent' is required"
+        if len(intent) < 10:
+            return "Error: 'intent' should be at least 10 characters"
         if not self.model:
             return "Error: lyrics_model is not configured"
 
         existing_lyrics = str(parameters.get("existing_lyrics", "") or "").strip()
         timeout = self.config.get("lyrics_timeout", 120)
+        started_at = time.monotonic()
 
-        request_text = f"Songwriting request:\n{prompt}"
+        logger.info(
+            "Lyrics generation started: provider=%s model=%s intent_chars=%d "
+            "existing_lyrics_chars=%d timeout_sec=%s",
+            self.provider,
+            self.model,
+            len(intent),
+            len(existing_lyrics),
+            timeout,
+        )
+        if self.config.get("lyrics_log_content", False):
+            logger.info("Normalized lyrics intent:\n%s", intent)
+            if existing_lyrics:
+                logger.info("Existing lyrics supplied for revision:\n%s", existing_lyrics)
+
+        request_text = f"User songwriting intent:\n{intent}"
         if existing_lyrics:
             request_text += f"\n\nExisting lyrics:\n{existing_lyrics}"
 
@@ -131,6 +175,7 @@ class LyricsTool:
 
         try:
             model = self._get_model()
+            logger.info("Lyrics model ready: %s", type(model).__name__)
             messages = [
                 {"role": "system", "content": LYRICS_SYSTEM_INSTRUCTION},
                 {"role": "user", "content": request_text},
@@ -149,12 +194,30 @@ class LyricsTool:
                 logger.error("Lyrics model returned no text")
                 return "Error: No lyrics received from API"
 
+            logger.info(
+                "Lyrics generation completed: provider=%s model=%s chars=%d elapsed_sec=%.2f",
+                self.provider,
+                self.model,
+                len(lyrics),
+                time.monotonic() - started_at,
+            )
+            if self.config.get("lyrics_log_content", False):
+                logger.info("Generated lyrics:\n%s", lyrics)
             return lyrics
         except asyncio.TimeoutError:
-            logger.error("Lyrics generation timed out after %s seconds", timeout)
+            logger.error(
+                "Lyrics generation timed out: timeout_sec=%s elapsed_sec=%.2f",
+                timeout,
+                time.monotonic() - started_at,
+            )
             return f"Error: Lyrics generation timed out after {timeout} seconds"
         except Exception as exc:
-            logger.error("Lyrics generation failed: %s", exc, exc_info=True)
+            logger.error(
+                "Lyrics generation failed after %.2f seconds: %s",
+                time.monotonic() - started_at,
+                exc,
+                exc_info=True,
+            )
             return f"Error generating lyrics: {exc}"
 
     def _get_model(self) -> AIModel:
@@ -167,7 +230,7 @@ class LyricsTool:
                 self.config,
                 model_id=self.model,
                 max_tokens=max_tokens,
-                thinking_level=self.config.get("lyrics_reasoning_level", "low"),
+                thinking_level=self.config.get("lyrics_reasoning_level", "medium"),
                 request_timeout_sec=self.config.get("lyrics_timeout", 120),
             )
         elif self.provider == "openrouter":
@@ -199,7 +262,7 @@ def main(argv=None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="Generate or revise song lyrics")
-    parser.add_argument("prompt", help="Complete songwriting request")
+    parser.add_argument("intent", help="User's songwriting intent")
     parser.add_argument(
         "--existing-lyrics",
         default="",
@@ -212,7 +275,7 @@ def main(argv=None) -> int:
     result = asyncio.run(
         tool.generate_lyrics_async(
             {
-                "prompt": args.prompt,
+                "intent": args.intent,
                 "existing_lyrics": args.existing_lyrics,
             }
         )

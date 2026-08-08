@@ -46,6 +46,7 @@
   "lyrics_model": "gemini-3.1-pro-preview",
   "lyrics_timeout": 120,
   "lyrics_reasoning_level": "medium",
+  "lyrics_log_content": false,
   "lyrics_max_output_tokens": 8192,
   "speech_recognition_service": "soniox",
   "openai_transcription_model": "gpt-4o-transcribe",
