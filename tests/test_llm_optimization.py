@@ -17,6 +17,8 @@ class TestLlmOptimization(unittest.TestCase):
         self.assertEqual(classify_tool_profile("сделай тише"), PROFILE_HOME_CONTROL)
         self.assertEqual(classify_tool_profile("нарисуй кота"), PROFILE_CREATIVE)
         self.assertEqual(classify_tool_profile("включи старую"), PROFILE_CREATIVE)
+        self.assertEqual(classify_tool_profile("напиши текст песни"), PROFILE_CREATIVE)
+        self.assertEqual(classify_tool_profile("rewrite these lyrics"), PROFILE_CREATIVE)
         self.assertEqual(classify_tool_profile("найди новости"), PROFILE_RESEARCH)
         self.assertEqual(classify_tool_profile("просто поболтаем"), PROFILE_CHAT_ONLY)
 
@@ -45,13 +47,14 @@ class TestLlmOptimization(unittest.TestCase):
         available = {
             "control_speaker_volume",
             "generate_image",
+            "generate_lyrics",
             "play_music",
             "recall_memory",
         }
         selected = resolve_tools_for_profile(PROFILE_HOME_CONTROL, available)
         self.assertEqual(selected, {"control_speaker_volume"})
         selected = resolve_tools_for_profile(PROFILE_CREATIVE, available)
-        self.assertEqual(selected, {"generate_image", "play_music"})
+        self.assertEqual(selected, {"generate_image", "generate_lyrics", "play_music"})
 
 
 if __name__ == "__main__":

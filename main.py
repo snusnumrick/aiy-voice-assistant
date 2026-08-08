@@ -27,6 +27,7 @@ from src.dialog import main_loop_async
 from src.email_tools import SendEmailTool
 from src.emotion_engine import NoOpEmotionEngine, create_emotion_engine
 from src.image_tool import create_image_tool
+from src.lyrics_tool import LyricsTool
 from src.music_tool import create_music_tool
 from src.reminder import ReminderAnnouncer, ReminderTool
 from src.responce_player import ResponsePlayer
@@ -145,6 +146,7 @@ def main():
         weather_tool = EnhancedWeatherTool(config)
         wizard_tool = WizardTool(config)
         image_tool = create_image_tool(config)
+        lyrics_tool = LyricsTool(config)
         reminder_tool = ReminderTool(config, timezone)
 
         tools = [
@@ -154,6 +156,7 @@ def main():
             volume_control_tool.tool_definition(),
             weather_tool.tool_definition(),
             image_tool.tool_definition(),
+            lyrics_tool.tool_definition(),
             *reminder_tool.tool_definitions(),
         ] + wizard_tool.tool_definitions()
         if not use_builtin_search:

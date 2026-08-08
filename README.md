@@ -363,7 +363,7 @@ fresh OS image:
         PERPLEXITY_API_KEY=your_perplexity_api_key
         ELEVENLABS_API_KEY=your_elevenlabs_api_key
         SONIOX_API_KEY=your_soniox_api_key
-        GEMINI_API_KEY=your_gemini_api_key                 # For Gemini models, emotion, and speaker embeddings
+        GEMINI_API_KEY=your_gemini_api_key                 # For Gemini models, lyrics, emotion, and speaker embeddings
         WESPEAKER_API_KEY=your_wespeaker_service_token     # Optional bearer token for the speaker server
         TOMORROW_API_KEY=your_tomorrow_io_api_key        # For weather data
         GEOCODE_API_KEY=your_maps_co_geocoding_api_key   # For location lookup
@@ -512,6 +512,13 @@ Once the assistant is running, here's how to interact with it:
 
 8. **Music Generation:**
    - Ask the assistant to sing songs, generate music, or play lullabies
+   - New or revised lyrics are written by the separately configured lyrics model, then passed
+     unchanged to the music generator. User-supplied final lyrics bypass this step.
+   - Configure the writer with `lyrics_provider` and `lyrics_model`. Supported providers are
+     `gemini`, `openrouter`, `openai`, and `claude`; the default is
+     `gemini` with `gemini-3.1-pro-preview`.
+   - `lyrics_reasoning_level` controls Gemini thinking (`minimal`, `low`, `medium`, or `high`)
+     and defaults to `low` for faster song generation.
    - Examples:
      - "Спой колыбельную про звёздочки" (Sing a lullaby about stars)
      - "Спой песню про лето" (Sing a song about summer)
@@ -637,7 +644,8 @@ The assistant uses cron to manage Tailscale for optimal performance:
   - `code_interpreter_tool.py`: Tool for executing Python code and returning results
   - `volume_control_tool.py`: Tool for adjusting speaker volume
   - `wizard_tool.py`: Advanced analytical reasoning tool for complex questions
-  - `minimax_music_tool.py`: Music generation tool using MiniMax API for creating songs and lullabies
+  - `lyrics_tool.py`: Provider-neutral lyrics writing and revision tool
+  - `music_tool.py`: Music generation and saved-library playback using MiniMax or Gemini
 
 ## Troubleshooting
 

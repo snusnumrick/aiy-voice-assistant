@@ -5,6 +5,7 @@ from unittest.mock import patch
 from src.ai_models import (
     AIModel,
     ClaudeAIModel,
+    GeminiAIModel,
     MessageModel,
     OpenAIModel,
     OpenRouterModel,
@@ -46,6 +47,39 @@ class TestAIModels(unittest.TestCase):
                 self.assertEqual(response, "Async concrete response")
 
         asyncio.run(test_async())
+
+    @patch("requests.post")
+    def test_gemini_model_sends_configured_thinking_level(self, mock_post):
+        mock_post.return_value.json.return_value = {
+            "candidates": [{"content": {"parts": [{"text": "Gemini response"}]}}]
+        }
+
+        with patch.dict("os.environ", {"GEMINI_API_KEY": "test-gemini-key"}, clear=False):
+            model = GeminiAIModel(
+                self.config,
+                model_id="gemini-3.1-pro-preview",
+                max_tokens=8192,
+                thinking_level="low",
+                request_timeout_sec=120,
+            )
+            response = model.get_response(
+                [
+                    {"role": "system", "content": "Write only lyrics."},
+                    {"role": "user", "content": "Write a song."},
+                ]
+            )
+
+        self.assertEqual(response, "Gemini response")
+        request = mock_post.call_args.kwargs
+        self.assertEqual(request["timeout"], 120)
+        self.assertEqual(
+            request["json"]["generationConfig"]["thinkingConfig"],
+            {"thinkingLevel": "low"},
+        )
+        self.assertEqual(
+            request["json"]["systemInstruction"],
+            {"parts": [{"text": "Write only lyrics."}]},
+        )
 
     @patch('openai.OpenAI')
     @patch('openai.AsyncOpenAI')

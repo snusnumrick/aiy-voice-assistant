@@ -142,6 +142,32 @@ def _to_claude_reasoning_effort(value: Optional[Union[str, ReasoningEffort]]) ->
     return mapping.get(key)
 
 
+def _to_gemini_thinking_level(
+    value: Optional[Union[str, ReasoningEffort]],
+) -> Optional[str]:
+    """Normalize reasoning settings to Gemini thinking levels."""
+    if value is None:
+        return None
+    if isinstance(value, ReasoningEffort):
+        value = value.value
+    key = str(value).strip().lower()
+    if key in {"", "default", "disabled"}:
+        return None
+    if key in {"minimal", "low", "medium", "high"}:
+        return key
+    mapping = {
+        "quick": "low",
+        "thorough": "medium",
+        "comprehensive": "high",
+    }
+    normalized = mapping.get(key)
+    if normalized is None:
+        raise ValueError(
+            f"Unsupported Gemini thinking level: {value}. Expected minimal, low, medium, or high."
+        )
+    return normalized
+
+
 def normalize_messages(messages: MessageList) -> list[dict[str, Any]]:
     """
     Normalize messages to ensure they are in the correct format for API calls.
@@ -227,19 +253,119 @@ class GeminiAIModel(AIModel):
     """
 
     def __init__(
-        self, config: Config, model_id: Optional[str] = None, max_tokens: Optional[int] = None
+        self,
+        config: Config,
+        model_id: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        thinking_level: Optional[Union[str, ReasoningEffort]] = None,
+        request_timeout_sec: Optional[float] = None,
     ):
-        sys_path = sys.path
-        sys.path = [p for p in sys.path if p != os.getcwd()]
-        import google.generativeai as genai
+        self.config = config
+        self.api_key = os.environ["GEMINI_API_KEY"]
+        self.model_id = model_id or config.get("gemini_model_id", "gemini-1.5-pro-exp-0801")
+        self.max_tokens = max_tokens or config.get("max_tokens", 4096)
+        configured_level = (
+            thinking_level
+            if thinking_level is not None
+            else config.get("gemini_thinking_level")
+        )
+        self.thinking_level = _to_gemini_thinking_level(configured_level)
+        self.base_url = config.get(
+            "gemini_base_url", "https://generativelanguage.googleapis.com"
+        )
+        self.request_timeout_sec = request_timeout_sec or config.get(
+            "gemini_request_timeout_sec", 180
+        )
+        self.model = None
+        self.generation_config = None
 
-        sys.path = sys_path
+        if not self.thinking_level:
+            self._ensure_legacy_model()
 
-        genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-        model_id = model_id or config.get("gemini_model_id", "gemini-1.5-pro-exp-0801")
-        self.model = genai.GenerativeModel(model_id)
-        max_tokens = max_tokens or config.get("max_tokens", 4096)
-        self.generation_config = genai.GenerationConfig(max_output_tokens=max_tokens)
+    def _ensure_legacy_model(self) -> None:
+        if self.model is not None:
+            return
+        original_sys_path = sys.path
+        try:
+            sys.path = [path for path in sys.path if path != os.getcwd()]
+            import google.generativeai as genai
+        finally:
+            sys.path = original_sys_path
+        genai.configure(api_key=self.api_key)
+        self.model = genai.GenerativeModel(self.model_id)
+        self.generation_config = genai.GenerationConfig(max_output_tokens=self.max_tokens)
+
+    @staticmethod
+    def _rest_parts(content: Any) -> list[dict[str, Any]]:
+        if isinstance(content, str):
+            return [{"text": content}]
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append({"text": item})
+                elif isinstance(item, dict) and item.get("text"):
+                    parts.append({"text": str(item["text"])})
+            if parts:
+                return parts
+        return [{"text": str(content)}]
+
+    def _rest_request(
+        self,
+        messages: MessageList,
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
+    ) -> tuple[str, dict[str, str], dict[str, Any]]:
+        messages = normalize_messages(messages)
+        system_text = " ".join(
+            str(message["content"])
+            for message in messages
+            if message["role"] == "system"
+        )
+        contents = [
+            {
+                "role": "model" if message["role"] == "assistant" else "user",
+                "parts": self._rest_parts(message["content"]),
+            }
+            for message in messages
+            if message["role"] != "system"
+        ]
+        thinking_level = (
+            _to_gemini_thinking_level(reasoning_effort)
+            if reasoning_effort is not None
+            else self.thinking_level
+        )
+        generation_config: dict[str, Any] = {"maxOutputTokens": self.max_tokens}
+        if thinking_level:
+            generation_config["thinkingConfig"] = {"thinkingLevel": thinking_level}
+        payload: dict[str, Any] = {
+            "contents": contents,
+            "generationConfig": generation_config,
+        }
+        if system_text:
+            payload["systemInstruction"] = {"parts": [{"text": system_text}]}
+        url = f"{self.base_url.rstrip('/')}/v1beta/models/{self.model_id}:generateContent"
+        headers = {
+            "x-goog-api-key": self.api_key,
+            "Content-Type": "application/json",
+        }
+        return url, headers, payload
+
+    @staticmethod
+    def _rest_response_text(result: dict[str, Any]) -> str:
+        if "error" in result:
+            error = result["error"]
+            message = error.get("message", str(error)) if isinstance(error, dict) else error
+            raise RuntimeError(f"Gemini API error: {message}")
+        candidates = result.get("candidates", [])
+        if not candidates:
+            raise RuntimeError("Gemini API returned no candidates")
+        parts = candidates[0].get("content", {}).get("parts", [])
+        text = "".join(
+            str(part.get("text", "")) for part in parts if isinstance(part, dict)
+        ).strip()
+        if not text:
+            raise RuntimeError("Gemini API returned no text")
+        return text
 
     def get_response(
         self, messages: MessageList, reasoning_effort: Optional[Union[str, ReasoningEffort]] = None
@@ -253,6 +379,27 @@ class GeminiAIModel(AIModel):
         Returns:
             str: The generated response.
         """
+        effective_thinking = (
+            _to_gemini_thinking_level(reasoning_effort)
+            if reasoning_effort is not None
+            else self.thinking_level
+        )
+        if effective_thinking:
+            try:
+                url, headers, payload = self._rest_request(messages, reasoning_effort)
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=self.request_timeout_sec,
+                )
+                response.raise_for_status()
+                return self._rest_response_text(response.json())
+            except Exception as e:
+                logging.error(f"Error in Gemini REST API call: {str(e)}")
+                raise
+
+        self._ensure_legacy_model()
         from google.generativeai import types  # ty:ignore[unresolved-import]
 
         messages = normalize_messages(messages)
@@ -300,6 +447,26 @@ class GeminiAIModel(AIModel):
         Yields:
             str: Parts of the generated response.
         """
+        effective_thinking = (
+            _to_gemini_thinking_level(reasoning_effort)
+            if reasoning_effort is not None
+            else self.thinking_level
+        )
+        if effective_thinking:
+            try:
+                url, headers, payload = self._rest_request(messages, reasoning_effort)
+                timeout = aiohttp.ClientTimeout(total=self.request_timeout_sec)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, headers=headers, json=payload) as response:
+                        response.raise_for_status()
+                        result = await response.json()
+                yield self._rest_response_text(result)
+                return
+            except Exception as e:
+                logging.error(f"Error in Gemini REST API call: {str(e)}")
+                raise
+
+        self._ensure_legacy_model()
         from google.generativeai import types  # ty:ignore[unresolved-import]
 
         messages = normalize_messages(messages)
@@ -1009,15 +1176,27 @@ class OpenRouterModel(OpenAIModel):
     Implementation of AIModel using OpenRouter's API.
     """
 
-    def __init__(self, config: Config, use_simple_model: bool = False):
+    def __init__(
+        self,
+        config: Config,
+        use_simple_model: bool = False,
+        model_id: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
+    ):
         """
         Initialize the OpenRouter model.
 
         Args:
             config (Config): The application configuration object.
             use_simple_model (bool): Whether to use the simple model or not.
+            model_id (Optional[str]): Explicit model override.
+            max_tokens (Optional[int]): Maximum response tokens.
+            reasoning_effort: Optional reasoning effort for supported models.
         """
-        if use_simple_model:
+        if model_id:
+            model = model_id
+        elif use_simple_model:
             model = config.get("openrouter_model_simple", "anthropic/claude-3-haiku")
         else:
             model = config.get("openrouter_model", "anthropic/claude-3.5-sonnet")
@@ -1027,7 +1206,9 @@ class OpenRouterModel(OpenAIModel):
             base_url=base_url,
             api_key=os.getenv("OPENROUTER_API_KEY"),
             model_id=model,
+            reasoning_effort=reasoning_effort,
             api="chat_completions",
+            max_tokens=max_tokens,
         )
 
 
