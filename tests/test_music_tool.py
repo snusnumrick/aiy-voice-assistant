@@ -51,6 +51,25 @@ class TestMusicToolFactory(unittest.TestCase):
             ["generate_music", "play_music"],
         )
 
+    @patch("src.music_tool.MusicTool._discover_music_folder", return_value=Path("/tmp"))
+    def test_claude_schema_includes_style_constraints_for_both_providers(self, _mock_discover):
+        from src.ai_models_with_tools import ClaudeAIModelWithTools
+
+        for provider in ("minimax", "gemini"):
+            with self.subTest(provider=provider):
+                tool = create_music_tool(
+                    self._config(music_tool_provider=provider), response_player=MagicMock()
+                )
+                definition = tool.tool_definition()
+                schema = ClaudeAIModelWithTools._create_tools_description([definition])[0]
+                self.assertIn("no artist or band names", schema["description"])
+                prompt = schema["input_schema"]["properties"]["prompt"]["description"]
+                self.assertIn("generate_lyrics intent", prompt)
+                self.assertIn("before the first call", prompt)
+                self.assertIn("separate lyrics parameter", prompt)
+                self.assertIn("Перед самым первым вызовом", definition.rule_instructions["russian"])
+                self.assertIn("Before the very first call", definition.rule_instructions["english"])
+
 
 class TestSavedMusicLibrary(unittest.TestCase):
     def _tool(self, music_dir, response_player=None):

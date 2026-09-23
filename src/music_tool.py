@@ -137,7 +137,10 @@ class MusicTool(ABC):
             name="generate_music",
             description=(
                 f"Generate songs, melodies, instrumentals, and music using "
-                f"{self.provider_display_name}."
+                f"{self.provider_display_name}. Before calling, ensure prompt describes only "
+                "musical characteristics, with no artist or band names, even when the user "
+                "explicitly requests their style. Translate artist references into musical "
+                "traits before the first call. Put song lyrics only in the lyrics parameter."
             ),
             iterative=True,
             parameters=[
@@ -147,7 +150,14 @@ class MusicTool(ABC):
                     description=(
                         "A detailed description of the music to generate. Prefer: genre or style, "
                         "tempo or BPM, mood, key or scale, instruments, structure, and production "
-                        "details. Example: 'Lo-fi hip hop, 85 BPM, in C minor, Fender Rhodes piano "
+                        "details. Do not include artist or band names in the style description. "
+                        "This applies even to names copied from the user's request or "
+                        "generate_lyrics intent, including aliases, transliterations, and "
+                        "artist-derived style labels. Replace those references with musical "
+                        "characteristics (genre, instrumentation, vocals, mood, and production). "
+                        "Check this before the first call; do not wait for a provider rejection. "
+                        "Do not embed lyrics here; use the separate lyrics parameter. "
+                        "Example: 'Lo-fi hip hop, 85 BPM, in C minor, Fender Rhodes piano "
                         "and vinyl crackle, nostalgic and dreamy. [Intro] mellow chords [Verse] "
                         "soft beat enters [Chorus] fuller sound.'"
                     ),
@@ -158,7 +168,9 @@ class MusicTool(ABC):
                     description=(
                         "Optional song lyrics. Use \\n for line breaks. You may add structure tags "
                         "like [Intro], [Verse], [Chorus], [Bridge], and [Outro]. Leave empty for "
-                        "instrumental music."
+                        "instrumental music. Preserve stress capitalization in lyrics returned "
+                        "by generate_lyrics: Russian stressed syllables use uppercase letters "
+                        "(for example, поДАрок). Do not lowercase them or replace them with +."
                     ),
                 ),
                 ToolParameter(
@@ -184,7 +196,18 @@ class MusicTool(ABC):
                     "или написать музыку, используй инструмент generate_music. Триггеры: "
                     "'создай музыку', 'сгенерируй песню', 'сочини мелодию', 'сделай трек', "
                     "'создай музыку gemini', 'lyria'. Всегда уточни жанр, настроение, описание "
-                    "или характеристики желаемой музыки перед генерацией. Если не попросили иначе "
+                    "или характеристики желаемой музыки перед генерацией. Не включай имена "
+                    "исполнителей и названия групп в описание стиля в prompt. Если пользователь "
+                    "ссылается на исполнителя, опиши вместо имени музыкальные характеристики: "
+                    "жанр, инструменты, вокал, настроение и продакшен. Это правило действует, "
+                    "даже если имя явно указано пользователем или сохранено в intent инструмента "
+                    "generate_lyrics. Не копируй intent в prompt: исключи также псевдонимы, "
+                    "транслитерации и прилагательные от имён исполнителей. Например, запрос "
+                    "'в стиле Цоя (Кино)' передай как 'русский постпанк, минорная тональность, "
+                    "ровный рок-бит, лаконичные электрогитары, низкий сдержанный мужской вокал'. "
+                    "Перед самым первым вызовом проверь prompt на отсутствие имён и названий "
+                    "групп; не жди отказа провайдера. Текст песни передавай только в lyrics, "
+                    "не добавляй его в prompt. Если не попросили иначе "
                     "и нужна песня с текстом, добавь в prompt 'Мужской голос среднего возраста, "
                     "глубокий и теплый тембр'. После получения ответа обязательно сохрани текст "
                     "песни и локальный путь к файлу в память, используя формат: $remember: "
@@ -196,7 +219,17 @@ class MusicTool(ABC):
                     "generate_music tool. Triggers: 'create music', 'generate song', 'compose "
                     "melody', 'make a track', 'create music with gemini', 'lyria'. Always ask for "
                     "genre, mood, description, or characteristics of the desired music before "
-                    "generation. After receiving the tool response, save the lyrics and local file "
+                    "generation. Do not include artist or band names in the style description in "
+                    "prompt. If the user references an artist, describe the musical characteristics "
+                    "instead: genre, instrumentation, vocals, mood, and production. This applies "
+                    "even when explicitly requested by the user or preserved in generate_lyrics "
+                    "intent. Do not copy intent into prompt; exclude aliases, transliterations, "
+                    "and artist-derived style labels too. For example, translate 'in the style "
+                    "of Tsoi (Kino)' into 'Russian post-punk, minor key, steady rock beat, sparse "
+                    "electric guitars, low restrained male vocals'. Before the very first call, "
+                    "check prompt for artist and band names; do not wait for a provider rejection. "
+                    "Put song lyrics only in lyrics, never in prompt. "
+                    "After receiving the tool response, save the lyrics and local file "
                     "path to memory using format: $remember: Generated music: <description from "
                     "prompt>, lyrics: <lyrics>, file: <path> Remove from memory in 24 hours$."
                 ),
@@ -762,7 +795,56 @@ async def main():
     try:
         result = await tool.generate_music_async(
             {
-                "prompt": "Upbeat electronic music with energetic beats and futuristic sounds",
+                "prompt": "весёлый, задорный ритм под гармошку и балалайку, с притопом",
+                "lyrics": """[Verse 1]
+В мятой бумаге лежал твой поДАрок.
+Выбор практичен, надежен и ярок.
+Тёплое дерево, гладкий торец,
+Вырезал мастер, большой молодец.
+Пахнет сандалом на всю кухню теперь.
+Вешаю фартук, закрываю дверь.
+Беру её в руки — и сразу к плите,
+Проверить, как будет она в густоте.
+
+[Chorus]
+Сандаловая ложка, тяжелое дерево.
+Мешает повидло легко и уверенно.
+Стучит по кастрюле, скользит по краям.
+Но если ты сунешься к теплым блинам
+Без спроса — я не поведусь на мольбу,
+И ложка прицельно щелкнет по лбу.
+
+[Verse 2]
+Она не царапает старый тефлон,
+Впитывает масло, томатный бульон.
+Становится тёмной от специй и чая,
+Я с ней у плиты выходные встречаю.
+В ладонь ложится, как верный кастет —
+Особенно, если еще не готов обед,
+А кто-то крутится здесь у стола
+И ждет, чтобы я наконец позвала.
+
+[Bridge]
+Вот ты крадешься на запах гуляша.
+Тянешься к крышке, едва ли дыша.
+Хочешь проверить, хватает ли соли,
+Неужто забыл про физию боли?
+Рука уже тянется снять крышку с плошки...
+Но чувствует резкое дерево ложки.
+
+[Chorus]
+Сандаловая ложка, тяжелое дерево.
+Мешает повидло легко и уверенно.
+Стучит по кастрюле, скользит по краям.
+Но если ты сунешься к теплым блинам
+Без спроса — я не поведусь на мольбу,
+И ложка прицельно щелкнет по лбу.
+
+[Outro]
+Звонкий щелчок.
+Краснеющий лоб.
+Пахнет сандалом.
+Нарежь-ка укроп.""",
             }
         )
         print(f"\n{'=' * 60}")

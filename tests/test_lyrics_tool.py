@@ -95,6 +95,21 @@ class TestLyricsTool(unittest.TestCase):
             reasoning_effort=None,
         )
 
+    @patch("src.lyrics_tool.LyricsTool._get_model")
+    def test_requests_syllable_stress_and_preserves_capitalization(self, get_model):
+        lyrics = "[Verse]\nпоДАрок и доРОга\n[Chorus]\nмоЛОко"
+        get_model.return_value.get_response.return_value = lyrics
+        tool = LyricsTool(self._config(lyrics_model="test-model"))
+
+        result = asyncio.run(tool.generate_lyrics_async({"intent": "Песня про подарок"}))
+
+        system = get_model.return_value.get_response.call_args.args[0][0]
+        self.assertEqual(system["role"], "system")
+        self.assertIn("заглавными буквами ударного", system["content"])
+        self.assertIn("поДАрок", system["content"])
+        self.assertIn("Не используй знак +", system["content"])
+        self.assertEqual(result, lyrics)
+
     def test_requires_configured_model(self):
         tool = LyricsTool(self._config())
         result = asyncio.run(
