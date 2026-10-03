@@ -35,6 +35,10 @@ except Exception:
     pass
 
 
+class TruncatedResponseError(RuntimeError):
+    """The provider stopped generating because its output token budget was exhausted."""
+
+
 class MessageModel(BaseModel):
     role: str
     content: str
@@ -359,6 +363,17 @@ class GeminiAIModel(AIModel):
         candidates = result.get("candidates", [])
         if not candidates:
             raise RuntimeError("Gemini API returned no candidates")
+        finish_reason = candidates[0].get("finishReason")
+        logging.info(
+            "Gemini response finish_reason=%s usage=%s",
+            finish_reason,
+            result.get("usageMetadata", {}),
+        )
+        if finish_reason == "MAX_TOKENS":
+            raise TruncatedResponseError(
+                "Gemini response was truncated (MAX_TOKENS); increase the output token budget "
+                "or reduce the thinking level before retrying"
+            )
         parts = candidates[0].get("content", {}).get("parts", [])
         text = "".join(
             str(part.get("text", "")) for part in parts if isinstance(part, dict)

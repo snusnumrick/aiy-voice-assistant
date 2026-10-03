@@ -41,7 +41,7 @@ beyond the AI model's knowledge cutoff date, enhancing the assistant's ability t
 - **Code Interpretation**: Can execute Python code, allowing for complex computations and data analysis, with results conveyed verbally.
 - **Volume Control**: Ability to adjust speaker volume through voice commands, enhancing user comfort and accessibility.
 - **Voice Emotion Detection**: Real-time detection of user emotions from voice using Hume AI, enabling emotionally-aware responses that match the user's mood.
-- **Music Generation**: Generate and play music with lyrics using MiniMax API, supporting lullabies, songs, and custom musical compositions with streaming playback.
+- **Music Generation**: Generate and play music with lyrics using MiniMax, Gemini, or ElevenLabs, supporting lullabies, songs, and custom musical compositions with streaming playback.
 - **Reminders**: Set reminders that trigger a bell + LED pattern and optionally spoken reminders, with context injection so you can ask “what was the reminder about?”.
 - **Comprehensive Weather Information**: Provides detailed weather data including:
   - Current conditions and forecasts (hourly/daily)
@@ -612,6 +612,42 @@ The assistant uses cron to manage Tailscale for optimal performance:
 * Scripts location: `/usr/local/bin/tailscale-up.sh` and `/usr/local/bin/tailscale-down.sh`
 * All operations are logged to syslog for monitoring
 
+### Lyrics review
+
+After drafting lyrics, the specialist lyrics model rereads them and checks the audience,
+story, wording, singability, stress marks, `ё` spelling, and ending. It revises and reviews
+again until it approves the result. `lyrics_review_max_passes` defaults to 5; if the model
+never approves, the tool returns an error rather than unapproved lyrics. Set it to 0 to
+skip review. Each pass uses the existing retry helper for token-truncated responses.
+Review adds model calls and latency; model approval still requires listening validation
+for sung pronunciation.
+
+### Music generation providers
+
+Set `music_tool_provider` in `user.json` to `minimax`, `gemini`, or `elevenlabs`.
+For ElevenLabs, set `ELEVENLABS_API_KEY` in `.env` (the same key used for ElevenLabs TTS).
+Optional settings in `user.json`:
+
+```json
+{
+  "music_tool_provider": "elevenlabs",
+  "elevenlabs_music_model": "music_v1",
+  "elevenlabs_music_timeout": 600,
+  "elevenlabs_music_length_ms": 60000
+}
+```
+
+The `model` tool argument overrides `elevenlabs_music_model`. Duration is optional;
+when omitted, ElevenLabs chooses it from the prompt. Configured duration must be an
+integer from 3000 to 600000 milliseconds. Without lyrics, generation forces instrumental
+music. Supplied lyrics preserve capitalization and line breaks and are appended to the
+provider request; the combined prompt must fit ElevenLabs' 4100-character limit.
+HTTP 429 and temporary server errors (500, 502, 503, 504) are retried up to three
+total attempts, with exponential backoff and jitter starting at two seconds. Authentication,
+validation, and ambiguous transport failures are not retried.
+Generated MP3s use the existing library, metadata, and WAV playback flow (requires ffmpeg).
+See the [ElevenLabs Music API reference](https://elevenlabs.io/docs/api-reference/music/compose).
+
 ## Project Structure
 
 - `main.py`: Entry point of the application
@@ -698,9 +734,9 @@ The assistant uses cron to manage Tailscale for optimal performance:
   * To disable immediately: ```sudo tailscale down```
 
 - For music generation issues:
-  * Verify MINIMAX_API_KEY is set in .env file
+  * Verify the selected provider key is set in .env: MINIMAX_API_KEY, GEMINI_API_KEY, or ELEVENLABS_API_KEY
   * Ensure ffmpeg is installed: ```ffmpeg -version```
-  * Check MiniMax API key validity and quota
+  * Check the selected provider API key validity and quota
   * Check /tmp directory has sufficient space for temporary files
   * Music generation requires streaming support - verify network connection
   * If playback is interrupted, temporary WAV files are automatically cleaned up

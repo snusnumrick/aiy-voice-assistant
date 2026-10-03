@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import os
+import re
 import tempfile
 import time
 from abc import ABC, abstractmethod
@@ -18,6 +19,7 @@ if __name__ == "__main__":
 
 from src.config import Config
 from src.server_utils import get_server_url
+from src.tools import NonRetryableError, retry_async
 
 if TYPE_CHECKING:
     from src.ai_models_with_tools import Tool
@@ -172,6 +174,11 @@ class MusicTool(ABC):
                         "by generate_lyrics: Russian stressed syllables use uppercase letters "
                         "(for example, поДАрок). Do not lowercase them or replace them with +."
                     ),
+                ),
+                ToolParameter(
+                    name="title",
+                    type="string",
+                    description="A short song title for the MP3 metadata. Supply a title, not a style description.",
                 ),
                 ToolParameter(
                     name="model",
@@ -383,19 +390,52 @@ class MusicTool(ABC):
         logger.info("Saved MP3 file: %s", mp3_path)
         return mp3_path
 
+    @staticmethod
+    def _readable_lyrics(lyrics: str) -> str:
+        """Remove structure tags and stress capitals for readable lyric metadata."""
+
+        lines = []
+        for line in lyrics.splitlines():
+            line = re.sub(r"\[[^]\n]*\]", "", line).strip()
+            if not line:
+                if lines and lines[-1]:
+                    lines.append("")
+                continue
+            line = re.sub(r"[А-Яа-яЁё]+", lambda m: m.group().lower(), line)
+            line = re.sub(
+                r"(^\s*|[.!?]\s+|[«\"])([а-яё])",
+                lambda m: m[1] + m[2].upper(), line,
+            )
+            lines.append(line)
+        return "\n".join(lines).strip()
+
     def _add_mp3_metadata(
         self,
         mp3_path: Path,
         prompt: str,
         lyrics: str = "",
         comment_lines: Optional[list[str]] = None,
+        title: str = "",
     ) -> None:
         if not HAS_MUTAGEN:
             logger.info("Skipping metadata tags (mutagen not available)")
             return
 
         try:
-            title = prompt[:50] if len(prompt) <= 50 else f"{prompt[:50]}..."
+            lyrics = self._readable_lyrics(lyrics)
+            title = str(title or "").strip()
+            if not title:
+                lyric_lines = [
+                    line.strip() for line in lyrics.splitlines()
+                    if line.strip() and not line.strip().startswith("[")
+                ]
+                title = lyric_lines[0] if lyric_lines else "Generated instrumental"
+            language = "und"
+            if re.search(r"[А-Яа-яЁё]", lyrics):
+                language = "rus"
+            elif re.search(r"[A-Za-z]", re.sub(r"\[[^]]*\]", "", lyrics)):
+                language_code = str(self.config.get("language_code", "en")).split("-")[0]
+                language = {"en": "eng", "de": "deu", "pt": "por", "es": "spa", "fr": "fra"}.get(language_code, "und")
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             comments = list(comment_lines or [])
             comments.extend([f"Prompt: {prompt}", f"Timestamp: {timestamp}"])
@@ -413,7 +453,7 @@ class MusicTool(ABC):
                 audio_tag.add(TLEN(encoding=3, text=[str(duration_ms)]))
             audio_tag.add(TENC(encoding=3, text=["Cubic"]))
             if lyrics:
-                audio_tag.add(USLT(encoding=3, lang="eng", desc="AI-generated lyrics", text=lyrics))
+                audio_tag.add(USLT(encoding=3, lang=language, desc="AI-generated lyrics", text=lyrics))
             audio_tag.add(COMM(encoding=3, desc="Comments", text=["\n".join(comments)]))
             audio_tag.save(mp3_path)
             logger.info("Added metadata tags to %s", mp3_path)
@@ -440,10 +480,13 @@ class MusicTool(ABC):
         lyrics: str = "",
         emotion=None,
         comment_lines: Optional[list[str]] = None,
+        title: str = "",
     ) -> Path:
         self._cleanup_temp_files()
         mp3_path = self._save_generated_audio(audio_data, prompt)
-        self._add_mp3_metadata(mp3_path, prompt=prompt, lyrics=lyrics, comment_lines=comment_lines)
+        self._add_mp3_metadata(
+            mp3_path, prompt=prompt, lyrics=lyrics, comment_lines=comment_lines, title=title
+        )
         self._refresh_music_library()
         self._queue_generated_audio(mp3_path, emotion)
         return mp3_path
@@ -594,6 +637,7 @@ class MiniMaxMusicTool(MusicTool):
                     return "Error: No audio data received from API"
 
             mp3_path = self._process_generated_audio(
+                title=parameters.get("title", ""),
                 audio_data=mp3_audio_data,
                 prompt=prompt,
                 lyrics=lyrics,
@@ -725,6 +769,7 @@ class GeminiMusicTool(MusicTool):
                 return "Error: No audio data received from API"
 
             mp3_path = self._process_generated_audio(
+                title=parameters.get("title", ""),
                 audio_data=audio_data,
                 prompt=prompt,
                 lyrics=lyrics_text,
@@ -750,14 +795,151 @@ class GeminiMusicTool(MusicTool):
             return f"Error generating music: {exc}"
 
 
+class ElevenLabsMusicTool(MusicTool):
+    def __init__(self, config: Config, response_player):
+        super().__init__(config, response_player)
+        self.api_key = os.environ.get("ELEVENLABS_API_KEY")
+        self.base_url = config.get("elevenlabs_music_base_url", "https://api.elevenlabs.io")
+
+    @property
+    def provider_display_name(self) -> str:
+        return "ElevenLabs"
+
+    @property
+    def required_api_key_env_var(self) -> str:
+        return "ELEVENLABS_API_KEY"
+
+    @property
+    def filename_prefix(self) -> str:
+        return "elevenlabs_music"
+
+    @property
+    def metadata_artist_name(self) -> str:
+        return "ElevenLabs Music"
+
+    async def generate_music_async(self, parameters: dict) -> str:
+        prompt = self._prompt_from_parameters(parameters)
+        if not prompt:
+            return "Error: 'prompt' is required"
+        if len(prompt) < 10:
+            return "Error: 'prompt' should be at least 10 characters"
+        if not self.api_key:
+            return "Error: ELEVENLABS_API_KEY environment variable is not set"
+
+        lyrics = str(parameters.get("lyrics", "") or "")
+        # ElevenLabs accepts lyrics inside its prompt, rather than as a separate field.
+        api_prompt = f"{prompt}\n\nSing these lyrics:\n{lyrics}" if lyrics else prompt
+        if len(api_prompt) > 4100:
+            return "Error: ElevenLabs prompt including lyrics must not exceed 4100 characters"
+
+        model = str(
+            parameters.get("model") or self.config.get("elevenlabs_music_model", "music_v1")
+        ).strip()
+        logger.info("Generating music: provider=ElevenLabs model=%s", model)
+        logger.info("Music style prompt:\n%s", prompt)
+        payload = {"prompt": api_prompt, "model_id": model, "force_instrumental": not bool(lyrics)}
+        music_length_ms = self.config.get("elevenlabs_music_length_ms")
+        if music_length_ms is not None:
+            if (
+                isinstance(music_length_ms, bool)
+                or not isinstance(music_length_ms, int)
+                or not 3000 <= music_length_ms <= 600000
+            ):
+                return "Error: elevenlabs_music_length_ms must be an integer between 3000 and 600000"
+            payload["music_length_ms"] = music_length_ms
+
+        timeout = self.config.get("elevenlabs_music_timeout", 600)
+
+        @retry_async(max_retries=3, initial_retry_delay=2)
+        async def request_audio(session):
+            try:
+                async with session.post(
+                    f"{self.base_url.rstrip('/')}/v1/music",
+                    headers={"xi-api-key": self.api_key, "Content-Type": "application/json"},
+                    params={"output_format": "mp3_44100_128"},
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=timeout),
+                ) as response:
+                    if response.status >= 400:
+                        error_text = await response.text()
+                        try:
+                            error = json.loads(error_text)
+                            detail = error.get("detail", error) if isinstance(error, dict) else error
+                            if isinstance(detail, dict):
+                                code = detail.get("status") or detail.get("code") or detail.get("type")
+                                message = detail.get("message", str(detail))
+                                error_text = f"{code}: {message}" if code else str(message)
+                            else:
+                                error_text = str(detail)
+                        except json.JSONDecodeError:
+                            pass
+                        message = f"ElevenLabs API returned HTTP {response.status}: {error_text[:1000]}"
+                        retry_after = response.headers.get("Retry-After")
+                        if retry_after:
+                            message += f" (Retry-After: {retry_after})"
+                        logger.error("%s", message)
+                        if response.status in {429, 500, 502, 503, 504}:
+                            raise aiohttp.ClientResponseError(
+                                response.request_info, response.history,
+                                status=response.status, message=message.split(": ", 1)[1],
+                                headers=response.headers,
+                            )
+                        raise NonRetryableError(message)
+                    response.raise_for_status()
+                    return await response.read()
+
+            except aiohttp.ClientResponseError as exc:
+                if exc.status in {429, 500, 502, 503, 504}:
+                    raise
+                raise NonRetryableError(
+                    f"ElevenLabs API returned HTTP {exc.status}: {exc.message}"
+                ) from exc
+            except NonRetryableError:
+                raise
+            except Exception as exc:
+                # A timeout or broken response may follow a successful paid generation.
+                raise NonRetryableError(f"Failed to connect to ElevenLabs music API: {exc}") from exc
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                audio_data = await request_audio(session)
+
+            if not audio_data:
+                return "Error: No audio data received from API"
+
+            mp3_path = self._process_generated_audio(
+                title=parameters.get("title", ""),
+                audio_data=audio_data,
+                prompt=prompt,
+                lyrics=lyrics,
+                emotion=parameters.get("emotion"),
+                comment_lines=["Generated by ElevenLabs Music", f"Model: {model}"],
+            )
+            return f"Music generated and playing. Local MP3: {mp3_path}"
+        except NonRetryableError as exc:
+            logger.error("%s", exc)
+            return f"Error: {exc}"
+        except aiohttp.ClientResponseError as exc:
+            logger.error("ElevenLabs API returned HTTP %s: %s", exc.status, exc.message)
+            return f"Error: ElevenLabs API returned HTTP {exc.status}: {exc.message}"
+        except aiohttp.ClientError as exc:
+            logger.error("ElevenLabs music request failed: %s", exc)
+            return f"Error: Failed to connect to ElevenLabs music API: {exc}"
+        except Exception as exc:
+            logger.error("ElevenLabs music generation failed: %s", exc, exc_info=True)
+            return f"Error generating music: {exc}"
+
+
 def normalize_music_provider(provider: Optional[str]) -> str:
     normalized = str(provider or "minimax").strip().lower()
     if normalized in {"minimax", "mini max"}:
         return "minimax"
     if normalized in {"gemini", "google", "lyria"}:
         return "gemini"
+    if normalized in {"elevenlabs", "eleven labs", "eleven_labs"}:
+        return "elevenlabs"
     raise ValueError(
-        f"Unsupported music_tool_provider: {provider}. Expected 'gemini' or 'minimax'."
+        f"Unsupported music_tool_provider: {provider}. Expected 'gemini', 'minimax', or 'elevenlabs'."
     )
 
 
@@ -765,6 +947,8 @@ def create_music_tool(config: Config, response_player) -> MusicTool:
     provider = normalize_music_provider(config.get("music_tool_provider", "minimax"))
     if provider == "gemini":
         return GeminiMusicTool(config, response_player)
+    if provider == "elevenlabs":
+        return ElevenLabsMusicTool(config, response_player)
     return MiniMaxMusicTool(config, response_player)
 
 
@@ -795,61 +979,63 @@ async def main():
     try:
         result = await tool.generate_music_async(
             {
-                "prompt": "весёлый, задорный ритм под гармошку и балалайку, с притопом",
+                "prompt": "русский постпанк",
                 "lyrics": """[Verse 1]
-В мятой бумаге лежал твой поДАрок.
-Выбор практичен, надежен и ярок.
-Тёплое дерево, гладкий торец,
-Вырезал мастер, большой молодец.
-Пахнет сандалом на всю кухню теперь.
-Вешаю фартук, закрываю дверь.
-Беру её в руки — и сразу к плите,
-Проверить, как будет она в густоте.
+СЕрый асФАЛЬТ у паНЕЛЬных доМОВ,
+ВЕтер каЧАет пуСТУю каЧЕЛЬ.
+ЩЁЛкают КОГти по МЁРЗлой земЛЕ,
+ПУдель уПРЯмо ИХ ТЯнет впеРЁД.
+ДЕвочка МОЛча за НИМ поспеШИТ,
+МАма с паКЕТом иДЁТ позаДИ.
 
 [Chorus]
-Сандаловая ложка, тяжелое дерево.
-Мешает повидло легко и уверенно.
-Стучит по кастрюле, скользит по краям.
-Но если ты сунешься к теплым блинам
-Без спроса — я не поведусь на мольбу,
-И ложка прицельно щелкнет по лбу.
+ЖЁЛтая ЛЕНта руЛЕТки хруСТИТ,
+СЛОВно наТЯнутый ПРОвод.
+ПУдель — как МАленький ВЕЧный моТОР,
+ОН ТАЩит ИХ ЧЕрез ГОрод.
+ЖЁЛтая ЛЕНта руЛЕТки хруСТИТ,
+СЛОВно наТЯнутый ПРОвод.
+ПУдель — как МАленький ВЕЧный моТОР,
+ОН ТАЩит ИХ ЧЕрез ГОрод.
 
 [Verse 2]
-Она не царапает старый тефлон,
-Впитывает масло, томатный бульон.
-Становится тёмной от специй и чая,
-Я с ней у плиты выходные встречаю.
-В ладонь ложится, как верный кастет —
-Особенно, если еще не готов обед,
-А кто-то крутится здесь у стола
-И ждет, чтобы я наконец позвала.
-
-[Bridge]
-Вот ты крадешься на запах гуляша.
-Тянешься к крышке, едва ли дыша.
-Хочешь проверить, хватает ли соли,
-Неужто забыл про физию боли?
-Рука уже тянется снять крышку с плошки...
-Но чувствует резкое дерево ложки.
+МАма неСЁТ из киОСка баТОН,
+СМОТрит на СТРЕЛки наРУЧных чаСОВ.
+ДЕвочка ХОЧет пойТИ в НОвый ДВОР,
+ТЯнет за КУРТку, уСКОрив СВОЙ ШАГ.
+ПУдель обНЮхал беТОНный заБОР,
+ЖДЁТ, ЧТОбы СНОва ПРОДОЛжить СВОЙ ПУТЬ.
 
 [Chorus]
-Сандаловая ложка, тяжелое дерево.
-Мешает повидло легко и уверенно.
-Стучит по кастрюле, скользит по краям.
-Но если ты сунешься к теплым блинам
-Без спроса — я не поведусь на мольбу,
-И ложка прицельно щелкнет по лбу.
+ЖЁЛтая ЛЕНта руЛЕТки хруСТИТ,
+СЛОВно наТЯнутый ПРОвод.
+ПУдель — как МАленький ВЕЧный моТОР,
+ОН ТАЩит ИХ ЧЕрез ГОрод.
+ЖЁЛтая ЛЕНта руЛЕТки хруСТИТ,
+СЛОВно наТЯнутый ПРОвод.
+ПУдель — как МАленький ВЕЧный моТОР,
+ОН ТАЩит ИХ ЧЕрез ГОрод.
+
+[Verse 3]
+загоРЯТся ФАры проЕЗжих маШИН,
+ВЕчер лоЖИТся на МАленький СКВЕР.
+ТРОе шаГАют в СВОЙ ПЯтый подъЕЗД,
+МАма отКРОет тяЖЁлую ДВЕРЬ.
+КРАСная КУРТка, паКЕТ и клюЧИ,
+ГРОМко заЩЁЛКнулся НОвый заМОК.
 
 [Outro]
-Звонкий щелчок.
-Краснеющий лоб.
-Пахнет сандалом.
-Нарежь-ка укроп.""",
+ПУдель уЛЁГся в ТЁМном уГЛУ.
+ЛЕНта руЛЕТки сверНУлась в клуБОК.
+ЗАВтра ИМ СНОва ИДТИ В ЭТОТ ДВОР.
+ЗАВтра ЗаПУСтится ВЕЧный моТОР.""",
             }
         )
         print(f"\n{'=' * 60}")
         print(f"Result: {result}")
         print(f"{'=' * 60}\n")
+        if result.startswith("Error"):
+            raise SystemExit(1)
     except Exception as exc:
         logger.error("Music tool test failed: %s", exc, exc_info=True)
         print(f"\nError: {exc}\n")

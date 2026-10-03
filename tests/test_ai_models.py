@@ -81,6 +81,26 @@ class TestAIModels(unittest.TestCase):
             {"parts": [{"text": "Write only lyrics."}]},
         )
 
+    def test_gemini_rejects_token_limited_text(self):
+        result = {
+            "candidates": [{
+                "finishReason": "MAX_TOKENS",
+                "content": {"parts": [{"text": "Он жд"}]},
+            }],
+            "usageMetadata": {"thoughtsTokenCount": 8000, "candidatesTokenCount": 192},
+        }
+        with self.assertRaisesRegex(RuntimeError, "truncated.*MAX_TOKENS"):
+            GeminiAIModel._rest_response_text(result)
+
+    def test_gemini_accepts_completed_text(self):
+        result = {
+            "candidates": [{
+                "finishReason": "STOP",
+                "content": {"parts": [{"text": "Он ждёт."}]},
+            }],
+        }
+        self.assertEqual(GeminiAIModel._rest_response_text(result), "Он ждёт.")
+
     @patch('openai.OpenAI')
     @patch('openai.AsyncOpenAI')
     def test_openai_model(self, MockAsyncOpenAI, MockOpenAI):
