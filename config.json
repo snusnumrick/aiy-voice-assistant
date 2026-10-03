@@ -32,7 +32,7 @@
   "speaker_context_misses_to_clear": 2,
   "speaker_profiles_path": "speaker_profiles.json",
   "ai_model_api": "claude",
-  "claude_model": "claude-sonnet-5",
+  "claude_model": "claude-sonnet-5-5",
   "claude_use_search":false,
   "openai_model": "gpt-4o-2024-05-13",
   "openrouter_model": "anthropic/claude-3.7-sonnet",
