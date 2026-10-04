@@ -343,7 +343,7 @@ class MusicTool(ABC):
             AudioSegment.from_file(path).export(playback_path, format="wav")
             self._cleanup_files.append(str(playback_path))
 
-        self.response_player.add((emotion, str(playback_path), f"saved music: {path.stem}"))
+        self.response_player.add_music((emotion, str(playback_path), f"saved music: {path.stem}"))
         logger.info("Added saved music to playback queue: %s", path)
 
     async def play_music_async(self, parameters: dict) -> str:
@@ -366,7 +366,7 @@ class MusicTool(ABC):
         except Exception as exc:
             logger.error("Could not play saved music %s: %s", selected, exc, exc_info=True)
             return f"Error playing saved music: {exc}"
-        return f"Playing saved music: {selected.stem}"
+        return f"Saved music queued after your spoken response: {selected.stem}"
 
     @staticmethod
     def _prompt_from_parameters(parameters: dict) -> str:
@@ -470,7 +470,7 @@ class MusicTool(ABC):
         mp3_audio.export(wav_path, format="wav")
 
         self._cleanup_files.append(str(wav_path))
-        self.response_player.add((emotion, str(wav_path), "generated music"))
+        self.response_player.add_music((emotion, str(wav_path), "generated music"))
         logger.info("Added to playback queue: %s", wav_path)
 
     def _process_generated_audio(
@@ -961,6 +961,9 @@ class MockResponsePlayer:
     def add(self, item):
         self.queue.append(item)
         logger.info("Added to playback queue: %s", item[2] if len(item) > 2 else "audio")
+
+    def add_music(self, item):
+        self.add(item)
 
 
 async def main():

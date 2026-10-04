@@ -234,6 +234,8 @@ class TestDialogManager(unittest.IsolatedAsyncioTestCase):
 
         self.dialog_manager.create_synthesis_task.assert_called_once()
         self.dialog_manager.process_completed_tasks.assert_called_once()
+        self.dialog_manager.response_player.begin_response.assert_called_once()
+        self.dialog_manager.response_player.finish_response.assert_called_once_with(completed=True)
 
 
 if __name__ == '__main__':

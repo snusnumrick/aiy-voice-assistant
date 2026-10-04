@@ -95,8 +95,8 @@ class TestSavedMusicLibrary(unittest.TestCase):
 
             result = asyncio.run(tool.play_music_async({}))
 
-            self.assertEqual(result, "Playing saved music: homework_pop")
-            player.add.assert_called_once_with(
+            self.assertEqual(result, "Saved music queued after your spoken response: homework_pop")
+            player.add_music.assert_called_once_with(
                 (None, str(new_song), "saved music: homework_pop")
             )
 
@@ -111,8 +111,8 @@ class TestSavedMusicLibrary(unittest.TestCase):
 
             result = asyncio.run(tool.play_music_async({"query": "homework"}))
 
-            self.assertEqual(result, "Playing saved music: homework_pop")
-            self.assertEqual(player.add.call_args.args[0][1], str(expected))
+            self.assertEqual(result, "Saved music queued after your spoken response: homework_pop")
+            self.assertEqual(player.add_music.call_args.args[0][1], str(expected))
 
     def test_list_does_not_queue_audio(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -124,7 +124,7 @@ class TestSavedMusicLibrary(unittest.TestCase):
             result = asyncio.run(tool.play_music_async({"action": "list"}))
 
             self.assertEqual(result, "Saved music (1 shown): song")
-            player.add.assert_not_called()
+            player.add_music.assert_not_called()
 
 
 class TestMusicMetadata(unittest.TestCase):

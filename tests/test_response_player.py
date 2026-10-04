@@ -61,6 +61,44 @@ class TestResponsePlayer(unittest.TestCase):
         self.assertFalse(self.player._stopped)
 
     @patch('src.responce_player.threading.Thread')
+    def test_music_waits_for_spoken_response(self, mock_thread):
+        self.player.begin_response()
+        self.player.add_music((None, 'song.wav', 'song'))
+        self.assertFalse(self.player.is_playing())
+        mock_thread.assert_not_called()
+
+        self.player.add((None, 'intro.wav', 'Включаю!'))
+        self.player.finish_response()
+
+        self.assertEqual(self.player.merge_queue.get_nowait().filename, 'intro.wav')
+        self.assertEqual(self.player.merge_queue.get_nowait().filename, 'song.wav')
+        self.player.finish_response()
+        self.assertTrue(self.player.merge_queue.empty())
+
+    @patch('src.responce_player.threading.Thread')
+    def test_interrupted_response_discards_music(self, mock_thread):
+        self.player.begin_response()
+        self.player.add_music((None, 'song.wav', 'song'))
+        self.player.finish_response(completed=False)
+        self.player.finish_response()
+        self.assertTrue(self.player.merge_queue.empty())
+        mock_thread.assert_not_called()
+
+    @patch('src.responce_player.threading.Thread')
+    def test_music_outside_response_plays_immediately(self, mock_thread):
+        self.player.add_music((None, 'song.wav', 'song'))
+        self.assertEqual(self.player.merge_queue.get_nowait().filename, 'song.wav')
+
+    @patch('src.responce_player.threading.Thread')
+    def test_response_after_stop_still_holds_music(self, mock_thread):
+        self.player._stopped = True
+        self.player.begin_response()
+        self.player.add_music((None, 'song.wav', 'song'))
+        self.assertTrue(self.player.merge_queue.empty())
+        self.player.finish_response()
+        self.assertEqual(self.player.merge_queue.get_nowait().filename, 'song.wav')
+
+    @patch('src.responce_player.threading.Thread')
     def test_add(self, mock_thread):
         playitem = ({"light": {"color": [255, 0, 0], "brightness": "medium", "behavior": "continuous"}}, "test.wav",
                     "Test text")

@@ -414,6 +414,8 @@ class DialogManager:
         button_pressed = False
         ai_message = ""
         ai_responses_complete = False
+        response_finished = False
+        self.response_player.begin_response()
 
         def _set_button_pressed():
             nonlocal button_pressed
@@ -528,6 +530,8 @@ class DialogManager:
 
             # Wait for both tasks to complete
             await asyncio.gather(ai_task, synthesis_task)
+            response_finished = True
+            self.response_player.finish_response(completed=not button_pressed)
             logger.debug("Both AI response and synthesis task processing completed")
 
             # Handle conversation saving
@@ -561,6 +565,8 @@ class DialogManager:
                 logger.debug("All tasks cancelled")
 
             # Only stop the response player if button was pressed
+            if not response_finished:
+                self.response_player.finish_response(completed=False)
             if button_pressed:
                 if self.response_player:
                     logger.debug("Button pressed, stopping response player")

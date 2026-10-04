@@ -274,6 +274,8 @@ class ResponsePlayer:
         self.condition = threading.Condition(self.lock)
         self._should_play = False
         self._stopped = False
+        self._response_pending = False
+        self._pending_music = []
         self.current_light: Optional[dict] = None
         self.wav_list: list[tuple[str, str]] = []
         self.wav_list_light = dict()
@@ -327,6 +329,31 @@ class ResponsePlayer:
             self.play()
         else:
             logger.debug("Playback already active, new audio will be queued")
+
+    def begin_response(self) -> None:
+        """Hold music until this turn's speech has been queued."""
+        if self._stopped:
+            self.__init__(playlist=[], leds=self.leds, timezone=self.timezone)
+        with self.lock:
+            self._response_pending = True
+
+    def add_music(self, playitem) -> None:
+        """Queue music after the spoken response, or immediately outside a turn."""
+        with self.lock:
+            if self._response_pending:
+                self._pending_music.append(playitem)
+                return
+        self.add(playitem)
+
+    def finish_response(self, completed: bool = True) -> None:
+        """Release music after speech synthesis, discarding interrupted requests."""
+        with self.lock:
+            pending = self._pending_music
+            self._pending_music = []
+            self._response_pending = False
+            if completed and not self._stopped:
+                for playitem in pending:
+                    self.add(playitem)
 
     def change_light_behavior(self, behaviour: dict) -> None:
         """
@@ -527,6 +554,8 @@ class ResponsePlayer:
         with self.condition:
             self._should_play = False
             self._stopped = True
+            self._pending_music.clear()
+            self._response_pending = False
             self.condition.notify_all()
         logger.debug(f"Stop set flags - _stopped={self._stopped}, _should_play={self._should_play}")
 
