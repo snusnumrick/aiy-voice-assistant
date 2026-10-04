@@ -46,6 +46,15 @@ VALID_PROGRAMMATIC_ALLOWED_CALLERS = {
 DEFAULT_PROGRAMMATIC_CODE_EXECUTION_ALLOWED_CALLERS = ["direct"]
 
 
+class IncompleteToolCallError(Exception):
+    """A generated tool call cannot safely be executed."""
+
+    def __init__(self, tool_name: str, budget_exhausted: bool = False):
+        self.tool_name = tool_name
+        self.budget_exhausted = budget_exhausted
+        super().__init__(f"Incomplete tool call: {tool_name}; max_tokens={budget_exhausted}")
+
+
 class ToolParameter(BaseModel):
     """Represents a parameter for a tool."""
 
@@ -261,6 +270,23 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
     def _record_tool_provenance(
         self, tool_name: str, tool_parameters: object, tool_result: object
     ) -> None:
+        if tool_name == "send_email_to_user":
+            parameters = tool_parameters if isinstance(tool_parameters, dict) else {}
+            context = {
+                key: parameters[key]
+                for key in ("to", "subject")
+                if key in parameters
+            }
+            self._tool_provenance_messages.append({
+                "role": "assistant",
+                "content": (
+                    "[Email tool execution record: "
+                    f"{self._compact_tool_text(context, 300)}. "
+                    f"Result: {self._compact_tool_text(tool_result)}. "
+                    "Use this recorded result when discussing whether email was sent.]"
+                ),
+            })
+            return
         if tool_name not in {
             "internet_search",
             "list_web_search_reports",
@@ -620,6 +646,7 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
         messages: list[dict[str, Any]],
         streaming=False,
         reasoning_effort: Optional[Union[str, ReasoningEffort]] = None,
+        response_max_tokens: Optional[int] = None,
     ) -> AsyncGenerator[dict, None]:
         """
         Asynchronously get responses from the AI model.
@@ -644,6 +671,9 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             if self._runtime_response_max_tokens is not None
             else self.max_tokens
         )
+
+        if response_max_tokens is not None:
+            max_tokens = response_max_tokens
 
         data = {
             "model": self.model,
@@ -830,6 +860,78 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             ):
                 yield response
 
+    async def _get_tool_safe_stream(
+        self, messages, reasoning_effort=None
+    ) -> AsyncGenerator[dict, None]:
+        """Retry generation before executing any tool from an incomplete response."""
+        budget = self._runtime_response_max_tokens or self.max_tokens
+        ceiling = max(budget, int(self.config.get("claude_tool_retry_max_tokens", 32768)))
+        attempt = 0
+
+        @retry_async_generator(max_retries=3)
+        async def generate():
+            nonlocal budget, attempt
+            attempt += 1
+            events = []
+            tool_calls = []
+            current = None
+            stop_reason = None
+            stopped = False
+            async for event in self._get_response_async(
+                messages, streaming=True, reasoning_effort=reasoning_effort,
+                response_max_tokens=budget,
+            ):
+                if not isinstance(event, dict):
+                    continue
+                kind = event.get("type")
+                if kind == "content_block_start":
+                    block = event.get("content_block", {})
+                    if block.get("type") == "tool_use":
+                        current = {"name": block.get("name"), "input": "", "closed": False}
+                        tool_calls.append(current)
+                elif kind == "content_block_delta" and current is not None:
+                    delta = event.get("delta", {})
+                    if delta.get("type") == "input_json_delta":
+                        current["input"] += delta.get("partial_json", "")
+                elif kind == "content_block_stop" and current is not None:
+                    current["closed"] = True
+                    current = None
+                elif kind == "message_delta":
+                    stop_reason = event.get("delta", {}).get("stop_reason")
+                elif kind == "message_stop":
+                    stopped = True
+                if not tool_calls:
+                    if attempt == 1:
+                        yield event
+                elif (attempt == 1 and len(tool_calls) == 1
+                      and kind == "content_block_start" and current is not None):
+                    # Announce tool work immediately; hold arguments until validated.
+                    yield event
+                else:
+                    events.append(event)
+            for call in tool_calls:
+                invalid = not call["closed"] or not stopped
+                try:
+                    parameters = json.loads(call["input"] or "{}")
+                    invalid = invalid or not isinstance(parameters, dict)
+                except json.JSONDecodeError:
+                    invalid = True
+                if invalid or stop_reason == "max_tokens":
+                    exhausted = stop_reason == "max_tokens"
+                    if exhausted:
+                        previous = budget
+                        budget = min(budget * 2, ceiling)
+                        logger.warning("Tool generation exhausted %s tokens; next budget=%s",
+                                       previous, budget)
+                    raise IncompleteToolCallError(call["name"], exhausted)
+            for event in events:
+                yield event
+
+        # Buffer only this provider response. Tools execute after validation, so retrying
+        # cannot repeat an email that was already sent by an earlier response.
+        async for event in generate():
+            yield event
+
     async def _get_response_async_streaming(
         self,
         messages: list[dict[str, Any]],
@@ -961,9 +1063,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
             _message_list.append({"role": "assistant", "content": _assistant_message})
 
         try:
-            async for event in self._get_response_async(
+            async for event in self._get_tool_safe_stream(
                 message_list,
-                streaming=True,
                 reasoning_effort=reasoning_effort,
             ):
                 logger.debug(f"{self._time_str()}Received event: {event}")
@@ -1020,6 +1121,10 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     current_tool_use = None
 
                 elif event_type == "message_stop":
+                    if current_tool_use is not None:
+                        yield "[[TOOL_RESULT]]"
+                        yield self._record_incomplete_tool_call(current_tool_use["name"])
+                        current_tool_use = None
                     async for sentence in process_message_stop(message_list, assistant_message):
                         if sentence:
                             logger.debug(f"{self._time_str()}Yielding on message stop: {sentence}")
@@ -1029,12 +1134,24 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     current_text = ""
                     assistant_message = ""
 
+                elif event_type == "message_delta":
+                    stop_reason = event.get("delta", {}).get("stop_reason")
+                    if stop_reason:
+                        logger.info("Claude response stop reason: %s", stop_reason)
+
             if current_text:
                 logger.debug(f"{self._time_str()}Yielding remaining text: {current_text}")
                 text_yielded = True
                 yielded_text += current_text + " "
                 yield current_text
 
+            if current_tool_use is not None:
+                yield "[[TOOL_RESULT]]"
+                yield self._record_incomplete_tool_call(current_tool_use["name"])
+
+        except IncompleteToolCallError as error:
+            yield "[[TOOL_RESULT]]"
+            yield self._record_incomplete_tool_call(error.tool_name)
         except StopAsyncIteration:
             logger.debug("AsyncGenerator completed normally.")
         except Exception as e:
@@ -1059,6 +1176,21 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                 from src.tools import NonRetryableError
                 raise NonRetryableError(str(e)) from e
             raise
+
+    def _record_incomplete_tool_call(self, tool_name: str) -> str:
+        """Persist an unexecuted call and provide explicit spoken failure feedback."""
+        logger.error("Tool %s was not executed: incomplete or invalid arguments", tool_name)
+        self._tool_provenance_messages.append({
+            "role": "assistant",
+            "content": (
+                f"[Tool execution failure: {tool_name} was NOT executed because its "
+                "arguments were incomplete or invalid. No action was performed by this call.]"
+            ),
+        })
+        return (
+            "$lang: ru$ Не удалось выполнить действие: параметры вызова инструмента "
+            "оказались неполными или некорректными. Этот вызов не был выполнен."
+        )
 
     async def _process_tool_use_streaming(
         self,
@@ -1110,7 +1242,8 @@ class ClaudeAIModelWithTools(ClaudeAIModel):
                     logger.debug(f"Yielding after tool response: {response}")
                     yield response
         except json.JSONDecodeError:
-            logger.error(f"{self._time_str()}Failed to decode tool input JSON: {tool_use['input']}")
+            yield "[[TOOL_RESULT]]"
+            yield self._record_incomplete_tool_call(tool_use["name"])
 
 
 class ToolCall(BaseModel):

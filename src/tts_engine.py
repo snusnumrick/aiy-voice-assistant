@@ -683,59 +683,14 @@ class YandexTTSEngine(TTSEngine):
         logger.debug(f"TTS total time: {total_time:.2f} seconds")
         return True
 
-    async def _synthesize_async_http(
-        self,
-        text: str,
-        tone: Tone,
-        lang: Language
-    ) -> bytes:
-        """
-        Synthesize using HTTP REST API to avoid event loop saturation with search.
-        """
+    async def _synthesize_async_http(self, text: str, tone: Tone, lang: Language) -> bytes:
+        """Retry transient HTTP failures before using the SDK fallback."""
         try:
-            # Use HTTP REST API for async TTS
-            logger.debug(f"Using HTTP REST API for TTS: {text[:50]}...")
-
-            # Prepare request data
-            voice = self.lang_voices[lang]
-            role = self.roles.get(tone, "neutral")
-
-            # HTTP REST API endpoint
-            url = "https://tts.api.cloud.yandex.net/tts/v3/utteranceSynthesis"
-
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "x-folder-id": "b1gneg45domem8k0u9l3",
-                "Content-Type": "application/json"
-            }
-
-            data = {
-                "text": text,
-                "hints": [
-                    {"voice": voice},
-                    {"role": role}
-                ]
-            }
-            if self.yandex_tts_unsafe_mode:
-                data["unsafe_mode"] = True
-
-            # Make HTTP request
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        # Response contains base64-encoded audio
-                        audio_data = base64.b64decode(result["result"]["audioChunk"]["data"])
-                        logger.debug("HTTP TTS synthesis completed successfully")
-                        return audio_data
-                    else:
-                        error_text = await response.text()
-                        raise Exception(f"HTTP TTS failed: {response.status} - {error_text}")
-
+            return await self._request_synthesis_http(text, tone, lang)
         except Exception as e:
             error_text = str(e)
             too_long_text = "HTTP TTS failed: 400" in error_text and "Too long text" in error_text
-            logger.error(f"HTTP TTS synthesis failed: {str(e)}")
+            logger.error("HTTP TTS synthesis failed: %s: %r", type(e).__name__, e)
             logger.warning("Falling back to synchronous speechkit")
             try:
                 return await self._synthesize_sync_wrapper(text, tone, lang)
@@ -745,6 +700,51 @@ class YandexTTSEngine(TTSEngine):
                         f"Yandex TTS text is too long and fallback synthesis failed: {fallback_error}"
                     ) from fallback_error
                 raise
+
+    @retry_async(max_retries=3)
+    async def _request_synthesis_http(self, text: str, tone: Tone, lang: Language) -> bytes:
+        """Make one REST synthesis request with API-key authentication."""
+        # Use HTTP REST API for async TTS
+        logger.debug(f"Using HTTP REST API for TTS: {text[:50]}...")
+
+        # Prepare request data
+        voice = self.lang_voices[lang]
+        role = self.roles.get(tone, "neutral")
+
+        # HTTP REST API endpoint
+        url = "https://tts.api.cloud.yandex.net/tts/v3/utteranceSynthesis"
+
+        headers = {
+            "Authorization": f"Api-Key {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        data = {
+            "text": text,
+            "hints": [
+                {"voice": voice},
+                {"role": role}
+            ]
+        }
+        if self.yandex_tts_unsafe_mode:
+            data["unsafe_mode"] = True
+
+        # Make HTTP request
+        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, headers=headers, json=data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    # Response contains base64-encoded audio
+                    audio_data = base64.b64decode(result["result"]["audioChunk"]["data"])
+                    logger.debug("HTTP TTS synthesis completed successfully")
+                    return audio_data
+                else:
+                    error_text = await response.text()
+                    message = f"HTTP TTS failed: {response.status} - {error_text}"
+                    if 400 <= response.status < 500 and response.status not in (408, 429):
+                        raise NonRetryableError(message)
+                    raise RuntimeError(message)
 
     async def _synthesize_sync_wrapper(
         self,
