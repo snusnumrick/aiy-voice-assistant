@@ -660,8 +660,13 @@ uses local PCM analysis without extra services or dependencies.
 When a specialist lyrics model is configured, it also creates an artistic light plan from
 the title, lyrics, style metadata and duration. The plan selects colors, intensity, and
 `beat`, `breathe`, or `steady` modes with adjustable pulse strength; audio analysis supplies
-the beat timing. The model does not listen to the recording or align lyrics to timestamps.
-Plans are cached as `song.mp3.light-plan.json`. Server playback can reuse these plans.
+the beat timing. The model develops a coherent palette and chooses pulse modes by artistic
+intent, with strong brightness contrast encouraged for energetic passages. RGB colors use
+full channel range; intensity controls dimming separately. The model does not listen to the
+recording or align lyrics to timestamps.
+Plans are cached as `song.mp3.light-plan.json`. When the design prompt version changes, the
+assistant requests an updated plan on next playback if model design is enabled and configured.
+Server playback can reuse these plans.
 
 `music_lights_llm_provider` and `music_lights_llm_model` default to `lyrics_provider` and
 `lyrics_model`, using the same credentials. `music_lights_llm_timeout` defaults to 30 seconds.

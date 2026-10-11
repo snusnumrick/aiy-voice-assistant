@@ -4,7 +4,7 @@ import wave
 from unittest.mock import patch
 
 from src.config import Config
-from src.music_light_design import prepare_light_design
+from src.music_light_design import DESIGN_VERSION, prepare_light_design
 
 
 def song_file(tmp_path):
@@ -70,6 +70,50 @@ def test_invalid_model_output_and_timeout_leave_local_analysis_available(tmp_pat
         with patch("src.lyrics_tool.LyricsTool._get_model", return_value=model):
             asyncio.run(prepare_light_design(song, settings(music_lights_llm_timeout=0.01)))
         assert not song.with_name(song.name + ".light-plan.json").exists()
+
+
+def test_previous_design_version_is_replaced_then_reused(tmp_path):
+    song = song_file(tmp_path)
+    config = settings()
+    source = song.stat()
+    cache_path = song.with_name(song.name + ".light-plan.json")
+    old_plan = {
+        "segments": [{"start": 0, "color": [20, 60, 255], "pulse": "breathe", "intensity": 0.5}]
+    }
+    new_plan = {
+        "segments": [
+            {
+                "start": 0,
+                "color": [255, 80, 20],
+                "pulse": "beat",
+                "intensity": 0.9,
+                "pulse_strength": 0.85,
+            }
+        ]
+    }
+    cached = {
+        "source": {"size": source.st_size, "mtime_ns": source.st_mtime_ns},
+        "version": DESIGN_VERSION - 1,
+        "provider": config.get("lyrics_provider", "gemini"),
+        "model": config.get("lyrics_model"),
+        "plan": old_plan,
+    }
+    cache_path.write_text(json.dumps(cached))
+
+    class Model:
+        async def get_response_async(self, messages):
+            yield json.dumps(new_plan)
+
+    with patch("src.lyrics_tool.LyricsTool._get_model", return_value=Model()) as get_model:
+        asyncio.run(prepare_light_design(song, config))
+        asyncio.run(prepare_light_design(song, config))
+
+    assert get_model.call_count == 1
+    assert json.loads(cache_path.read_text()) == {
+        **cached,
+        "version": DESIGN_VERSION,
+        "plan": new_plan,
+    }
 
 
 def test_disabled_design_does_not_request_a_model(tmp_path):
