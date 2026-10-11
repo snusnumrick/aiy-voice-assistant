@@ -196,3 +196,4 @@ tmp*.wav
 
 /test_wav/
 /images/
+/output/
