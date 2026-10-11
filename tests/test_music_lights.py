@@ -7,8 +7,10 @@ from unittest.mock import patch
 import pytest
 
 from src.music_lights import (
+    detect_rhythm,
     generate_light_track,
     load_or_generate_light_track,
+    valid_light_plan,
     valid_light_track,
 )
 
@@ -109,3 +111,89 @@ def test_read_only_cache_does_not_prevent_track_generation(tmp_path):
 )
 def test_invalid_tracks(frames):
     assert not valid_light_track(frames)
+
+
+def test_detects_repeated_beats_and_ignores_constant_audio():
+    levels = [1.0 if i % 10 < 2 else 0.9 for i in range(160)]
+    period, phase = detect_rhythm(levels, 0.05)
+    assert period == 0.5
+    assert phase == 0
+    assert detect_rhythm([1.0] * 160, 0.05) == (0, 0)
+
+
+def test_compressed_music_gets_deep_beat_pulses(tmp_path):
+    song = tmp_path / "beats.wav"
+    with wave.open(str(song), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(8000)
+        for frame in range(160):
+            amplitude = 10000 if frame % 10 < 2 else 9000
+            audio.writeframes(
+                b"".join(
+                    round(amplitude * math.sin(2 * math.pi * 200 * i / 8000)).to_bytes(
+                        2, "little", signed=True
+                    )
+                    for i in range(400)
+                )
+            )
+    frames = generate_light_track(song)
+    peak = next(frame for frame in frames if frame["time"] == 2)
+    valley = next(frame for frame in frames if frame["time"] == 2.25)
+    assert peak["brightness"] > 0.85
+    assert valley["brightness"] < 0.08
+
+
+def test_artistic_plan_colors_modes_and_cache_invalidation(tmp_path):
+    song = tmp_path / "song.wav"
+    write_song(song, [20000] * 4)
+    automatic = load_or_generate_light_track(song, song)
+    plan = {
+        "segments": [
+            {"start": 0, "color": [255, 0, 0], "pulse": "steady", "intensity": 0.4},
+            {"start": 2, "color": [0, 0, 255], "pulse": "breathe", "pulse_strength": 0.7},
+        ]
+    }
+    assert valid_light_plan(plan, 4)
+    assert not valid_light_plan(plan, 2)
+    info = song.stat()
+    Path(str(song) + ".light-plan.json").write_text(
+        json.dumps(
+            {
+                "source": {"size": info.st_size, "mtime_ns": info.st_mtime_ns},
+                "plan": plan,
+            }
+        )
+    )
+    designed = load_or_generate_light_track(song, song)
+    assert designed != automatic
+    assert designed[0]["color"] == [255, 0, 0]
+    assert max(frame["brightness"] for frame in designed if frame["time"] < 2) <= 0.4
+    assert next(frame for frame in designed if frame["time"] == 3)["color"] == [0, 0, 255]
+
+
+def test_beat_pulses_reanchor_when_tempo_does_not_fit_the_frame_grid(tmp_path):
+    song = tmp_path / "123-bpm.wav"
+    peaks = []
+    previous = False
+    with wave.open(str(song), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(8000)
+        for index in range(800):
+            is_peak = (index * 0.05) % (60 / 123) < 0.1
+            if is_peak and not previous:
+                peaks.append(index)
+            previous = is_peak
+            amplitude = 10000 if is_peak else 9000
+            audio.writeframes(
+                (
+                    amplitude.to_bytes(2, "little", signed=True)
+                    + (-amplitude).to_bytes(2, "little", signed=True)
+                )
+                * 200
+            )
+    frames = generate_light_track(song)
+    assert all(
+        frames[index]["brightness"] > 0.85 for index in peaks if 1 < frames[index]["time"] < 39
+    )

@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import logging
@@ -18,6 +19,7 @@ if __name__ == "__main__":
     sys.path.append(os.getcwd())
 
 from src.config import Config
+from src.music_light_design import prepare_light_design
 from src.music_lights import load_or_generate_light_track
 from src.server_utils import get_server_url
 from src.tools import NonRetryableError, retry_async
@@ -364,6 +366,7 @@ class MusicTool(ABC):
 
         selected = matches[0]
         try:
+            await prepare_light_design(selected, self.config)
             self._queue_existing_audio(selected, parameters.get("emotion"))
         except Exception as exc:
             logger.error("Could not play saved music %s: %s", selected, exc, exc_info=True)
@@ -498,6 +501,7 @@ class MusicTool(ABC):
         emotion=None,
         comment_lines: Optional[list[str]] = None,
         title: str = "",
+        queue_audio: bool = True,
     ) -> Path:
         self._cleanup_temp_files()
         mp3_path = self._save_generated_audio(audio_data, prompt)
@@ -505,8 +509,16 @@ class MusicTool(ABC):
             mp3_path, prompt=prompt, lyrics=lyrics, comment_lines=comment_lines, title=title
         )
         self._refresh_music_library()
-        self._queue_generated_audio(mp3_path, emotion)
+        if queue_audio:
+            self._queue_generated_audio(mp3_path, emotion)
         return mp3_path
+
+    async def _process_generated_audio_async(self, **kwargs) -> Path:
+        """Finish the artistic light design before making a generated song playable."""
+        path = await asyncio.to_thread(self._process_generated_audio, **kwargs, queue_audio=False)
+        await prepare_light_design(path, self.config)
+        self._queue_generated_audio(path, kwargs.get("emotion"))
+        return path
 
     def _cleanup_temp_files(self) -> None:
         """Keep only the most recent 50 temp files."""
@@ -653,7 +665,7 @@ class MiniMaxMusicTool(MusicTool):
                 if not mp3_audio_data:
                     return "Error: No audio data received from API"
 
-            mp3_path = self._process_generated_audio(
+            mp3_path = await self._process_generated_audio_async(
                 title=parameters.get("title", ""),
                 audio_data=mp3_audio_data,
                 prompt=prompt,
@@ -785,7 +797,7 @@ class GeminiMusicTool(MusicTool):
                 logger.error("No inlineData audio found in Gemini response: %s", response_text[:500])
                 return "Error: No audio data received from API"
 
-            mp3_path = self._process_generated_audio(
+            mp3_path = await self._process_generated_audio_async(
                 title=parameters.get("title", ""),
                 audio_data=audio_data,
                 prompt=prompt,
@@ -924,7 +936,7 @@ class ElevenLabsMusicTool(MusicTool):
             if not audio_data:
                 return "Error: No audio data received from API"
 
-            mp3_path = self._process_generated_audio(
+            mp3_path = await self._process_generated_audio_async(
                 title=parameters.get("title", ""),
                 audio_data=audio_data,
                 prompt=prompt,

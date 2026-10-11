@@ -651,13 +651,29 @@ See the [ElevenLabs Music API reference](https://elevenlabs.io/docs/api-referenc
 ### Automatic music lights
 
 Saved and newly generated songs automatically get a light timeline from their decoded
-audio. Brightness follows the volume envelope and rising musical accents; colors change
-gradually with elapsed time and smoothed energy. Silence dims the light, and the final
-half-second fades out. This uses local PCM analysis without extra services or dependencies.
+audio. Brightness expands the quiet/loud range and uses fast attack/release so musical
+accents remain visible through the cube's diffuser. Repeated volume rises are used to
+estimate tempo and add beat pulses; when no stable tempo is found, volume accents still
+drive the light. Silence dims the light, and the final half-second fades out. Audio timing
+uses local PCM analysis without extra services or dependencies.
+
+When a specialist lyrics model is configured, it also creates an artistic light plan from
+the title, lyrics, style metadata and duration. The plan selects colors, intensity, and
+`beat`, `breathe`, or `steady` modes with adjustable pulse strength; audio analysis supplies
+the beat timing. The model does not listen to the recording or align lyrics to timestamps.
+Plans are cached as `song.mp3.light-plan.json`. Server playback can reuse these plans.
+
+`music_lights_llm_provider` and `music_lights_llm_model` default to `lyrics_provider` and
+`lyrics_model`, using the same credentials. `music_lights_llm_timeout` defaults to 30 seconds.
+Set `music_lights_llm_enabled` to `false` to stop new model requests; saved artistic plans
+remain usable. Missing configuration, timeout, or invalid model output falls back to
+the automatic audio-based timeline. Model design completes before audio enters the queue.
 
 The timeline is cached next to the original song as `song.mp3.light.json` (or
 `song.wav.light.json`) and rebuilt if the song's size, modification time, or analysis
-version changes. An unwritable cache or analysis failure does not prevent music playback.
+version or artistic plan changes. Older timelines rebuild on the next playback so existing
+songs receive the stronger contrast and rhythmic pulses. An unwritable cache or analysis
+failure does not prevent music playback.
 Set `"music_lights_enabled": false` in `user.json` to use ordinary light effects instead.
 
 The timeline starts when the song's audio process starts, after the spoken introduction,
