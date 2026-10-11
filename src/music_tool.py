@@ -18,6 +18,7 @@ if __name__ == "__main__":
     sys.path.append(os.getcwd())
 
 from src.config import Config
+from src.music_lights import load_or_generate_light_track
 from src.server_utils import get_server_url
 from src.tools import NonRetryableError, retry_async
 
@@ -343,6 +344,7 @@ class MusicTool(ABC):
             AudioSegment.from_file(path).export(playback_path, format="wav")
             self._cleanup_files.append(str(playback_path))
 
+        emotion = self._music_light_emotion(playback_path, path, emotion)
         self.response_player.add_music((emotion, str(playback_path), f"saved music: {path.stem}"))
         logger.info("Added saved music to playback queue: %s", path)
 
@@ -460,6 +462,20 @@ class MusicTool(ABC):
         except Exception as exc:
             logger.warning("Failed to add metadata tags: %s", exc)
 
+    def _music_light_emotion(self, wav_path: Path, source_path: Path, emotion):
+        """Attach an automatic timeline, preserving ordinary playback on analysis failure."""
+        if not self.config.get("music_lights_enabled", True):
+            return emotion
+        try:
+            frames = load_or_generate_light_track(wav_path, source_path)
+            if frames:
+                result = dict(emotion or {})
+                result["light_track"] = frames
+                return result
+        except Exception as exc:
+            logger.warning("Cannot analyze music lights for %s: %s", source_path, exc)
+        return emotion
+
     def _queue_generated_audio(self, mp3_path: Path, emotion) -> None:
         if not HAS_PYDUB:
             raise RuntimeError("pydub is not installed")
@@ -470,6 +486,7 @@ class MusicTool(ABC):
         mp3_audio.export(wav_path, format="wav")
 
         self._cleanup_files.append(str(wav_path))
+        emotion = self._music_light_emotion(wav_path, mp3_path, emotion)
         self.response_player.add_music((emotion, str(wav_path), "generated music"))
         logger.info("Added to playback queue: %s", wav_path)
 

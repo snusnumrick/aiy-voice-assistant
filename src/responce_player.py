@@ -10,13 +10,15 @@ import queue
 import re
 import tempfile
 import threading
+import time
 import wave
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from subprocess import Popen
 from typing import Optional
 
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import play_wav_async
+from src.music_lights import valid_light_track
 from src.tools import combine_audio_files, time_string_ms
 
 logger = logging.getLogger(__name__)
@@ -223,6 +225,7 @@ class MergeItem:
     light: Optional[dict]
     filename: str
     text: str
+    light_track: Optional[list[dict]] = field(default=None, repr=False)
 
 
 class ResponsePlayer:
@@ -270,6 +273,7 @@ class ResponsePlayer:
         self.play_thread: Optional[threading.Thread] = None
         self.merge_thread: Optional[threading.Thread] = None
         self._playback_completed = threading.Event()
+        self._light_stop = threading.Event()
         self.lock = threading.RLock()  # Use RLock for nested locking
         self.condition = threading.Condition(self.lock)
         self._should_play = False
@@ -314,7 +318,11 @@ class ResponsePlayer:
         with self.lock:
             emo, file, text = playitem
             light = None if emo is None else emo.get("light", None)
-            m_item = MergeItem(light=light, filename=file, text=text)
+            light_track = None if emo is None else emo.get("light_track")
+            if light_track is not None and not valid_light_track(light_track):
+                logger.warning("Invalid music light track; using ordinary LED behavior")
+                light_track = None
+            m_item = MergeItem(light=light, filename=file, text=text, light_track=light_track)
             logger.debug(f"({time_string_ms(self.timezone)}) Adding {m_item} to merge queue.")
             self.merge_queue.put(m_item)
 
@@ -415,7 +423,12 @@ class ResponsePlayer:
                     logger.debug(
                         f"({time_string_ms(self.timezone)}) merging {mi.light} {mi.filename}"
                     )
-                    if not self.wav_list:
+                    if mi.light_track is not None:
+                        # Keep time zero at the song's start, separate from speech/other songs.
+                        self._process_wav_list()
+                        self.playlist.put((mi.light, mi.filename, mi.light_track))
+                        self.condition.notify_all()
+                    elif not self.wav_list:
                         self.wav_list_light = mi.light
                         self.wav_list = [(mi.filename, mi.text)]
                     elif mi.light == self.wav_list_light:
@@ -498,7 +511,9 @@ class ResponsePlayer:
                     logger.debug("_play_sequence: should_play=False, exiting")
                     break
                 try:
-                    light, audio_file = self.playlist.get_nowait()
+                    item = self.playlist.get_nowait()
+                    light, audio_file = item[:2]
+                    light_track = item[2] if len(item) > 2 else None
                     logger.debug(
                         f"({time_string_ms(self.timezone)}) got from playlist {audio_file}"
                     )
@@ -514,16 +529,62 @@ class ResponsePlayer:
                 light, get_wav_duration_seconds(audio_file)
             )
             self.change_light_behavior(play_light)
-            self.current_process = play_wav_async(audio_file)
-            self.current_process.wait()
-            self.current_process = None
-            self.change_light_behavior(prev_light)
+            track_done = threading.Event()
+            light_thread = None
+            try:
+                # Serialize startup with stop so an interrupted song cannot start afterward.
+                with self.condition:
+                    if not self._should_play:
+                        break
+                    self.current_process = process = play_wav_async(audio_file)
+                    started_at = time.monotonic()
+                if light_track:
+                    light_thread = threading.Thread(
+                        target=self._play_light_track,
+                        args=(light_track, process, started_at, track_done),
+                    )
+                    light_thread.start()
+                process.wait()
+            finally:
+                track_done.set()
+                if light_thread is not None:
+                    light_thread.join()
+                with self.condition:
+                    self.current_process = None
+                    if light_track:
+                        # Direct timeline updates bypass the ordinary behavior cache.
+                        self.current_light = None
+                    if self._should_play:
+                        self.change_light_behavior(prev_light if prev_light is not None else {})
 
             logger.debug(f"Finished playing {audio_file}")
 
         logger.debug("_play_sequence ended")
         self.current_process = None
         self._playback_completed.set()
+
+    def _play_light_track(self, frames, process, started_at, track_done):
+        """Schedule against one clock so updates do not accumulate timing drift."""
+        try:
+            for index, frame in enumerate(frames):
+                while True:
+                    if track_done.is_set() or self._light_stop.is_set() or process.poll() is not None:
+                        return
+                    delay = started_at + frame["time"] - time.monotonic()
+                    if delay <= 0:
+                        break
+                    track_done.wait(min(delay, 0.05))
+                if (index + 1 < len(frames)
+                        and frames[index + 1]["time"] <= time.monotonic() - started_at):
+                    # If the device fell behind, show the current frame instead of a burst.
+                    continue
+                with self.condition:
+                    if track_done.is_set() or self._light_stop.is_set() or not self._should_play:
+                        return
+                    color = tuple(round(channel * frame["brightness"]) for channel in frame["color"])
+                    self.leds.update(Leds.rgb_on(color))
+        except Exception:
+            logger.exception("Music light playback failed; audio continues")
 
     def stop(self):
         """
@@ -553,6 +614,7 @@ class ResponsePlayer:
         )
         with self.condition:
             self._should_play = False
+            self._light_stop.set()
             self._stopped = True
             self._pending_music.clear()
             self._response_pending = False

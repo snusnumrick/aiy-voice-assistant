@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -125,6 +126,73 @@ class TestSavedMusicLibrary(unittest.TestCase):
 
             self.assertEqual(result, "Saved music (1 shown): song")
             player.add_music.assert_not_called()
+
+
+class TestAutomaticMusicLights(unittest.TestCase):
+    def _tool(self, directory, **settings):
+        config = Config(config_file="__missing_config__.json",
+                        user_config_file="__missing_user__.json", **settings)
+        with patch("src.music_tool.MusicTool._discover_music_folder", return_value=directory):
+            return MiniMaxMusicTool(config, MagicMock())
+
+    def _write_wav(self, path):
+        with wave.open(str(path), "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(8000)
+            audio.writeframes(b"\x00\x10\x00\xf0" * 8000)
+
+    def test_saved_song_gets_automatic_timeline_and_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            song = Path(directory) / "song.wav"
+            self._write_wav(song)
+            tool = self._tool(Path(directory))
+            emotion = {"voice": {"tone": "happy"}}
+            tool._queue_existing_audio(song, emotion)
+            queued = tool.response_player.add_music.call_args.args[0]
+            self.assertEqual(queued[0]["voice"], emotion["voice"])
+            self.assertEqual(queued[0]["light_track"][0]["time"], 0)
+            self.assertEqual(queued[0]["light_track"][-1]["time"], 2)
+            self.assertNotIn("light_track", emotion)
+            self.assertTrue(Path(str(song) + ".light.json").exists())
+
+    def test_generated_song_gets_timeline_from_decoded_audio(self):
+        with tempfile.TemporaryDirectory() as directory:
+            song = Path(directory) / "song.mp3"
+            song.write_bytes(b"provider mp3")
+            tool = self._tool(Path(directory))
+            decoded = MagicMock()
+            decoded.export.side_effect = lambda path, format: self._write_wav(path)
+            with patch("src.music_tool.HAS_PYDUB", True), \
+                    patch("src.music_tool.AudioSegment") as segment:
+                segment.from_mp3.return_value = decoded
+                tool._queue_generated_audio(song, None)
+            queued = tool.response_player.add_music.call_args.args[0]
+            self.assertEqual(queued[1], str(song.with_suffix(".wav")))
+            self.assertEqual(queued[0]["light_track"][-1]["time"], 2)
+            self.assertTrue(Path(str(song) + ".light.json").exists())
+
+    def test_lights_can_be_disabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            song = Path(directory) / "song.wav"
+            self._write_wav(song)
+            tool = self._tool(Path(directory), music_lights_enabled=False)
+            with patch("src.music_tool.load_or_generate_light_track") as analyze:
+                tool._queue_existing_audio(song, None)
+            analyze.assert_not_called()
+            self.assertIsNone(tool.response_player.add_music.call_args.args[0][0])
+
+    def test_analysis_failure_keeps_song_and_original_light(self):
+        with tempfile.TemporaryDirectory() as directory:
+            song = Path(directory) / "song.wav"
+            self._write_wav(song)
+            tool = self._tool(Path(directory))
+            emotion = {"light": {"color": [0, 0, 255]}}
+            with patch("src.music_tool.load_or_generate_light_track", side_effect=ValueError):
+                tool._queue_existing_audio(song, emotion)
+            tool.response_player.add_music.assert_called_once_with(
+                (emotion, str(song), "saved music: song")
+            )
 
 
 class TestMusicMetadata(unittest.TestCase):

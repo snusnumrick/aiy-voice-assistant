@@ -149,6 +149,120 @@ class TestResponsePlayer(unittest.TestCase):
         self.assertEqual(self.player.playlist.get_nowait(), (colored_light, "blue.wav"))
         self.assertEqual(self.player.playlist.get_nowait(), (None, "plain.wav"))
 
+    def test_song_timelines_are_not_merged_with_speech_or_each_other(self):
+        track = [{"time": 0, "color": [255, 0, 0], "brightness": 0.5}]
+        self.player.merge_queue.put(MergeItem(None, "intro.wav", "Intro"))
+        self.player.merge_queue.put(MergeItem(None, "song.wav", "Song", track))
+        self.player.merge_queue.put(MergeItem(None, "next.wav", "Next song", track))
+        with patch("src.responce_player.combine_audio_files") as combine:
+            self.player._merge_audio_files()
+        combine.assert_not_called()
+        self.assertEqual(self.player.playlist.get_nowait(), (None, "intro.wav"))
+        self.assertEqual(self.player.playlist.get_nowait(), (None, "song.wav", track))
+        self.assertEqual(self.player.playlist.get_nowait(), (None, "next.wav", track))
+
+    @patch('src.responce_player.threading.Thread')
+    def test_song_timeline_waits_for_intro_and_is_discarded_on_interruption(self, _thread):
+        track = [{"time": 0, "color": [255, 0, 0], "brightness": 0.5}]
+        self.player.begin_response()
+        self.player.add_music(({"light_track": track}, "song.wav", "Song"))
+        self.assertTrue(self.player.merge_queue.empty())
+        self.player.add((None, "intro.wav", "Intro"))
+        self.player.finish_response()
+        self.assertEqual(self.player.merge_queue.get_nowait().filename, "intro.wav")
+        self.assertEqual(self.player.merge_queue.get_nowait().light_track, track)
+        self.player.begin_response()
+        self.player.add_music(({"light_track": track}, "song.wav", "Song"))
+        self.player.finish_response(completed=False)
+        self.assertTrue(self.player.merge_queue.empty())
+
+    def test_timeline_schedules_numeric_brightness_and_stops_promptly(self):
+        first_frame = threading.Event()
+        process = MagicMock()
+        process.poll.return_value = None
+        track = [
+            {"time": 0, "color": [200, 100, 0], "brightness": 0.5},
+            {"time": 30, "color": [0, 0, 255], "brightness": 1},
+        ]
+        self.player._should_play = True
+        self.leds.reset_mock()
+        self.leds.update.side_effect = lambda _: first_frame.set()
+        done = threading.Event()
+        with patch("src.responce_player.Leds.rgb_on", side_effect=lambda color: color):
+            runner = threading.Thread(target=self.player._play_light_track,
+                                      args=(track, process, time.monotonic(), done))
+            runner.start()
+            self.assertTrue(first_frame.wait(timeout=1))
+            self.player._light_stop.set()
+            runner.join(timeout=1)
+        self.assertFalse(runner.is_alive())
+        self.leds.update.assert_called_once_with((100, 50, 0))
+
+    @patch("src.responce_player.play_wav_async")
+    def test_timeline_starts_with_audio_and_restores_previous_light(self, play_async):
+        track = [
+            {"time": 0, "color": [200, 100, 0], "brightness": 0.5},
+            {"time": 0.02, "color": [0, 200, 0], "brightness": 0.5},
+        ]
+        previous = {"color": [0, 0, 255], "brightness": "bright", "behavior": "continuous"}
+        self.player.change_light_behavior(previous)
+        second_frame = threading.Event()
+        process = MagicMock()
+        process.poll.return_value = None
+        play_async.return_value = process
+        colors = []
+
+        def update(color):
+            colors.append(color)
+            if color == (0, 100, 0):
+                second_frame.set()
+
+        def wait():
+            self.assertTrue(second_frame.wait(timeout=1))
+
+        process.wait.side_effect = wait
+        self.leds.update.side_effect = update
+        self.player._should_play = True
+        self.player.playlist.put((None, "song.wav", track))
+        original_change = self.player.change_light_behavior
+
+        def restore(light):
+            original_change(light)
+            if light == previous and (0, 100, 0) in colors:
+                self.player._should_play = False
+
+        with patch("src.responce_player.Leds.rgb_on", side_effect=lambda color: color), \
+                patch.object(self.player, "change_light_behavior", side_effect=restore):
+            self.player._play_sequence()
+        play_async.assert_called_once_with("song.wav")
+        self.assertIn((100, 50, 0), colors)
+        self.assertEqual(colors[-1], (0, 0, 255))
+        self.assertTrue(self.player._playback_completed.is_set())
+
+    def test_completed_audio_does_not_keep_running_lights(self):
+        process = MagicMock()
+        process.poll.return_value = 0
+        self.leds.reset_mock()
+        self.player._should_play = True
+        self.player._play_light_track(
+            [{"time": 0, "color": [255, 0, 0], "brightness": 1}],
+            process, time.monotonic(), threading.Event(),
+        )
+        self.leds.update.assert_not_called()
+
+    def test_late_scheduler_skips_obsolete_frames(self):
+        process = MagicMock()
+        process.poll.return_value = None
+        self.player._should_play = True
+        track = [{"time": at, "color": color, "brightness": 1} for at, color in (
+            (0, [255, 0, 0]), (0.05, [0, 255, 0]), (0.1, [0, 0, 255]),
+        )]
+        self.leds.reset_mock()
+        with patch("src.responce_player.time.monotonic", return_value=10.12), \
+                patch("src.responce_player.Leds.rgb_on", side_effect=lambda color: color):
+            self.player._play_light_track(track, process, 10, threading.Event())
+        self.leds.update.assert_called_once_with((0, 0, 255))
+
     @patch('src.responce_player.play_wav_async')
     def test_play_sequence(self, mock_play_async):
         self.player.playlist.put(({"color": [255, 0, 0], "brightness": "medium", "behavior": "continuous"}, "test.wav"))

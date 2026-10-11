@@ -648,6 +648,23 @@ validation, and ambiguous transport failures are not retried.
 Generated MP3s use the existing library, metadata, and WAV playback flow (requires ffmpeg).
 See the [ElevenLabs Music API reference](https://elevenlabs.io/docs/api-reference/music/compose).
 
+### Automatic music lights
+
+Saved and newly generated songs automatically get a light timeline from their decoded
+audio. Brightness follows the volume envelope and rising musical accents; colors change
+gradually with elapsed time and smoothed energy. Silence dims the light, and the final
+half-second fades out. This uses local PCM analysis without extra services or dependencies.
+
+The timeline is cached next to the original song as `song.mp3.light.json` (or
+`song.wav.light.json`) and rebuilt if the song's size, modification time, or analysis
+version changes. An unwritable cache or analysis failure does not prevent music playback.
+Set `"music_lights_enabled": false` in `user.json` to use ordinary light effects instead.
+
+The timeline starts when the song's audio process starts, after the spoken introduction,
+and stops when playback ends or is interrupted. Updates run at 20 Hz against a monotonic
+clock; normal completion restores the previous light effect. Raspberry Pi audio startup
+latency and the physical LED response still need verification on the device.
+
 ## Project Structure
 
 - `main.py`: Entry point of the application
