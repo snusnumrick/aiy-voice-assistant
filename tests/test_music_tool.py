@@ -3,12 +3,14 @@ import base64
 import json
 import os
 import tempfile
+import threading
 import unittest
 import wave
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.config import Config
+from src.music_lights import analyze_music_audio
 from src.music_tool import (
     ElevenLabsMusicTool,
     GeminiMusicTool,
@@ -194,23 +196,95 @@ class TestAutomaticMusicLights(unittest.TestCase):
                 (emotion, str(song), "saved music: song")
             )
 
-    def test_generated_design_finishes_before_audio_is_queued(self):
+    def test_saved_and_generated_analysis_overlaps_design_and_uses_finished_plan(self):
+        for generated in (False, True):
+            with self.subTest(generated=generated), tempfile.TemporaryDirectory() as directory:
+                folder = Path(directory)
+                tool = self._tool(folder)
+                wav = folder / "song.wav"
+                self._write_wav(wav)
+                song = folder / "song.mp3" if generated else wav
+                if generated:
+                    song.write_bytes(b"provider mp3")
+                original = song.read_bytes()
+                plan = {"segments": [{"start": 0, "color": [255, 0, 0], "pulse": "steady"}]}
+
+                async def run():
+                    loop = asyncio.get_running_loop()
+                    audio_done = loop.create_future()
+                    design_started = threading.Event()
+
+                    async def design(path, config):
+                        self.assertEqual(path, song)
+                        design_started.set()
+                        # Sequential design -> analysis would time out here.
+                        await asyncio.wait_for(audio_done, timeout=2)
+                        tool.response_player.add_music.assert_not_called()
+                        source = song.stat()
+                        Path(str(song) + ".light-plan.json").write_text(json.dumps({
+                            "source": {"size": source.st_size, "mtime_ns": source.st_mtime_ns},
+                            "plan": plan,
+                        }))
+
+                    def analyze(path):
+                        self.assertTrue(design_started.is_set())
+                        tool.response_player.add_music.assert_not_called()
+                        result = analyze_music_audio(path)
+                        loop.call_soon_threadsafe(audio_done.set_result, None)
+                        return result
+
+                    with patch("src.music_tool.prepare_light_design", side_effect=design), \
+                            patch("src.music_tool.analyze_music_audio", side_effect=analyze) as measured, \
+                            patch("src.music_lights.analyze_music_audio", side_effect=AssertionError("repeated analysis")):
+                        if generated:
+                            with patch.object(tool, "_process_generated_audio", return_value=song) as save, \
+                                    patch.object(tool, "_decode_generated_audio", return_value=wav) as decode:
+                                self.assertEqual(await tool._process_generated_audio_async(
+                                    audio_data=b"mp3", prompt="style"
+                                ), song)
+                            self.assertFalse(save.call_args.kwargs["queue_audio"])
+                            decode.assert_called_once_with(song)
+                        else:
+                            result = await tool.play_music_async({})
+                            self.assertIn("Saved music queued", result)
+                    measured.assert_called_once_with(wav)
+
+                asyncio.run(run())
+                queued = tool.response_player.add_music.call_args.args[0]
+                self.assertEqual(queued[1], str(wav))
+                self.assertEqual(queued[0]["light_track"][0]["color"], [255, 0, 0])
+                cached = json.loads(Path(str(song) + ".light.json").read_text())
+                self.assertEqual(cached["source"]["plan"], plan)
+                self.assertEqual(song.read_bytes(), original)
+
+    def test_async_cached_playback_skips_audio_analysis(self):
         with tempfile.TemporaryDirectory() as directory:
+            song = Path(directory) / "song.wav"
+            self._write_wav(song)
             tool = self._tool(Path(directory))
-            song = Path(directory) / "song.mp3"
-            order = []
+            tool._queue_existing_audio(song, None)
+            expected = tool.response_player.add_music.call_args.args[0]
+            tool.response_player.reset_mock()
+            with patch("src.music_tool.analyze_music_audio", side_effect=AssertionError("cache miss")), \
+                    patch("src.music_lights.analyze_music_audio", side_effect=AssertionError("cache miss")):
+                result = asyncio.run(tool.play_music_async({}))
+            self.assertIn("Saved music queued", result)
+            tool.response_player.add_music.assert_called_once_with(expected)
 
-            async def design(path, config):
-                self.assertEqual(path, song)
-                order.append("design")
-
-            with patch.object(tool, "_process_generated_audio", return_value=song) as save, \
-                    patch("src.music_tool.prepare_light_design", side_effect=design), \
-                    patch.object(tool, "_queue_generated_audio", side_effect=lambda *args: order.append("queue")):
-                result = asyncio.run(tool._process_generated_audio_async(audio_data=b"mp3", prompt="style"))
-            self.assertEqual(result, song)
-            self.assertEqual(order, ["design", "queue"])
-            self.assertFalse(save.call_args.kwargs["queue_audio"])
+    def test_async_analysis_failure_preserves_playback_without_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            song = Path(directory) / "song.wav"
+            self._write_wav(song)
+            tool = self._tool(Path(directory))
+            emotion = {"light": {"color": [0, 0, 255]}}
+            with patch("src.music_tool.analyze_music_audio", side_effect=ValueError) as analyze, \
+                    patch("src.music_lights.analyze_music_audio", side_effect=AssertionError("repeated analysis")):
+                result = asyncio.run(tool.play_music_async({"emotion": emotion}))
+            self.assertIn("Saved music queued", result)
+            analyze.assert_called_once()
+            tool.response_player.add_music.assert_called_once_with(
+                (emotion, str(song), "saved music: song")
+            )
 
 
 class TestMusicMetadata(unittest.TestCase):

@@ -8,6 +8,7 @@ import os
 import tempfile
 import wave
 from array import array
+from dataclasses import dataclass
 from pathlib import Path
 from sys import byteorder
 
@@ -15,6 +16,18 @@ logger = logging.getLogger(__name__)
 
 TRACK_VERSION = 3
 FRAME_SECONDS = 0.05
+
+
+@dataclass
+class MusicAudioAnalysis:
+    """Reusable PCM measurements for rendering once the artistic plan is ready."""
+
+    levels: list[float]
+    duration: float
+    block_frames: int
+    rate: int
+    beat_period: float
+    beat_phase: float
 
 
 def detect_rhythm(levels: list[float], step: float) -> tuple[float, float]:
@@ -115,8 +128,8 @@ def _samples(data: bytes, width: int):
     raise ValueError(f"Unsupported PCM sample width: {width}")
 
 
-def generate_light_track(wav_path: Path, plan=None) -> list[dict]:
-    """Follow loudness and rising accents with smooth brightness and color."""
+def analyze_music_audio(wav_path: Path) -> MusicAudioAnalysis:
+    """Measure audio and rhythm independently of the model's artistic plan."""
     levels = []
     with wave.open(str(wav_path), "rb") as audio:
         rate, width = audio.getframerate(), audio.getsampwidth()
@@ -132,11 +145,21 @@ def generate_light_track(wav_path: Path, plan=None) -> list[dict]:
             rms = math.sqrt(sum(sample * sample for sample in samples) / len(samples))
             levels.append(rms / full_scale)
 
+    step = block_frames / rate
+    beat_period, beat_phase = detect_rhythm(levels, step)
+    return MusicAudioAnalysis(levels, duration, block_frames, rate, beat_period, beat_phase)
+
+
+def generate_light_track(wav_path: Path, plan=None, analysis=None) -> list[dict]:
+    """Follow loudness and rising accents with smooth brightness and color."""
+    if analysis is None:
+        analysis = analyze_music_audio(wav_path)
+    levels, duration = analysis.levels, analysis.duration
     if not levels:
         return []
     if not valid_light_plan(plan, duration):
         plan = None
-    beat_period, beat_phase = detect_rhythm(levels, block_frames / rate)
+    beat_period, beat_phase = analysis.beat_period, analysis.beat_phase
     last_beat = beat_phase
     ordered = sorted(levels)
     reference = max(ordered[int((len(ordered) - 1) * 0.95)], 0.01)
@@ -148,7 +171,7 @@ def generate_light_track(wav_path: Path, plan=None) -> list[dict]:
     frames = []
     segment_index = 0
     for index, level in enumerate(levels):
-        at = index * block_frames / rate
+        at = index * analysis.block_frames / analysis.rate
         energy = min(1.0, max(0.0, (level - floor) / (reference - floor)))
         accent = max(0.0, energy - previous)
         previous = energy
@@ -243,7 +266,7 @@ def load_cached_light_track(source_path: Path):
     return None
 
 
-def load_or_generate_light_track(wav_path: Path, source_path: Path) -> list[dict]:
+def load_or_generate_light_track(wav_path: Path, source_path: Path, analysis=None) -> list[dict]:
     """Cache beside the original song; regenerate when the song or algorithm changes."""
     cached = load_cached_light_track(source_path)
     if cached is not None:
@@ -251,7 +274,7 @@ def load_or_generate_light_track(wav_path: Path, source_path: Path) -> list[dict
     signature = _signature(source_path)
     cache_path = source_path.with_name(source_path.name + ".light.json")
 
-    frames = generate_light_track(wav_path, signature["plan"])
+    frames = generate_light_track(wav_path, signature["plan"], analysis=analysis)
     if not frames:
         return frames
     temp_path = None

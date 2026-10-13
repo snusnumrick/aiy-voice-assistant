@@ -20,7 +20,12 @@ if __name__ == "__main__":
 
 from src.config import Config
 from src.music_light_design import prepare_light_design
-from src.music_lights import load_or_generate_light_track
+from src.music_lights import (
+    MusicAudioAnalysis,
+    analyze_music_audio,
+    load_cached_light_track,
+    load_or_generate_light_track,
+)
 from src.server_utils import get_server_url
 from src.tools import NonRetryableError, retry_async
 
@@ -336,7 +341,7 @@ class MusicTool(ABC):
         scored.sort(reverse=True)
         return [path for _score, _mtime, path in scored]
 
-    def _queue_existing_audio(self, path: Path, emotion) -> None:
+    def _decode_existing_audio(self, path: Path) -> Path:
         playback_path = path
         if path.suffix.lower() != ".wav":
             if not HAS_PYDUB:
@@ -346,6 +351,10 @@ class MusicTool(ABC):
             AudioSegment.from_file(path).export(playback_path, format="wav")
             self._cleanup_files.append(str(playback_path))
 
+        return playback_path
+
+    def _queue_existing_audio(self, path: Path, emotion) -> None:
+        playback_path = self._decode_existing_audio(path)
         emotion = self._music_light_emotion(playback_path, path, emotion)
         self.response_player.add_music((emotion, str(playback_path), f"saved music: {path.stem}"))
         logger.info("Added saved music to playback queue: %s", path)
@@ -366,8 +375,17 @@ class MusicTool(ABC):
 
         selected = matches[0]
         try:
-            await prepare_light_design(selected, self.config)
-            self._queue_existing_audio(selected, parameters.get("emotion"))
+            playback_path, analysis = await self._prepare_music_audio(
+                selected, self._decode_existing_audio
+            )
+            emotion = await asyncio.to_thread(
+                self._music_light_emotion, playback_path, selected, parameters.get("emotion"),
+                analysis,
+            )
+            self.response_player.add_music(
+                (emotion, str(playback_path), f"saved music: {selected.stem}")
+            )
+            logger.info("Added saved music to playback queue: %s", selected)
         except Exception as exc:
             logger.error("Could not play saved music %s: %s", selected, exc, exc_info=True)
             return f"Error playing saved music: {exc}"
@@ -465,12 +483,38 @@ class MusicTool(ABC):
         except Exception as exc:
             logger.warning("Failed to add metadata tags: %s", exc)
 
-    def _music_light_emotion(self, wav_path: Path, source_path: Path, emotion):
+    async def _prepare_music_audio(self, source_path: Path, decode):
+        """Overlap decoding and local analysis with the artistic model request."""
+        def decode_and_analyze():
+            wav_path = decode(source_path)
+            analysis = None
+            if self.config.get("music_lights_enabled", True):
+                try:
+                    # Recheck after design finishes; a changed plan invalidates this cache.
+                    if load_cached_light_track(source_path) is None:
+                        analysis = analyze_music_audio(wav_path)
+                except Exception as exc:
+                    logger.warning("Cannot analyze music lights for %s: %s", source_path, exc)
+                    # Preserve ordinary playback without repeating a failed analysis.
+                    analysis = MusicAudioAnalysis([], 0, 1, 1, 0, 0)
+            return wav_path, analysis
+
+        results = await asyncio.gather(
+            prepare_light_design(source_path, self.config),
+            asyncio.to_thread(decode_and_analyze),
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
+        return results[1]
+
+    def _music_light_emotion(self, wav_path: Path, source_path: Path, emotion, analysis=None):
         """Attach an automatic timeline, preserving ordinary playback on analysis failure."""
         if not self.config.get("music_lights_enabled", True):
             return emotion
         try:
-            frames = load_or_generate_light_track(wav_path, source_path)
+            frames = load_or_generate_light_track(wav_path, source_path, analysis=analysis)
             if frames:
                 result = dict(emotion or {})
                 result["light_track"] = frames
@@ -479,7 +523,7 @@ class MusicTool(ABC):
             logger.warning("Cannot analyze music lights for %s: %s", source_path, exc)
         return emotion
 
-    def _queue_generated_audio(self, mp3_path: Path, emotion) -> None:
+    def _decode_generated_audio(self, mp3_path: Path) -> Path:
         if not HAS_PYDUB:
             raise RuntimeError("pydub is not installed")
 
@@ -489,6 +533,10 @@ class MusicTool(ABC):
         mp3_audio.export(wav_path, format="wav")
 
         self._cleanup_files.append(str(wav_path))
+        return wav_path
+
+    def _queue_generated_audio(self, mp3_path: Path, emotion) -> None:
+        wav_path = self._decode_generated_audio(mp3_path)
         emotion = self._music_light_emotion(wav_path, mp3_path, emotion)
         self.response_player.add_music((emotion, str(wav_path), "generated music"))
         logger.info("Added to playback queue: %s", wav_path)
@@ -514,10 +562,14 @@ class MusicTool(ABC):
         return mp3_path
 
     async def _process_generated_audio_async(self, **kwargs) -> Path:
-        """Finish the artistic light design before making a generated song playable."""
+        """Prepare design and audio concurrently, then queue the completed light score."""
         path = await asyncio.to_thread(self._process_generated_audio, **kwargs, queue_audio=False)
-        await prepare_light_design(path, self.config)
-        self._queue_generated_audio(path, kwargs.get("emotion"))
+        wav_path, analysis = await self._prepare_music_audio(path, self._decode_generated_audio)
+        emotion = await asyncio.to_thread(
+            self._music_light_emotion, wav_path, path, kwargs.get("emotion"), analysis
+        )
+        self.response_player.add_music((emotion, str(wav_path), "generated music"))
+        logger.info("Added to playback queue: %s", wav_path)
         return path
 
     def _cleanup_temp_files(self) -> None:

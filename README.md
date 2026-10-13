@@ -672,7 +672,10 @@ Server playback can reuse these plans.
 `lyrics_model`, using the same credentials. `music_lights_llm_timeout` defaults to 30 seconds.
 Set `music_lights_llm_enabled` to `false` to stop new model requests; saved artistic plans
 remain usable. Missing configuration, timeout, or invalid model output falls back to
-the automatic audio-based timeline. Model design completes before audio enters the queue.
+the automatic audio-based timeline. Decoding and local audio analysis run in a worker thread
+concurrently with model design. Once both finish, the assistant combines the measured audio
+with the completed plan and queues the song. Cached timelines skip repeated analysis; if a
+refreshed plan invalidates a cached timeline, it is rebuilt before queueing.
 
 The timeline is cached next to the original song as `song.mp3.light.json` (or
 `song.wav.light.json`) and rebuilt if the song's size, modification time, or analysis
