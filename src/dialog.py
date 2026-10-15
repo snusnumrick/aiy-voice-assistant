@@ -49,7 +49,7 @@ from .conversation_manager import (
 from .emotion_engine import EmotionEngine
 from .responce_player import ResponsePlayer
 from .speaker_engine import SpeakerEngine
-from .tools import save_to_conversation, time_string_ms
+from .tools import combine_audio_files, save_to_conversation, split_long_sentence, time_string_ms
 from .tts_engine import Language, Tone, TTSEngine
 
 logger = logging.getLogger(__name__)
@@ -86,6 +86,35 @@ def append_suffix(file_name: str, suffix: str) -> str:
     return os.path.join(dir_name, new_name)
 
 
+async def _synthesize_with_length_limit(
+    session: aiohttp.ClientSession,
+    engine: TTSEngine,
+    text: str,
+    filename: str,
+    tone: Tone,
+    lang: Language,
+) -> bool:
+    """Respect each engine's request limit and combine successful chunks in order."""
+    max_length = engine.max_text_length()
+    if max_length <= 0 or len(text) <= max_length:
+        return await engine.synthesize_async(session, text, filename, tone, lang)
+
+    chunks = split_long_sentence(text, max_length)
+    logger.info(
+        "Splitting %s characters into %s TTS requests (limit %s)",
+        len(text), len(chunks), max_length,
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        chunk_files = []
+        for index, chunk in enumerate(chunks):
+            chunk_file = os.path.join(directory, f"chunk_{index}.wav")
+            if not await engine.synthesize_async(session, chunk, chunk_file, tone, lang):
+                return False
+            chunk_files.append(chunk_file)
+        combine_audio_files(chunk_files, filename)
+    return True
+
+
 async def synthesize_with_fallback(
     session: aiohttp.ClientSession,
     tts_engine: TTSEngine,
@@ -114,8 +143,8 @@ async def synthesize_with_fallback(
         f"synthesize_with_fallback. text: {response_text}, file: {audio_file_name}, tone: {tone}, lang: {lang}"
     )
     try:
-        if await tts_engine.synthesize_async(
-            session, response_text, audio_file_name, tone, lang
+        if await _synthesize_with_length_limit(
+            session, tts_engine, response_text, audio_file_name, tone, lang
         ):
             logger.debug(f"Synthesis {audio_file_name} completed")
             return True
@@ -127,8 +156,8 @@ async def synthesize_with_fallback(
         logger.warning("Primary TTS raised exception, trying fallback engine.")
 
     try:
-        if await fallback_tts_engine.synthesize_async(
-            session, response_text, audio_file_name, tone, lang
+        if await _synthesize_with_length_limit(
+            session, fallback_tts_engine, response_text, audio_file_name, tone, lang
         ):
             logger.info(f"Fallback TTS engine succeeded for file: {audio_file_name}")
             return True

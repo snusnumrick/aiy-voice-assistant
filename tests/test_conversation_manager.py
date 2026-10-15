@@ -62,6 +62,36 @@ class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
         options.update(kwargs)
         return Config(**options)
 
+    async def test_buffer_counts_spaces_at_length_boundaries(self):
+        cases = [
+            (500, [125, 125], [125, 125]),
+            (500, [124, 125], [250]),
+            (500, [82, 82, 85], [165, 85]),
+            (200, [100, 100], [100, 100]),
+        ]
+        for max_length, lengths, expected_lengths in cases:
+            with self.subTest(max_length=max_length, lengths=lengths):
+                chunks = ["а" * (length - 1) + "." for length in lengths]
+                with (
+                    patch("src.conversation_manager.WebSearcher"),
+                    patch("src.conversation_manager.ClaudeAIModel"),
+                    patch("src.conversation_manager.get_location", return_value="In Test.", create=True),
+                    patch("src.conversation_manager.get_tool_usage_stats", return_value=None),
+                    patch.object(ConversationManager, "load_facts", return_value=[]),
+                    patch.object(ConversationManager, "load_rules", return_value=[]),
+                ):
+                    manager = ConversationManager(
+                        self._config(sentence_buffer_max_length=max_length),
+                        _StreamingModel(chunks),
+                        timezone="UTC",
+                        enabled_tools=[],
+                    )
+
+                responses = [item["text"] async for batch in manager.get_response("Проверь") for item in batch]
+
+                self.assertEqual([len(response) for response in responses], expected_lengths)
+                self.assertEqual(" ".join(responses), " ".join(chunks))
+
     def test_extract_speaker_annotation_removes_only_hidden_metadata(self):
         text, speaker_ids = extract_speaker_annotations(
             "$speaker: Anton$ $lang: en$ Nice to meet you."

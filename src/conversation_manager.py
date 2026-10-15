@@ -967,12 +967,15 @@ class ConversationManager:
                                         sentence_buffer.clear()
                                         buffer_chars = 0
 
+                                    combined_length = (
+                                        buffer_chars + sentence_len + (1 if sentence_buffer else 0)
+                                    )
                                     would_cross_unit = (
                                         buffer_chars > 0
-                                        and buffer_chars + sentence_len > 250
+                                        and combined_length > 250
                                     )
                                     would_exceed_max = (
-                                        buffer_chars + sentence_len > buffer_max_length
+                                        combined_length > buffer_max_length
                                     )
 
                                     if (
@@ -980,15 +983,15 @@ class ConversationManager:
                                     ) and buffer_chars > 0:
                                         logger.debug(
                                             f"Sentence buffer: optimizing for billing units "
-                                            f"({buffer_chars}/{sentence_len}={buffer_chars + sentence_len} chars), "
+                                            f"({buffer_chars}/{sentence_len}={combined_length} chars), "
                                             f"yielding {len(sentence_buffer)} sentences"
                                         )
                                         batches.append(combine_buffer())
                                         sentence_buffer.clear()
                                         buffer_chars = 0
 
+                                    buffer_chars += sentence_len + (1 if sentence_buffer else 0)
                                     sentence_buffer.append(sentence)
-                                    buffer_chars += sentence_len
                                     logger.debug(
                                         f"Sentence buffer: added ({sentence_len} chars, "
                                         f"total: {buffer_chars}, count: {len(sentence_buffer)})"

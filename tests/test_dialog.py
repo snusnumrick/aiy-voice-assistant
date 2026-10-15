@@ -2,7 +2,9 @@
 
 import asyncio
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 # Import and use the custom mock_aiy
@@ -35,9 +37,16 @@ sys.modules['yandex'] = Mock()
 # Now it's safe to import from src
 from src.conversation_manager import TOOL_FILLER_RESPONSE_KEY
 from src.dialog import DialogManager, append_suffix, error_visual, synthesize_with_fallback
+from src.tts_engine import Language, Tone, TTSEngine, YandexTTSEngine
 
 
 class TestDialogModule(unittest.IsolatedAsyncioTestCase):
+
+    def make_tts_engine(self, max_length=-1, success=True):
+        engine = Mock(spec=TTSEngine)
+        engine.max_text_length.return_value = max_length
+        engine.synthesize_async = AsyncMock(return_value=success)
+        return engine
 
     def setUp(self):
         self.button = mock_aiy.board.Button()
@@ -60,9 +69,8 @@ class TestDialogModule(unittest.IsolatedAsyncioTestCase):
     @patch('src.dialog.logger')
     @patch('aiohttp.ClientSession')
     async def test_synthesize_with_fallback_success(self, mock_session, mock_logger):
-        tts_engine = AsyncMock()
-        tts_engine.synthesize_async.return_value = True
-        fallback_tts_engine = AsyncMock()
+        tts_engine = self.make_tts_engine()
+        fallback_tts_engine = self.make_tts_engine()
 
         result = await synthesize_with_fallback(mock_session, tts_engine, fallback_tts_engine, "Test text", "test.wav",
                                                 Mock(), Mock())
@@ -74,10 +82,8 @@ class TestDialogModule(unittest.IsolatedAsyncioTestCase):
     @patch('src.dialog.logger')
     @patch('aiohttp.ClientSession')
     async def test_synthesize_with_fallback_failure(self, mock_session, mock_logger):
-        tts_engine = AsyncMock()
-        tts_engine.synthesize_async.return_value = False
-        fallback_tts_engine = AsyncMock()
-        fallback_tts_engine.synthesize_async.return_value = False
+        tts_engine = self.make_tts_engine(success=False)
+        fallback_tts_engine = self.make_tts_engine(success=False)
 
         result = await synthesize_with_fallback(mock_session, tts_engine, fallback_tts_engine, "Test text", "test.wav",
                                                 Mock(), Mock())
@@ -85,6 +91,133 @@ class TestDialogModule(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result)
         tts_engine.synthesize_async.assert_called_once()
         fallback_tts_engine.synthesize_async.assert_called_once()
+
+    async def test_yandex_fallback_splits_long_text_and_combines_in_order(self):
+        texts = [
+            "я" * 251,
+            "Это длинное предложение без запятых. " * 20,
+            "я" * 601,
+        ]
+        for text in texts:
+            for primary_raises in (False, True):
+                with self.subTest(text=text[:20], primary_raises=primary_raises):
+                    primary = self.make_tts_engine(2500, success=False)
+                    if primary_raises:
+                        primary.synthesize_async.side_effect = RuntimeError("offline")
+                    fallback = YandexTTSEngine.__new__(YandexTTSEngine)
+                    fallback.yandex_tts_unsafe_mode = False
+                    chunk_files = []
+
+                    async def write_chunk(session, chunk, filename, tone, lang):
+                        chunk_files.append(Path(filename))
+                        Path(filename).write_text(chunk, encoding="utf-8")
+                        return True
+
+                    fallback._do_synthesize_async = AsyncMock(side_effect=write_chunk)
+
+                    def combine(files, output):
+                        Path(output).write_text(
+                            " ".join(Path(file).read_text(encoding="utf-8") for file in files),
+                            encoding="utf-8",
+                        )
+
+                    with tempfile.TemporaryDirectory() as directory:
+                        output = str(Path(directory) / "speech.wav")
+                        session = Mock()
+                        with patch("src.tts_engine.log_tts_usage"), patch(
+                            "src.dialog.combine_audio_files", side_effect=combine
+                        ) as combine_audio:
+                            result = await synthesize_with_fallback(
+                                session, primary, fallback, text, output,
+                                Tone.HAPPY, Language.RUSSIAN,
+                            )
+
+                        self.assertTrue(result)
+                        primary.synthesize_async.assert_awaited_once_with(
+                            session, text, output, Tone.HAPPY, Language.RUSSIAN
+                        )
+                        calls = fallback._do_synthesize_async.await_args_list
+                        chunks = [call.args[1] for call in calls]
+                        self.assertGreater(len(chunks), 1)
+                        self.assertTrue(all(0 < len(chunk) <= 250 for chunk in chunks))
+                        self.assertEqual("".join(chunks).replace(" ", ""), text.replace(" ", ""))
+                        self.assertEqual(Path(output).read_text(encoding="utf-8"), " ".join(chunks))
+                        self.assertTrue(all(call.args[0] is session for call in calls))
+                        self.assertTrue(all(call.args[3:] == (Tone.HAPPY, Language.RUSSIAN) for call in calls))
+                        combine_audio.assert_called_once_with([str(file) for file in chunk_files], output)
+                        self.assertTrue(all(not file.parent.exists() for file in chunk_files))
+
+    async def test_primary_splits_text_to_its_own_limit(self):
+        primary = self.make_tts_engine(250)
+        fallback = self.make_tts_engine()
+        with patch("src.dialog.combine_audio_files") as combine_audio:
+            result = await synthesize_with_fallback(
+                Mock(), primary, fallback, "я" * 501, "speech.wav",
+                Tone.PLAIN, Language.RUSSIAN,
+            )
+
+        self.assertTrue(result)
+        self.assertEqual(
+            [len(call.args[1]) for call in primary.synthesize_async.await_args_list],
+            [250, 250, 1],
+        )
+        fallback.synthesize_async.assert_not_awaited()
+        combine_audio.assert_called_once()
+
+    async def test_fallback_preserves_short_and_unlimited_requests(self):
+        for max_length, length in ((250, 249), (250, 250), (5000, 601), (-1, 601), (0, 601)):
+            with self.subTest(max_length=max_length, length=length):
+                primary = self.make_tts_engine(success=False)
+                fallback = self.make_tts_engine(max_length)
+                session = Mock()
+                text = "я" * length
+                with patch("src.dialog.combine_audio_files") as combine_audio:
+                    result = await synthesize_with_fallback(
+                        session, primary, fallback, text, "speech.wav",
+                        Tone.PLAIN, Language.RUSSIAN,
+                    )
+
+                self.assertTrue(result)
+                fallback.synthesize_async.assert_awaited_once_with(
+                    session, text, "speech.wav", Tone.PLAIN, Language.RUSSIAN
+                )
+                combine_audio.assert_not_called()
+
+    async def test_failed_or_cancelled_chunk_is_not_combined_and_temp_files_are_removed(self):
+        for failure in (False, RuntimeError("offline"), asyncio.CancelledError()):
+            with self.subTest(failure=failure):
+                primary = self.make_tts_engine(success=False)
+                fallback = self.make_tts_engine(250)
+                chunk_files = []
+
+                async def synthesize_chunk(session, text, filename, tone, lang):
+                    chunk_files.append(Path(filename))
+                    Path(filename).write_bytes(b"audio")
+                    if len(chunk_files) == 2:
+                        if isinstance(failure, BaseException):
+                            raise failure
+                        return failure
+                    return True
+
+                fallback.synthesize_async.side_effect = synthesize_chunk
+                with tempfile.TemporaryDirectory() as directory:
+                    output = Path(directory) / "speech.wav"
+                    output.write_bytes(b"existing")
+                    with patch("src.dialog.combine_audio_files") as combine_audio:
+                        synthesis = synthesize_with_fallback(
+                            Mock(), primary, fallback, "я" * 601, str(output),
+                            Tone.PLAIN, Language.RUSSIAN,
+                        )
+                        if isinstance(failure, asyncio.CancelledError):
+                            with self.assertRaises(asyncio.CancelledError):
+                                await synthesis
+                        else:
+                            self.assertFalse(await synthesis)
+
+                    combine_audio.assert_not_called()
+                    self.assertEqual(len(chunk_files), 2)
+                    self.assertTrue(all(not file.parent.exists() for file in chunk_files))
+                    self.assertEqual(output.read_bytes(), b"existing")
 
 
 class TestDialogManager(unittest.IsolatedAsyncioTestCase):
