@@ -789,6 +789,9 @@ latency and the physical LED response still need verification on the device.
   * Control annotation verbosity with `emotion_annotation_omit_labels` (default: `["neutral", "calm"]`), `emotion_annotation_score_decimals` (default: `1`), and `emotion_annotation_include_scores` (default: `true`)
   * Verify HUME_API_KEY is set in .env file
   * If using Gemini emotion detection, verify GEMINI_API_KEY is set in .env file
+  * Gemini HTTP 402 is a payment failure: check the billing account for the project owning that key in Google AI Studio. Emotion requests pause for `gemini_emotion_payment_cooldown_sec` (default: 3600 seconds); speech recognition continues. After the pause, the next utterance makes one recovery probe. A valid emotion result resumes normal operation; an unsuccessful probe starts another pause. No background API probes run while the assistant is idle.
+  * The unresolved 402 is stored in `logs/gemini_emotion_status.json` without credentials or audio. `scripts/check_logs.sh` includes it in every email report invocation, even after log rotation or with an empty current log. Only a validated successful emotion result clears it; a pause, restart, or another error does not confirm recovery. Existing report scheduling is unchanged.
+  * Transient Gemini emotion failures (connection/timeouts, HTTP 408/429/500/502/503/504) receive up to three attempts within the existing total `emotion_detection_timeout`; recovery probes make only one attempt. Other HTTP failures are not retried. Error logs include bounded, redacted API error fields rather than raw bodies or audio.
   * Ensure `emotion_detection_enabled` is set to `true` in config.json
   * Install websockets package: ```pip install websockets```
   * Check Hume API key validity at https://platform.hume.ai
