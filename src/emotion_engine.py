@@ -12,8 +12,10 @@ import inspect
 import io
 import json
 import logging
+import math
 import os
 import random
+import re
 import threading
 import time
 import uuid
@@ -22,10 +24,13 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from functools import wraps
 from typing import Optional
 
 import aiohttp
+
+from src.emotion_status import async_clear_payment_required, async_mark_payment_required
 
 try:
     from src.tools import retry_async
@@ -799,6 +804,21 @@ class GeminiEmotionEngine(EmotionEngine):
         self.min_score = config.get("emotion_min_score", 0.3)
         self.timeout = config.get("emotion_detection_timeout", 10.0)
         self.thinking_level = config.get("gemini_emotion_thinking_level", "minimal")
+        # A billing error needs operator action, not another request on every turn.
+        try:
+            self.payment_cooldown = float(
+                config.get("gemini_emotion_payment_cooldown_sec", 3600.0)
+            )
+            if not math.isfinite(self.payment_cooldown) or self.payment_cooldown <= 0:
+                raise ValueError("cooldown must be finite and positive")
+        except (TypeError, ValueError):
+            self.payment_cooldown = 3600.0
+            logger.warning("Invalid Gemini emotion payment cooldown; using 3600 seconds")
+        self._payment_retry_at = 0.0
+        self._recovery_probe_inflight = False
+        self._payment_failure_generation = 0
+        self._payment_status_generation = 0
+        self._pending_payment_status = False
 
         logger.info(
             "GeminiEmotionEngine initialized: model=%s top_n=%s min_score=%s timeout=%s",
@@ -852,8 +872,71 @@ class GeminiEmotionEngine(EmotionEngine):
             }
         return generation_config
 
-    @retry_async()
+    def _safe_error_summary(self, response_text: str, audio_b64: str) -> str:
+        """Extract bounded API error fields, never the raw body or request payload."""
+        try:
+            data = json.loads(response_text)
+        except (json.JSONDecodeError, TypeError):
+            return "unstructured error body omitted"
+        error = data.get("error") if isinstance(data, dict) else None
+        if not isinstance(error, dict):
+            return "unrecognized error body omitted"
+
+        fields = []
+        for name in ("code", "status", "message"):
+            value = error.get(name)
+            if not isinstance(value, (str, int)):
+                continue
+            value = str(value)
+            for secret in (self.api_key, audio_b64):
+                if secret:
+                    value = value.replace(secret, "[redacted]")
+            # Error messages can echo credentials or inline audio. Do not log
+            # URLs, named sensitive values, or long token/base64-like strings.
+            value = re.sub(r"https?://\S+", "[url omitted]", value)
+            value = re.sub(r"(?i)\bbearer\s+\S+", "Bearer [redacted]", value)
+            value = re.sub(
+                r"(?i)([\"']?(?:api[_-]?key|x-goog-api-key|authorization|token|"
+                r"password|secret|data|audio|inline_data)[\"']?\s*[:=]\s*)"
+                r"(?:\"[^\"]*\"|'[^']*'|\S+)",
+                r"\1[redacted]", value,
+            )
+            value = re.sub(r"[A-Za-z0-9_+/=-]{32,}", "[redacted]", value)
+            fields.append(f"{name}={' '.join(value.split())[:300]}")
+        return "; ".join(fields) or "empty error object"
+
+    async def _persist_pending_payment_status(self) -> None:
+        generation = self._payment_status_generation
+        saved = await async_mark_payment_required()
+        # A newer successful turn may already have queued a recovery clear.
+        # An older failed write must not resurrect an unresolved status.
+        if generation == self._payment_status_generation:
+            self._pending_payment_status = not saved
+
     async def _request_scores(self, audio_bytes: bytes, mime_type: str) -> Optional[dict]:
+        if self._pending_payment_status:
+            # Retry failed local persistence on a natural turn, even while API
+            # requests are paused. Cancellation leaves this flag set for retry.
+            await self._persist_pending_payment_status()
+        if time.monotonic() < self._payment_retry_at:
+            return None
+        recovering = self._payment_retry_at > 0
+        if recovering:
+            if self._recovery_probe_inflight:
+                return None
+            self._recovery_probe_inflight = True
+            # Any unsuccessful probe waits again, including malformed successes
+            # and cancellation. Only parsed emotion scores confirm recovery.
+            self._payment_retry_at = time.monotonic() + self.payment_cooldown
+        try:
+            return await self._request_scores_with_retry(audio_bytes, mime_type, recovering)
+        finally:
+            if recovering:
+                self._recovery_probe_inflight = False
+
+    async def _request_scores_with_retry(
+        self, audio_bytes: bytes, mime_type: str, recovering: bool
+    ) -> Optional[dict]:
         audio_b64 = base64.b64encode(audio_bytes).decode()
         payload = {
             "contents": [
@@ -873,25 +956,106 @@ class GeminiEmotionEngine(EmotionEngine):
             "generation_config": self._generation_config(),
         }
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=self.timeout)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(
-                    self.url,
-                    headers={
-                        "x-goog-api-key": self.api_key,
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                ) as response:
-                    response_text = await response.text()
-                    response.raise_for_status()
-        except asyncio.TimeoutError:
-            logger.warning("Gemini emotion detection timed out after %ss", self.timeout)
-            return None
-        except Exception as e:
-            logger.error(f"Gemini emotion detection failed: {e}")
-            return None
+        # Keep all attempts and backoff within the existing emotion timeout.
+        # Cancellation from the STT fast path must propagate without a retry.
+        deadline = time.monotonic() + self.timeout
+        max_attempts = 1 if recovering else 3
+        payment_generation = self._payment_failure_generation
+        async with aiohttp.ClientSession() as session:
+            for attempt in range(1, max_attempts + 1):
+                # Another overlapping turn may have observed 402 while this
+                # request was in backoff. Do not send a now-useless retry.
+                if payment_generation != self._payment_failure_generation:
+                    return None
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                retry_after = 0.0
+                try:
+                    async with session.post(
+                        self.url,
+                        headers={
+                            "x-goog-api-key": self.api_key,
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=remaining),
+                    ) as response:
+                        status = response.status
+                        if status == 402:
+                            # Headers are enough to observe a billing failure. Persist
+                            # it before reading a slow/broken body or STT cancellation.
+                            self._payment_retry_at = time.monotonic() + self.payment_cooldown
+                            self._payment_failure_generation += 1
+                            self._payment_status_generation += 1
+                            self._pending_payment_status = True
+                            summary = "response body unavailable"
+                            try:
+                                await self._persist_pending_payment_status()
+                                response_text = await response.text()
+                                summary = self._safe_error_summary(response_text, audio_b64)
+                            except Exception:
+                                pass
+                            finally:
+                                logger.error(
+                                    "Gemini emotion detection HTTP 402: %s. Skipping emotion "
+                                    "requests for %ss; check Gemini API project billing. "
+                                    "Speech recognition continues without emotion annotations.",
+                                    summary, self.payment_cooldown,
+                                )
+                            return None
+                        try:
+                            response_text = await response.text()
+                        except aiohttp.ClientPayloadError:
+                            if 200 <= status < 300:
+                                raise
+                            response_text = ""
+                        if 200 <= status < 300:
+                            break
+                        summary = self._safe_error_summary(response_text, audio_b64)
+                        if status not in {408, 429, 500, 502, 503, 504}:
+                            logger.error(
+                                "Gemini emotion detection failed (non-retryable HTTP %s): %s",
+                                status, summary,
+                            )
+                            return None
+                        failure = f"HTTP {status}: {summary}"
+                        try:
+                            retry_after = max(0.0, float(response.headers.get("Retry-After", 0)))
+                        except (TypeError, ValueError):
+                            try:
+                                retry_at = parsedate_to_datetime(response.headers["Retry-After"])
+                                retry_after = max(0.0, retry_at.timestamp() - time.time())
+                            except (KeyError, TypeError, ValueError, OverflowError):
+                                pass
+                except aiohttp.ClientSSLError as error:
+                    logger.error("Gemini emotion detection failed: %s", type(error).__name__)
+                    return None
+                except (aiohttp.ClientConnectionError, aiohttp.ClientPayloadError,
+                        asyncio.TimeoutError) as error:
+                    # Exception strings may contain URLs, headers, or payloads.
+                    failure = type(error).__name__
+                except Exception as error:
+                    logger.error("Gemini emotion detection failed: %s", type(error).__name__)
+                    return None
+
+                if attempt == max_attempts:
+                    logger.warning(
+                        "Gemini emotion detection failed after %s attempts: %s",
+                        attempt, failure,
+                    )
+                    return None
+                delay = max(retry_after, 2 ** (attempt - 1) + random.uniform(0, 0.1))
+                if delay >= deadline - time.monotonic():
+                    logger.warning(
+                        "Gemini emotion detection retry exceeds remaining timeout: %s", failure
+                    )
+                    return None
+                logger.warning(
+                    "Gemini emotion detection attempt %s/%s failed: %s. Retrying in %.2fs",
+                    attempt, max_attempts, failure, delay,
+                )
+                await asyncio.sleep(delay)
 
         try:
             data = json.loads(response_text)
@@ -899,13 +1063,17 @@ class GeminiEmotionEngine(EmotionEngine):
             logger.error(f"Gemini emotion detection returned non-JSON: {e}")
             return None
 
-        candidates = data.get("candidates", [])
+        candidates = data.get("candidates", []) if isinstance(data, dict) else []
         if not candidates:
             logger.warning("Gemini emotion detection returned no candidates")
             return None
 
-        parts = candidates[0].get("content", {}).get("parts", [])
-        text = "".join(part.get("text", "") for part in parts if part.get("text")).strip()
+        try:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            text = "".join(part.get("text", "") for part in parts if part.get("text")).strip()
+        except (AttributeError, IndexError, KeyError, TypeError):
+            logger.error("Gemini emotion detection returned malformed candidates")
+            return None
         if not text:
             logger.warning("Gemini emotion detection returned no text payload")
             return None
@@ -914,18 +1082,30 @@ class GeminiEmotionEngine(EmotionEngine):
             parsed = json.loads(text)
         except json.JSONDecodeError as e:
             logger.error(
-                "Gemini emotion detection returned invalid JSON text: %s payload=%s",
+                "Gemini emotion detection returned invalid JSON text: %s",
                 e,
-                text[:500],
             )
+            return None
+        if not isinstance(parsed, dict):
+            logger.error("Gemini emotion detection returned non-object scores")
             return None
         return parsed
 
     def _parse_scores(self, scores_payload: dict) -> Optional[EmotionResult]:
+        if not isinstance(scores_payload, dict) or not any(
+            label in scores_payload for label in self.EMOTION_LABELS
+        ):
+            logger.error("Gemini emotion detection returned no recognized emotion scores")
+            return None
         try:
             raw = {}
             for label in self.EMOTION_LABELS:
-                score = float(scores_payload.get(label, 0.0))
+                value = scores_payload.get(label, 0.0)
+                if isinstance(value, bool):
+                    raise ValueError("boolean is not an emotion score")
+                score = float(value)
+                if not math.isfinite(score):
+                    raise ValueError("emotion scores must be finite")
                 raw[label] = max(0.0, min(1.0, score))
 
             sorted_emotions = sorted(raw.items(), key=lambda item: item[1], reverse=True)
@@ -943,8 +1123,17 @@ class GeminiEmotionEngine(EmotionEngine):
                 confidence=confidence,
             )
         except (TypeError, ValueError) as e:
-            logger.error(f"Failed to parse Gemini emotion scores: {e}")
+            logger.error("Failed to parse Gemini emotion scores: %s", type(e).__name__)
             return None
+
+    async def _result_from_scores(self, scores_payload: dict) -> Optional[EmotionResult]:
+        result = self._parse_scores(scores_payload)
+        if result is not None:
+            self._payment_retry_at = 0.0
+            self._payment_status_generation += 1
+            self._pending_payment_status = False
+            await async_clear_payment_required()
+        return result
 
     async def detect(self, audio_file: str) -> Optional[EmotionResult]:
         """
@@ -973,7 +1162,7 @@ class GeminiEmotionEngine(EmotionEngine):
         )
         if not scores_payload:
             return None
-        return self._parse_scores(scores_payload)
+        return await self._result_from_scores(scores_payload)
 
     async def detect_stream(
         self,
@@ -1003,7 +1192,7 @@ class GeminiEmotionEngine(EmotionEngine):
         scores_payload = await self._request_scores(wav_buffer.getvalue(), "audio/wav")
         if not scores_payload:
             return None
-        return self._parse_scores(scores_payload)
+        return await self._result_from_scores(scores_payload)
 
 
 def normalize_emotion_provider(provider: Optional[str]) -> str:

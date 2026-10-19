@@ -20,6 +20,15 @@ ADMIN_EMAIL=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get
 
 # Check current log file for errors
 LOG_FILE=${LOG_FILE:-"logs/assistant.log"}
+ERROR_COUNT=0
+ERROR_CONTENT=""
+
+# Check persistent failures on every run, including after log rotation or suppression
+# of repeated Gemini requests. A failed status check must not silently hide an alert.
+if ! EMOTION_STATUS=$(python3 "${PROJECT_ROOT}/src/emotion_status.py"); then
+    EMOTION_STATUS="ERROR: Gemini emotion HTTP 402 status could not be checked; recovery is unverified.
+Action: check Gemini project billing and the persistent emotion status report."
+fi
 
 if [ -f "$LOG_FILE" ]; then
     # Search for error messages (excluding false positives)
@@ -29,20 +38,25 @@ if [ -f "$LOG_FILE" ]; then
         echo "DEBUG: Errors detected in the log file, preparing content for email."
         # Extract error messages (excluding false positives)
         ERROR_CONTENT=$(grep -i "error\|exception\|failed\|traceback" "$LOG_FILE" | grep -v "notification enabled" -A 3)
-
-
-        # Prepare email subject and body
-        EMAIL_SUBJECT="AIY Assistant Log Errors Found"
-        EMAIL_BODY="Found ${ERROR_COUNT} errors in the log file:
-
-${ERROR_CONTENT}"
-
-        # Call send_email.sh script
-        "${SCRIPT_DIR}/send_email.sh" "${EMAIL_SUBJECT}" "${EMAIL_BODY}" "${ADMIN_EMAIL}"
-
-        echo "DEBUG: email report sent with ${ERROR_CONTENT}."
     else
         echo "DEBUG: No errors found in the log file."
     fi
+fi
+
+if [ "$ERROR_COUNT" -gt 0 ] || [ -n "$EMOTION_STATUS" ]; then
+    # Preserve the existing subject, recipient, and log-error filtering.
+    EMAIL_SUBJECT="AIY Assistant Log Errors Found"
+    EMAIL_BODY="Found ${ERROR_COUNT} errors in the log file:
+
+${ERROR_CONTENT}"
+    if [ -n "$EMOTION_STATUS" ]; then
+        EMAIL_BODY="${EMAIL_BODY}
+
+Persistent Gemini emotion status:
+${EMOTION_STATUS}"
+    fi
+
+    "${SCRIPT_DIR}/send_email.sh" "${EMAIL_SUBJECT}" "${EMAIL_BODY}" "${ADMIN_EMAIL}"
+    echo "DEBUG: email report sent with ${ERROR_CONTENT}${EMOTION_STATUS}."
 fi
 exit 0

@@ -602,6 +602,27 @@ def retry(
     return decorator
 
 
+def _retry_error_summary(error: Exception) -> str:
+    """Describe an error without exposing credentials or request/response payloads.
+
+    Exception messages and reprs can embed URLs, headers, or recorded audio. Only
+    include the exception type and bounded numeric status/errno metadata here.
+    """
+    details = [type(error).__name__]
+    for attribute in ("status", "status_code", "errno"):
+        try:
+            value = getattr(error, attribute, None)
+        except Exception:
+            # Diagnostic attributes must not interfere with the retry itself.
+            continue
+        if isinstance(value, int) and not isinstance(value, bool):
+            if attribute == "errno" and -65535 <= value <= 65535:
+                details.append(f"{attribute}={int(value)}")
+            elif attribute != "errno" and 100 <= value <= 599:
+                details.append(f"{attribute}={int(value)}")
+    return " ".join(details)
+
+
 def retry_async(
     max_retries: int = 5,
     initial_retry_delay: float = 1,
@@ -622,23 +643,35 @@ def retry_async(
     """
 
     def decorator(func):
+        operation = f"{func.__module__}.{func.__qualname__}"
+
         @wraps(func)
         async def wrapper(*args, **kwargs):
             for attempt in range(max_retries):
                 try:
                     return await func(*args, **kwargs)
-                except NonRetryableError:
-                    # logger.error(f"Non-retryable error: {e}")
+                except (NonRetryableError, asyncio.CancelledError):
                     raise
                 except Exception as e:
+                    error_summary = _retry_error_summary(e)
                     if attempt == (max_retries - 1):
-                        logger.error(f"Failed after {max_retries} attempts: {str(e)}")
+                        logger.error(
+                            "%s failed after %d attempts: %s",
+                            operation,
+                            max_retries,
+                            error_summary,
+                        )
                         raise
                     retry_time = initial_retry_delay * (backoff_factor**attempt)
                     jitter = random.uniform(0, jitter_factor * retry_time)
                     total_delay = retry_time + jitter
                     logger.warning(
-                        f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {total_delay:.2f} seconds..."
+                        "%s: Attempt %d/%d failed: %s. Retrying in %.2f seconds...",
+                        operation,
+                        attempt + 1,
+                        max_retries,
+                        error_summary,
+                        total_delay,
                     )
                     await asyncio.sleep(total_delay)
 
@@ -669,6 +702,8 @@ def retry_async_generator(
     def decorator(
         func: Callable[..., AsyncGenerator[Any, None]],
     ) -> Callable[..., AsyncGenerator[Any, None]]:
+        operation = f"{func.__module__}.{func.__qualname__}"
+
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> AsyncGenerator[Any, None]:
             for attempt in range(max_retries):
@@ -676,18 +711,28 @@ def retry_async_generator(
                     async for item in func(*args, **kwargs):
                         yield item
                     return
-                except NonRetryableError:
-                    # logger.error(f"Non-retryable error: {e}")
+                except (NonRetryableError, asyncio.CancelledError):
                     raise
                 except Exception as e:
+                    error_summary = _retry_error_summary(e)
                     if attempt == max_retries - 1:
-                        logger.error(f"Failed after {max_retries} attempts: {str(e)}")
+                        logger.error(
+                            "%s failed after %d attempts: %s",
+                            operation,
+                            max_retries,
+                            error_summary,
+                        )
                         raise
                     retry_time = initial_retry_delay * (backoff_factor**attempt)
                     jitter = random.uniform(0, jitter_factor * retry_time)
                     total_delay = retry_time + jitter
                     logger.warning(
-                        f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {total_delay:.2f} seconds..."
+                        "%s: Attempt %d/%d failed: %s. Retrying in %.2f seconds...",
+                        operation,
+                        attempt + 1,
+                        max_retries,
+                        error_summary,
+                        total_delay,
                     )
                     await asyncio.sleep(total_delay)
 
