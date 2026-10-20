@@ -39,6 +39,7 @@ from src.llm_tools import (
 )
 from src.reminder import ReminderManager
 from src.responce_player import extract_emotions, extract_language
+from src.response_metadata import split_complete_meta_tag_prefix
 from src.speaker_engine import SpeakerEngine
 from src.tool_usage_stats import get_tool_usage_stats
 from src.tools import (
@@ -165,26 +166,6 @@ def extract_speaker_annotations(text: str) -> tuple[str, list[str]]:
     speaker_ids = [" ".join(match.split()) for match in pattern.findall(text)]
     modified_text = pattern.sub("", text)
     return modified_text, [speaker_id for speaker_id in speaker_ids if speaker_id]
-
-
-def split_complete_meta_tag_prefix(text: str) -> tuple[str, str]:
-    """
-    Split text into a safe-to-process prefix and a trailing incomplete $... meta tag.
-
-    Streaming LLM responses can cut through tags like $emotion:...$ or $lang:...$.
-    We keep a trailing unmatched '$' section buffered until its closing '$' arrives,
-    so downstream parsing and history cleanup only see complete tags.
-    """
-    if not text:
-        return "", ""
-
-    if text.count("$") % 2 == 0:
-        return text, ""
-
-    last_dollar = text.rfind("$")
-    if last_dollar < 0:
-        return text, ""
-    return text[:last_dollar], text[last_dollar:]
 
 
 def extract_tool_fillers(text: str) -> list[tuple[bool, str]]:
@@ -840,7 +821,8 @@ class ConversationManager:
         def append_assistant_history(response_text: str) -> None:
             if not response_text:
                 return
-            cleaned = clean_response(response_text)
+            # The stream boundary already reports each malformed tag once.
+            cleaned = clean_response(response_text, log_metadata_errors=False)
             if not cleaned:
                 return
 
@@ -900,7 +882,7 @@ class ConversationManager:
             if rules:
                 logger.debug(f"Extracted rules: {rules}")
 
-            for emo, t in extract_emotions(response_text):
+            for emo, t in extract_emotions(response_text, log_metadata_errors=False):
                 if emo is None:
                     emo = current_emotion
                 else:
@@ -1004,6 +986,14 @@ class ConversationManager:
             pending_response_text = ""
             async for response_text in self.ai_model.get_response_async(list(self.message_history)):
                 whole_raw_response += response_text
+                if response_text.strip() in ("[[TOOL_USE]]", "[[TOOL_RESULT]]"):
+                    pending, _ = split_complete_meta_tag_prefix(pending_response_text, final=True)
+                    for batch in process_response_text(pending):
+                        yield batch
+                    pending_response_text = ""
+                    for batch in process_response_text(response_text):
+                        yield batch
+                    continue
                 pending_response_text += response_text
                 response_text, pending_response_text = split_complete_meta_tag_prefix(
                     pending_response_text
@@ -1015,7 +1005,8 @@ class ConversationManager:
             logger.info(f"full LLM Response: {whole_raw_response}")
 
             if pending_response_text:
-                for batch in process_response_text(pending_response_text):
+                response_text, _ = split_complete_meta_tag_prefix(pending_response_text, final=True)
+                for batch in process_response_text(response_text):
                     yield batch
 
             # Flush remaining buffer at the end

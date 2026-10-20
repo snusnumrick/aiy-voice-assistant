@@ -19,6 +19,7 @@ from typing import Optional
 from aiy.leds import Leds, Pattern
 from aiy.voice.audio import play_wav_async
 from src.music_lights import valid_light_track
+from src.response_metadata import iter_service_tags, report_malformed_metadata
 from src.tools import combine_audio_files, time_string_ms
 
 logger = logging.getLogger(__name__)
@@ -34,8 +35,11 @@ def emotions_prompt() -> str:
     return (
         "Express emotions with light and tone of voice when appropriate, "
         "especially for significant changes in mood or emphasis. Use this format before relevant text: "
-        '$emotion:{"light":{"color":[R,G,B] (0-255),"behavior":"continuous/blinking/breathing",'
-        '"brightness":"dark/medium/bright","period":X (sec)}}, "voice":{"tone":"plain/happy"}}$. '
+        '$emotion:{"light":{"color":[255,160,80],"behavior":"breathing",'
+        '"brightness":"medium","period":2},"voice":{"tone":"plain"}}$. '
+        "Use valid JSON and always include the final $. Color channels are integers from 0 to 255; "
+        "behavior is continuous, blinking, or breathing; brightness is dark, medium, or bright; "
+        "period is in seconds; voice tone is plain or happy. "
         "All fields within the emotion command are mandatory when used. "
         "Use this format for notable emotional shifts or to highlight important points. "
         "Emotions can persist across multiple sentences if the mood remains consistent. "
@@ -44,13 +48,13 @@ def emotions_prompt() -> str:
     )
 
 
-def extract_emotions(text: str) -> list[tuple[Optional[dict], str]]:
+def extract_emotions(text: str, *, log_metadata_errors: bool = True) -> list[tuple[Optional[dict], str]]:
     """
     This function parses the given text and extracts 'emotion' dictionaries (if any) and the associated text following them.
     The structured data is returned as a list of tuples, each containing the dictionary and the corresponding text.
 
-    An emotion dictionary is expected to be enclosed inside '$emotion:' and '$' markers in the input text.
-    Any text not preceded by an emotion marker is associated with an empty dictionary.
+    A balanced object can omit the final '$'. Invalid or unfinished metadata
+    stays hidden; None means retain the preceding emotion and {} resets it.
 
     :param text: str, Input text which includes 'emotion' dictionaries and text.
     :return: List[Tuple[Dict, str]]. Each tuple contains:
@@ -58,31 +62,29 @@ def extract_emotions(text: str) -> list[tuple[Optional[dict], str]]:
         - str: The associated text following the dictionary or preceding the next dictionary.
     """
 
-    pattern = re.compile(r"(.*?)\$emotion:\s*(\{.*?\})?\$(.*?)(?=\$emotion:|$)", re.DOTALL)
-
     results = []
     pos = 0
-    while pos < len(text):
-        match = pattern.search(text, pos)
-        if not match:
-            remaining_text = text[pos:].strip()
-            if remaining_text:
-                results.append((None, remaining_text))
-            break
-        preceding_text = match.group(1).strip()
+    emotion = None
+    for tag in iter_service_tags(text):
+        if tag.name != "emotion":
+            continue
+        if log_metadata_errors:
+            report_malformed_metadata(tag, text)
+        preceding_text = text[pos:tag.start].strip()
         if preceding_text:
-            results.append((None, preceding_text))
-
-        emotion_dict_str = match.group(2) if match.group(2) else "{}"
-        associated_text = match.group(3).strip()
+            results.append((emotion, preceding_text))
+        # Stripping service data must not depend on successful JSON decoding.
+        emotion = None
         try:
-            emotion_dict = json.loads(emotion_dict_str)
-            results.append((emotion_dict, associated_text))
+            decoded = json.loads(tag.payload or "{}") if tag.complete else None
+            if isinstance(decoded, dict):
+                emotion = decoded
         except json.JSONDecodeError:
-            logger.error(f"Invalid JSON in emotion: {emotion_dict_str}")
-            results.append((None, associated_text))
-        pos = match.end()
-
+            pass  # The envelope was removed regardless of JSON validity.
+        pos = tag.end
+    remaining_text = text[pos:].strip()
+    if remaining_text or emotion is not None:
+        results.append((emotion, remaining_text))
     return results
 
 

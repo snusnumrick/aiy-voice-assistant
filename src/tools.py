@@ -15,6 +15,8 @@ import geocoder
 import pytz
 from pydub import AudioSegment
 
+from src.response_metadata import strip_service_metadata
+
 logger = logging.getLogger(__name__)
 
 
@@ -518,19 +520,17 @@ def extract_json(text):
     raise Exception("No valid JSON found")
 
 
-def clean_response(response: str) -> str:
+def clean_response(response: str, *, log_metadata_errors: bool = True) -> str:
     """
     Clean the response by removing:
-    1. Meta tags in format $tagname: tagcontent$
+    1. Known service metadata, including malformed and unfinished tags
     2. TTS pause tags: <[small]> etc. and malformed variants like <small>[small]</small>
     3. Asterisk markdown markers (*, **) — keep the wrapped text, strip the markers
 
     :param response: The response string
     :return: The cleaned response string
     """
-    # Remove meta tags
-    pattern_tags = r"\$\w+:[^$]*\$"
-    response = re.sub(pattern_tags, "", response)
+    response = strip_service_metadata(response, log_errors=log_metadata_errors)
 
     # Remove TTS pause tags (Yandex SpeechKit format) — not relevant in history
     _pause_sizes = "tiny|small|medium|large|huge"

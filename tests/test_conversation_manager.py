@@ -51,6 +51,82 @@ class _ToolProvenanceStreamingModel(_StreamingModel):
 
 
 class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
+    async def test_stream_history_and_extraction_log_each_malformed_tag_once(self):
+        variants = [
+            ('$emotion:{} Neutral reply.', 'missing_delimiter'),
+            ('$emotion:{"voice":invalid}$ Neutral reply.', 'invalid_json'),
+            ('$emotion:{“voice”:{“tone”:“plain”}} Neutral reply.', 'missing_delimiter,invalid_json,typographic_quotes'),
+            ('$emotion:{"voice":"CONFIDENTIAL_PAYLOAD', 'truncated_metadata'),
+        ]
+        with (
+            patch("src.conversation_manager.WebSearcher"),
+            patch("src.conversation_manager.ClaudeAIModel"),
+            patch("src.conversation_manager.get_tool_usage_stats", return_value=None),
+            patch.object(ConversationManager, "load_facts", return_value=[]),
+            patch.object(ConversationManager, "load_rules", return_value=[]),
+            patch.object(ConversationManager, "save_rules"),
+        ):
+            for fragment, reason in variants:
+                response = "$lang: en$ Before. " + fragment
+                chunkings = [[response[:cut], response[cut:]] for cut in range(len(response) + 1)]
+                chunkings.append(list(response))
+                for chunks in chunkings:
+                    with self.subTest(fragment=fragment, chunks=chunks):
+                        manager = ConversationManager(
+                            self._config(), _StreamingModel(chunks), timezone="UTC", enabled_tools=[],
+                        )
+                        with self.assertLogs("src.response_metadata", level="ERROR") as captured:
+                            _ = [batch async for batch in manager.get_response("Check")]
+                        self.assertEqual(len(captured.records), 1)
+                        self.assertEqual(captured.records[0].getMessage(),
+                            f"Malformed service metadata removed: tag=emotion reason={reason}")
+
+    async def test_malformed_metadata_at_every_boundary_never_reaches_speech_or_history(self):
+        payload = (
+            '{“light”:{“color”:[255,160,80],“behavior”:“breathing”,'
+            '“brightness”:“medium”,“period”:2}, “voice”:{“tone”:“plain”}}'
+        )
+        variants = [
+            (f"$emotion:{payload} Neutral reply.", "Neutral reply."),
+            (f"$emotion:{payload}$ Neutral reply.", "Neutral reply."),
+            (f"$emotion:{payload.replace('}, “voice”', '}}, “voice”')} Neutral reply.", "Neutral reply."),
+            (f"$emotion:{payload.replace('“', chr(34)).replace('”', chr(34))} Neutral reply.", "Neutral reply."),
+            ('$emotion:{"light":invalid} Neutral reply.', "Neutral reply."),
+            ('$emotion:{"light":$ Neutral reply.', "Neutral reply."),
+            ('$emotion:{"voice":{"tone":"unfinished $lang:en$ hidden', ""),
+            ('$emotion:{"light":', ""),
+            ('$emo', ""),
+            ('$emotion:{}$lang: en$ Neutral reply costs $5.50 and $10.', "Neutral reply costs $5.50 and $10."),
+            ('$speaker: Tester$ $remember: neutral fact$ $rule: neutral rule$ Neutral reply.', "Neutral reply."),
+            ('$tool_filler: Please wait.$ Neutral reply.', "Please wait. Neutral reply."),
+        ]
+        with (
+            patch("src.conversation_manager.WebSearcher"),
+            patch("src.conversation_manager.ClaudeAIModel"),
+            patch("src.conversation_manager.get_tool_usage_stats", return_value=None),
+            patch.object(ConversationManager, "load_facts", return_value=[]),
+            patch.object(ConversationManager, "load_rules", return_value=[]),
+            patch.object(ConversationManager, "save_facts"),
+            patch.object(ConversationManager, "save_rules"),
+        ):
+            for fragment, expected in variants:
+                response = "$lang: en$ Before. " + fragment
+                chunkings = [[response[:cut], response[cut:]] for cut in range(len(response) + 1)]
+                chunkings.append(list(response))
+                for buffering in (True, False):
+                    for chunks in chunkings:
+                        with self.subTest(fragment=fragment, chunks=chunks, buffering=buffering):
+                            manager = ConversationManager(
+                                self._config(sentence_buffer_enabled=buffering),
+                                _StreamingModel(chunks), timezone="UTC", enabled_tools=[],
+                            )
+                            items = [item async for batch in manager.get_response("Check") for item in batch]
+                            spoken = " ".join(item["text"] for item in items)
+                            self.assertEqual(spoken, ("Before. " + expected).strip())
+                            history = manager.message_history[-1]["content"]
+                            self.assertEqual(" ".join(history.split()), spoken)
+                            self.assertTrue(all(item["language"] == "en" for item in items))
+
     def _config(self, **kwargs):
         options = {
             "config_file": "__missing_config__.json",

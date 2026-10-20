@@ -41,6 +41,88 @@ from src.tts_engine import Language, Tone, TTSEngine, YandexTTSEngine
 
 
 class TestDialogModule(unittest.IsolatedAsyncioTestCase):
+    async def test_tts_boundary_logs_one_error_even_when_primary_uses_fallback(self):
+        primary = self.make_tts_engine(success=False)
+        fallback = self.make_tts_engine()
+        with self.assertLogs("src.response_metadata", level="ERROR") as captured:
+            self.assertTrue(await synthesize_with_fallback(
+                Mock(), primary, fallback, '$emotion:{"voice":invalid}$ Neutral reply.',
+                "speech.wav", Tone.PLAIN, Language.ENGLISH,
+            ))
+        self.assertEqual([record.getMessage() for record in captured.records], [
+            "Malformed service metadata removed: tag=emotion reason=invalid_json",
+        ])
+
+    async def test_split_model_response_reaches_actual_tts_without_metadata(self):
+        from src.config import Config
+        from src.conversation_manager import ConversationManager
+
+        async def stream(messages):
+            yield '$lang: en$ $emotion:{“light”:{“color”:[255,160,'
+            yield '80]},“voice”:{“tone”:“plain”}} Neutral reply.'
+
+        model = Mock(spec=["get_response_async"])
+        model.get_response_async = stream
+        with (
+            patch("src.conversation_manager.WebSearcher"),
+            patch("src.conversation_manager.ClaudeAIModel"),
+            patch("src.conversation_manager.get_tool_usage_stats", return_value=None),
+            patch.object(ConversationManager, "load_facts", return_value=[]),
+            patch.object(ConversationManager, "load_rules", return_value=[]),
+            patch.object(ConversationManager, "save_rules"),
+        ):
+            manager = ConversationManager(Config(
+                config_file="__missing__.json", user_config_file="__missing__.json",
+                token_threshold=999999,
+            ), model, timezone="UTC", enabled_tools=[])
+            dialog = DialogManager.__new__(DialogManager)
+            primary = self.make_tts_engine(success=False)
+            fallback = self.make_tts_engine()
+            dialog.tts_engines = {Language.ENGLISH: primary, Language.RUSSIAN: primary}
+            dialog.fallback_tts_engine = fallback
+            session = Mock()
+            with self.assertLogs("src.response_metadata", level="ERROR") as captured:
+                async for batch in manager.get_response("Check"):
+                    for item in batch:
+                        task, info = dialog.create_synthesis_task(session, item, 1)
+                        self.assertTrue(await task)
+                        self.assertEqual(info["response_text"], "Neutral reply.")
+            self.assertEqual(len(captured.records), 1)
+            for engine in (primary, fallback):
+                self.assertEqual(engine.synthesize_async.await_count, 1)
+                self.assertEqual(engine.synthesize_async.await_args.args[1], "Neutral reply.")
+            self.assertEqual(manager.message_history[-1]["content"].strip(), "Neutral reply.")
+
+    async def test_actual_tts_engines_receive_only_speech_including_fallback(self):
+        cases = [
+            ('$lang: en$ $emotion:{“voice”:{“tone”:“plain”}} Neutral reply.', '  Neutral reply.'),
+            ('$emotion:{"light":invalid} Neutral reply.', ' Neutral reply.'),
+            ('Before. $emotion:{"light":', 'Before. '),
+            ('$tool_filler: Please wait.$', 'Please wait.'),
+            ('Prices are $5 and $10.', 'Prices are $5 and $10.'),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                primary = self.make_tts_engine(success=False)
+                fallback = self.make_tts_engine()
+                session = Mock()
+                self.assertTrue(await synthesize_with_fallback(
+                    session, primary, fallback, text, "speech.wav", Tone.PLAIN, Language.ENGLISH,
+                ))
+                for engine in (primary, fallback):
+                    engine.synthesize_async.assert_awaited_once_with(
+                        session, expected, "speech.wav", Tone.PLAIN, Language.ENGLISH,
+                    )
+
+    async def test_metadata_only_response_never_calls_tts(self):
+        primary = self.make_tts_engine()
+        fallback = self.make_tts_engine()
+        self.assertFalse(await synthesize_with_fallback(
+            Mock(), primary, fallback, '$emotion:{"light":', "speech.wav", Tone.PLAIN, Language.ENGLISH,
+        ))
+        primary.synthesize_async.assert_not_awaited()
+        fallback.synthesize_async.assert_not_awaited()
+
 
     def make_tts_engine(self, max_length=-1, success=True):
         engine = Mock(spec=TTSEngine)

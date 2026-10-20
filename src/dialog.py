@@ -48,6 +48,7 @@ from .conversation_manager import (
 )
 from .emotion_engine import EmotionEngine
 from .responce_player import ResponsePlayer
+from .response_metadata import strip_service_metadata
 from .speaker_engine import SpeakerEngine
 from .tools import combine_audio_files, save_to_conversation, split_long_sentence, time_string_ms
 from .tts_engine import Language, Tone, TTSEngine
@@ -139,6 +140,9 @@ async def synthesize_with_fallback(
     Returns:
         bool: True if synthesis was successful, False otherwise.
     """
+    response_text = strip_service_metadata(response_text)
+    if not response_text.strip():
+        return False
     logger.debug(
         f"synthesize_with_fallback. text: {response_text}, file: {audio_file_name}, tone: {tone}, lang: {lang}"
     )
@@ -245,8 +249,7 @@ class DialogManager:
     def _sanitize_stt_context(text: str) -> str:
         if not text:
             return ""
-        text = re.sub(r"\$emotion:\s*(\{.*?\})?\$", "", text, flags=re.DOTALL)
-        text = re.sub(r"\$lang:\s*[A-Za-z]+\s*\$?", "", text)
+        text = strip_service_metadata(text)
         text = re.sub(r"\s+", " ", text)
         return text.strip()
 
