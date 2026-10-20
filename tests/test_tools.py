@@ -106,6 +106,25 @@ class TestExtractSentences(unittest.TestCase):
 
 
 class TestCleanResponse(unittest.TestCase):
+    def test_history_sanitizer_logs_malformed_metadata_without_payload(self):
+        with self.assertLogs("src.response_metadata", level="ERROR") as captured:
+            self.assertEqual(clean_response('$emotion:{"voice":invalid}$ Neutral reply.'), ' Neutral reply.')
+        self.assertEqual([record.getMessage() for record in captured.records], [
+            "Malformed service metadata removed: tag=emotion reason=invalid_json",
+        ])
+
+    def test_malformed_service_metadata_is_removed_from_history(self):
+        cases = [
+            ('$lang: en$ $emotion:{“voice”:{“tone”:“plain”}} Neutral reply.', '  Neutral reply.'),
+            ('$emotion:{"light":invalid} Neutral reply.', ' Neutral reply.'),
+            ('Before. $emotion:{"light":', 'Before. '),
+            ('Before. $emo', 'Before. '),
+            ('$lang: en$ Prices are $5 and $10.', ' Prices are $5 and $10.'),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(clean_response(text), expected)
+
 
     def test_italic_single_word(self):
         self.assertEqual(clean_response("Она может описать *как*, но не *зачем*."),

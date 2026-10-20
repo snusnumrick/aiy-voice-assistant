@@ -322,6 +322,35 @@ class TestResponsePlayer(unittest.TestCase):
 
 
 class TestHelperFunctions(unittest.TestCase):
+    def test_emotion_extractor_logs_one_error_instead_of_raw_payload(self):
+        with self.assertLogs("src.response_metadata", level="ERROR") as captured:
+            self.assertEqual(extract_emotions('$emotion:{“voice”:{“tone”:“plain”}} Reply.'), [(None, 'Reply.')])
+        self.assertEqual([record.getMessage() for record in captured.records], [
+            "Malformed service metadata removed: tag=emotion reason=missing_delimiter,invalid_json,typographic_quotes",
+        ])
+
+    def test_emotion_prompt_contains_a_valid_json_example(self):
+        import json
+
+        from src.response_metadata import iter_service_tags
+
+        tag = next(iter_service_tags(emotions_prompt()))
+        value = json.loads(tag.payload)
+        self.assertEqual(set(value), {"light", "voice"})
+        self.assertEqual(value["light"]["color"], [255, 160, 80])
+
+    def test_invalid_emotion_json_is_hidden_but_following_speech_is_preserved(self):
+        variants = [
+            '$emotion:{"voice":{"tone":"plain"}} Neutral reply.',
+            '$emotion:{“voice”:{“tone”:“plain”}} Neutral reply.',
+            '$emotion:{"light":invalid}$ Neutral reply.',
+            '$emotion:{"light":{}}}, "voice":{"tone":"plain"}} Neutral reply.',
+        ]
+        for text in variants:
+            with self.subTest(text=text):
+                result = extract_emotions(text)
+                self.assertEqual([speech for _, speech in result], ["Neutral reply."])
+
     def test_extract_emotions(self):
         text = '$emotion:{"light":{"color":[255,0,0],"behavior":"continuous","brightness":"medium","period":1}}$ Happy text $emotion:{"light":{"color":[0,255,0],"behavior":"continuous","brightness":"medium","period":1}}$ Sad text'
         result = extract_emotions(text)
