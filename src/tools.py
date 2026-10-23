@@ -16,6 +16,7 @@ import pytz
 from pydub import AudioSegment
 
 from src.response_metadata import strip_service_metadata
+from src.speech_markup import pause_safe_split, strip_pause_markup
 
 logger = logging.getLogger(__name__)
 
@@ -532,11 +533,7 @@ def clean_response(response: str, *, log_metadata_errors: bool = True) -> str:
     """
     response = strip_service_metadata(response, log_errors=log_metadata_errors)
 
-    # Remove TTS pause tags (Yandex SpeechKit format) — not relevant in history
-    _pause_sizes = "tiny|small|medium|large|huge"
-    response = re.sub(rf"<\[({_pause_sizes})]>", "", response)
-    # Also remove malformed variants the LLM may produce: <small>[small]</small>
-    response = re.sub(rf"<({_pause_sizes})>\[({_pause_sizes})]</\1>", "", response)
+    response = strip_pause_markup(response, log_errors=log_metadata_errors)
 
     # Keep **word** — Yandex SpeechKit interprets it as emphasis (equivalent to bold).
     # For single asterisks: stage directions (uppercase start + spaces) are removed entirely;
@@ -905,6 +902,7 @@ def split_long_sentence(text: str, max_length: int) -> list[str]:
             split_at = chunk.rfind(" ", 0, max_length)
             if split_at <= 0:
                 split_at = max_length
+            split_at = pause_safe_split(chunk, split_at, max_length)
             result.append(chunk[:split_at].rstrip())
             chunk = chunk[split_at:].lstrip()
         if chunk:

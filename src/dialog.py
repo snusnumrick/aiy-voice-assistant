@@ -50,6 +50,7 @@ from .emotion_engine import EmotionEngine
 from .responce_player import ResponsePlayer
 from .response_metadata import strip_service_metadata
 from .speaker_engine import SpeakerEngine
+from .speech_markup import normalize_pause_markup, render_pause_markup, strip_pause_markup
 from .tools import combine_audio_files, save_to_conversation, split_long_sentence, time_string_ms
 from .tts_engine import Language, Tone, TTSEngine
 
@@ -96,6 +97,11 @@ async def _synthesize_with_length_limit(
     lang: Language,
 ) -> bool:
     """Respect each engine's request limit and combine successful chunks in order."""
+    # Each attempt renders from canonical text; fallback must not inherit the
+    # first provider's SSML/audio tags. Limits apply to the rendered request.
+    text = render_pause_markup(text, getattr(engine, "pause_format", "plain"))
+    if not text.strip():
+        return False
     max_length = engine.max_text_length()
     if max_length <= 0 or len(text) <= max_length:
         return await engine.synthesize_async(session, text, filename, tone, lang)
@@ -140,8 +146,8 @@ async def synthesize_with_fallback(
     Returns:
         bool: True if synthesis was successful, False otherwise.
     """
-    response_text = strip_service_metadata(response_text)
-    if not response_text.strip():
+    response_text = normalize_pause_markup(strip_service_metadata(response_text))
+    if not strip_pause_markup(response_text, log_errors=False).strip():
         return False
     logger.debug(
         f"synthesize_with_fallback. text: {response_text}, file: {audio_file_name}, tone: {tone}, lang: {lang}"
@@ -249,7 +255,7 @@ class DialogManager:
     def _sanitize_stt_context(text: str) -> str:
         if not text:
             return ""
-        text = strip_service_metadata(text)
+        text = strip_pause_markup(strip_service_metadata(text))
         text = re.sub(r"\s+", " ", text)
         return text.strip()
 

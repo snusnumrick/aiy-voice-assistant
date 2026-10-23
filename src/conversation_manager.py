@@ -41,6 +41,7 @@ from src.reminder import ReminderManager
 from src.responce_player import extract_emotions, extract_language
 from src.response_metadata import split_complete_meta_tag_prefix
 from src.speaker_engine import SpeakerEngine
+from src.speech_markup import normalize_pause_markup, pause_instructions, strip_pause_markup
 from src.tool_usage_stats import get_tool_usage_stats
 from src.tools import (
     clean_response,
@@ -510,12 +511,13 @@ class ConversationManager:
         return "".join(rules)
 
     def _get_tts_rules(self, language: str) -> str:
-        """Return TTS-engine-specific prompt rules if the engine provides them."""
+        """Use canonical pauses even when the output switches speech providers."""
+        rules = pause_instructions(language)
         if self.tts_engine and hasattr(self.tts_engine, "rule_instructions"):
             rule = self.tts_engine.rule_instructions.get(language, "")
             if rule:
-                return rule.strip()
-        return ""
+                rules += rule.strip()
+        return rules
 
     def _build_hard_rules(self) -> str:
         use_english_meta = self.optimize_prompt_internal_language == "en"
@@ -801,6 +803,7 @@ class ConversationManager:
         sentence_buffer: list[dict[str, Any]] = []
         buffer_chars = 0
         current_emotion: Optional[dict] = None
+        pending_pause_cues = ""
 
         def combine_buffer() -> list[dict[str, Any]]:
             """Combine buffered sentences into one."""
@@ -832,11 +835,12 @@ class ConversationManager:
                 self.message_history[-1]["content"] += " " + cleaned
 
         def process_response_text(response_text: str) -> list[list[dict[str, Any]]]:
-            nonlocal buffer_chars, current_emotion
+            nonlocal buffer_chars, current_emotion, pending_pause_cues
 
             batches: list[list[dict[str, Any]]] = []
             response_control = response_text.strip()
             if response_control == "[[TOOL_USE]]":
+                pending_pause_cues = ""
                 logger.debug("Received tool use signal, flushing sentence buffer")
                 if buffer_enabled and sentence_buffer:
                     logger.debug(
@@ -893,6 +897,12 @@ class ConversationManager:
                 ):
                     self.current_language_code = lang
                     for is_tool_filler, segment_text in extract_tool_fillers(clean_text):
+                        segment_text = normalize_pause_markup(segment_text)
+                        if not strip_pause_markup(segment_text, log_errors=False).strip():
+                            pending_pause_cues += segment_text + " "
+                            continue
+                        segment_text = pending_pause_cues + segment_text
+                        pending_pause_cues = ""
                         logger.info(f"Language: {lang} -> {segment_text}")
                         if text and segment_text:
                             segment_text = fix_stress_marks_russian(segment_text)

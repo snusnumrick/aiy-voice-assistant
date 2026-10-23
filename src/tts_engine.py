@@ -39,6 +39,8 @@ import aiohttp
 import requests
 from pydub import AudioSegment
 
+from src.speech_markup import render_pause_markup
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -144,6 +146,12 @@ class TTSEngine(ABC):
     Abstract base class for Text-to-Speech engines.
     Defines the interface that all concrete TTS engine implementations must follow.
     """
+
+    pause_format = "plain"
+
+    def prepare_text(self, text: str) -> str:
+        """Render canonical cues at the provider boundary, including direct calls."""
+        return render_pause_markup(text, self.pause_format)
 
     @abstractmethod
     def synthesize(
@@ -252,6 +260,7 @@ class OpenAITTSEngine(TTSEngine):
         Raises:
             Exception: If the OpenAI API request fails.
         """
+        text = self.prepare_text(text)
         if not text:
             logger.warning("Empty text to synthesize, skipping")
             return
@@ -297,6 +306,7 @@ class OpenAITTSEngine(TTSEngine):
         Raises:
             Exception: If the OpenAI API request fails.
         """
+        text = self.prepare_text(text)
         if not text:
             logger.warning("Empty text to synthesize, skipping")
             return True
@@ -383,6 +393,7 @@ class GoogleTTSEngine(TTSEngine):
             tone (Tone): The tone to use.
             lang (Language): The language to use.
         """
+        text = self.prepare_text(text)
         from google.cloud import texttospeech
 
         if not text:
@@ -417,6 +428,7 @@ class GoogleTTSEngine(TTSEngine):
         tone: Tone = Tone.PLAIN,
         lang=Language.RUSSIAN,
     ) -> bool:
+        text = self.prepare_text(text)
         from google.cloud import texttospeech
 
         if not text:
@@ -448,6 +460,8 @@ class YandexTTSEngine(TTSEngine):
     Uses HTTP REST API for async TTS when available, falls back to sync speechkit.
     Runs search in thread pool to avoid event loop saturation with TTS HTTP requests.
     """
+
+    pause_format = "yandex"
 
     def __init__(self, config, timezone: str = ""):
         """
@@ -510,18 +524,8 @@ class YandexTTSEngine(TTSEngine):
     @property
     def rule_instructions(self) -> dict:
         return {
-            "russian": (
-                "Для пауз в речи используй теги (это НЕ HTML-теги, вставляй дословно, "
-                "формат: угловая скобка, квадратная скобка, слово, квадратная скобка, угловая скобка): "
-                "<[tiny]>, <[small]>, <[medium]>, <[large]>, <[huge]>. "
-                "Для акцента на слове используй ** слово **."
-            ),
-            "english": (
-                "For speech pauses use tags (NOT HTML — insert literally as-is, "
-                "format: angle bracket, square bracket, word, square bracket, angle bracket): "
-                "<[tiny]>, <[small]>, <[medium]>, <[large]>, <[huge]>. "
-                "For word emphasis use ** word **."
-            ),
+            "russian": "Для акцента на слове используй ** слово **.",
+            "english": "For word emphasis use ** word **.",
         }
 
     def _ensure_sync_speechkit_ready(self) -> None:
@@ -569,6 +573,7 @@ class YandexTTSEngine(TTSEngine):
             tone (tone): The tone to use.
             lang (Language): The language to use.
         """
+        text = self.prepare_text(text)
         if not text:
             logger.warning("Empty text to synthesize, skipping")
             return
@@ -621,6 +626,7 @@ class YandexTTSEngine(TTSEngine):
         Returns:
             bool: True if synthesis was successful, False otherwise.
         """
+        text = self.prepare_text(text)
         if not text:
             logger.warning("Empty text to synthesize, skipping")
             return True
@@ -807,6 +813,18 @@ class ElevenLabsTTSEngine(TTSEngine):
     This class provides methods for text-to-speech synthesis using ElevenLabs,
     including support for multiple languages and voice settings.
     """
+
+    @property
+    def pause_format(self) -> str:
+        model = getattr(self, "model_id", "")
+        if model in {"eleven_v3", "eleven_v4"}:
+            return "audio_tags"
+        if model in {
+            "eleven_multilingual_v2", "eleven_turbo_v2", "eleven_turbo_v2_5",
+            "eleven_flash_v2", "eleven_flash_v2_5",
+        }:
+            return "ssml"
+        return "plain"
 
     def __init__(self, config: Config):
         """
@@ -1079,6 +1097,7 @@ class ElevenLabsTTSEngine(TTSEngine):
             ValueError: If the input text is empty or exceeds the maximum length.
             ElevenLabsAPIError: If there's an error in the API request or response during synthesis.
         """
+        text = self.prepare_text(text)
         if not text:
             logger.warning("Empty text to synthesize, skipping")
             return True
@@ -1192,6 +1211,7 @@ class ElevenLabsTTSEngine(TTSEngine):
             ValueError: If the input text is empty or exceeds the maximum length.
             ElevenLabsAPIError: If there's an error in the API request or response during synthesis.
         """
+        text = self.prepare_text(text)
         if not text:
             logger.warning("Empty text to synthesize, skipping")
             return

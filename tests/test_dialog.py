@@ -1,11 +1,12 @@
 # ruff: noqa: E402
 
 import asyncio
+import base64
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, mock_open, patch
 
 # Import and use the custom mock_aiy
 from mock_aiy import mock_aiy
@@ -37,10 +38,182 @@ sys.modules['yandex'] = Mock()
 # Now it's safe to import from src
 from src.conversation_manager import TOOL_FILLER_RESPONSE_KEY
 from src.dialog import DialogManager, append_suffix, error_visual, synthesize_with_fallback
-from src.tts_engine import Language, Tone, TTSEngine, YandexTTSEngine
+from src.tts_engine import ElevenLabsTTSEngine, Language, Tone, TTSEngine, YandexTTSEngine
 
 
 class TestDialogModule(unittest.IsolatedAsyncioTestCase):
+    def make_provider(self, provider="elevenlabs", model="eleven_multilingual_v2"):
+        if provider == "yandex":
+            engine = YandexTTSEngine.__new__(YandexTTSEngine)
+            engine.use_async = True
+            engine.lang_voices = {lang: "offline-voice" for lang in Language}
+            engine.roles = {Tone.PLAIN: "neutral"}
+            engine.yandex_tts_unsafe_mode = False
+        else:
+            engine = ElevenLabsTTSEngine.__new__(ElevenLabsTTSEngine)
+            engine.model_id = model
+            engine.voice_ids = {lang: "offline-voice" for lang in Language}
+            engine.stability = 0.5
+            engine.similarity_boost = 0.75
+            engine.base_url = "https://offline.invalid"
+            engine.query = {}
+            engine.max_retries = 1
+            engine._find_matching_history_item_async = AsyncMock(return_value=None)
+            engine._find_matching_history_item = Mock(return_value=None)
+            engine._convert_mp3_to_wav_async = AsyncMock()
+            engine._convert_mp3_to_wav = Mock()
+        engine.api_key = "offline-unused"
+        return engine
+
+    def provider_mocks(self):
+        response = MagicMock()
+        response.status = 200
+        response.read = AsyncMock(return_value=b"offline-fixture")
+        response.json = AsyncMock(return_value={"result": {"audioChunk": {
+            "data": base64.b64encode(b"offline-fixture").decode()}}})
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=response)
+        context.__aexit__ = AsyncMock(return_value=False)
+        session = MagicMock()
+        session.post.return_value = context
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=session)
+        client.__aexit__ = AsyncMock(return_value=False)
+        writer = MagicMock()
+        writer.write = AsyncMock()
+        file_context = MagicMock()
+        file_context.__aenter__ = AsyncMock(return_value=writer)
+        file_context.__aexit__ = AsyncMock(return_value=False)
+        return session, client, file_context
+
+    async def test_real_async_provider_payloads_use_the_selected_pause_format(self):
+        cases = [
+            ("yandex", None, "Before. <[small]> After."),
+            ("elevenlabs", "eleven_multilingual_v2", 'Before. <break time="0.3s" /> After.'),
+            ("elevenlabs", "eleven_flash_v2_5", 'Before. <break time="0.3s" /> After.'),
+            ("elevenlabs", "eleven_v3", "Before. [short pause] After."),
+            ("elevenlabs", "eleven_v4", "Before. [short pause] After."),
+            ("elevenlabs", "unknown-model", "Before.   After."),
+        ]
+        for provider, model, expected in cases:
+            with self.subTest(provider=provider, model=model):
+                engine = self.make_provider(provider, model)
+                session, client, file_context = self.provider_mocks()
+                with patch("src.tts_engine.aiohttp.ClientSession", return_value=client), patch(
+                    "src.tts_engine.aiofiles.open", return_value=file_context
+                ), patch("src.tts_engine.log_tts_usage"):
+                    self.assertTrue(await engine.synthesize_async(
+                        session, "Before. <[small]> After.", "offline.wav", Tone.PLAIN, Language.ENGLISH,
+                    ))
+                session.post.assert_called_once()
+                self.assertEqual(session.post.call_args.kwargs["json"]["text"], expected)
+                if provider == "elevenlabs":
+                    engine._find_matching_history_item_async.assert_awaited_once_with(session, expected, "offline-voice")
+
+    async def test_mixed_language_stream_routes_actual_payloads_without_foreign_markup(self):
+        from src.config import Config
+        from src.conversation_manager import ConversationManager
+
+        async def stream(messages):
+            for chunk in ['$lang: ru$ Первое. <[sm', 'all]> Второе. $lang: en$ First. <[small]> Second.']:
+                yield chunk
+
+        model = Mock(spec=["get_response_async"])
+        model.get_response_async = stream
+        yandex = self.make_provider("yandex")
+        eleven = self.make_provider()
+        dialog = DialogManager.__new__(DialogManager)
+        dialog.tts_engines = {Language.RUSSIAN: yandex, Language.ENGLISH: eleven}
+        dialog.fallback_tts_engine = yandex
+        session, client, file_context = self.provider_mocks()
+        with (
+            patch("src.conversation_manager.WebSearcher"),
+            patch("src.conversation_manager.ClaudeAIModel"),
+            patch("src.conversation_manager.get_tool_usage_stats", return_value=None),
+            patch.object(ConversationManager, "load_facts", return_value=[]),
+            patch.object(ConversationManager, "load_rules", return_value=[]),
+            patch.object(ConversationManager, "save_rules"),
+            patch("src.tts_engine.aiohttp.ClientSession", return_value=client),
+            patch("src.tts_engine.aiofiles.open", return_value=file_context),
+            patch("src.tts_engine.log_tts_usage"),
+        ):
+            manager = ConversationManager(Config(config_file="__missing__.json", user_config_file="__missing__.json",
+                token_threshold=999999, sentence_buffer_max_length=500), model, timezone="UTC", tts_engine=yandex)
+            async for batch in manager.get_response("Check"):
+                for item in batch:
+                    task, _ = dialog.create_synthesis_task(session, item, 1)
+                    self.assertTrue(await task)
+            self.assertNotIn("<[", manager.message_history[-1]["content"])
+        payloads = [call.kwargs["json"]["text"] for call in session.post.call_args_list]
+        self.assertEqual(payloads, [
+            "Первое. <[small]> Второе.",
+            'First. <break time="0.3s" /> Second.',
+        ])
+
+    def test_real_sync_payloads_and_sdk_preserve_provider_formats(self):
+        text = "Before. <[small]> After."
+        eleven = self.make_provider()
+        with patch("src.tts_engine.requests.post") as post, patch(
+            "builtins.open", mock_open()
+        ), patch("src.tts_engine.os.remove"):
+            post.return_value.content = b"offline-fixture"
+            eleven.synthesize(text, "offline.wav", Tone.PLAIN, Language.ENGLISH)
+        self.assertEqual(post.call_args.kwargs["json"]["text"], 'Before. <break time="0.3s" /> After.')
+        yandex = self.make_provider("yandex")
+        model = Mock()
+        yandex.voice_model = Mock(return_value=model)
+        with patch("src.tts_engine.log_tts_usage"):
+            yandex.synthesize(text, "offline.wav", Tone.PLAIN, Language.RUSSIAN)
+        model.synthesize.assert_called_once_with(text, raw_format=False)
+
+    async def test_fallback_rerenders_the_original_canonical_text_for_both_directions(self):
+        for fallback_provider in ("yandex", "elevenlabs"):
+            with self.subTest(fallback_provider=fallback_provider):
+                fallback = self.make_provider(fallback_provider)
+                primary = self.make_tts_engine(success=False)
+                primary.pause_format = "ssml" if fallback_provider == "yandex" else "yandex"
+                session, client, file_context = self.provider_mocks()
+                with patch("src.tts_engine.aiohttp.ClientSession", return_value=client), patch(
+                    "src.tts_engine.aiofiles.open", return_value=file_context
+                ), patch("src.tts_engine.log_tts_usage"):
+                    self.assertTrue(await synthesize_with_fallback(
+                        session, primary, fallback, "Before. <[small]> After.",
+                        "offline.wav", Tone.PLAIN, Language.ENGLISH,
+                    ))
+                primary_text = primary.synthesize_async.await_args.args[1]
+                fallback_text = session.post.call_args.kwargs["json"]["text"]
+                yandex_text = "Before. <[small]> After."
+                eleven_text = 'Before. <break time="0.3s" /> After.'
+                self.assertEqual(primary_text, eleven_text if fallback_provider == "yandex" else yandex_text)
+                self.assertEqual(fallback_text, yandex_text if fallback_provider == "yandex" else eleven_text)
+
+    async def test_rendered_request_limits_never_split_an_ssml_tag(self):
+        engine = self.make_provider()
+        engine.max_text_length = lambda: 40
+        session, client, file_context = self.provider_mocks()
+        text = "First words " * 5 + "<[small]> " + "more words " * 5
+        with patch("src.tts_engine.aiofiles.open", return_value=file_context), patch(
+            "src.dialog.combine_audio_files"
+        ):
+            self.assertTrue(await synthesize_with_fallback(
+                session, engine, self.make_tts_engine(), text, "offline.wav", Tone.PLAIN, Language.ENGLISH,
+            ))
+        payloads = [call.kwargs["json"]["text"] for call in session.post.call_args_list]
+        self.assertGreater(len(payloads), 1)
+        self.assertTrue(all(len(payload) <= 40 for payload in payloads))
+        self.assertEqual(sum('<break time="0.3s" />' in payload for payload in payloads), 1)
+        self.assertTrue(all(payload.count("<break") == payload.count("/>") for payload in payloads))
+        self.assertEqual("".join(payloads).replace(" ", ""), engine.prepare_text(text).replace(" ", ""))
+
+    async def test_pause_only_chunks_do_not_call_any_provider(self):
+        primary = self.make_tts_engine()
+        fallback = self.make_tts_engine()
+        self.assertFalse(await synthesize_with_fallback(
+            Mock(), primary, fallback, "<[small]>", "offline.wav", Tone.PLAIN, Language.ENGLISH,
+        ))
+        primary.synthesize_async.assert_not_awaited()
+        fallback.synthesize_async.assert_not_awaited()
+
     async def test_tts_boundary_logs_one_error_even_when_primary_uses_fallback(self):
         primary = self.make_tts_engine(success=False)
         fallback = self.make_tts_engine()

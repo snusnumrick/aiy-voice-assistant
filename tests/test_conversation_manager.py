@@ -51,6 +51,30 @@ class _ToolProvenanceStreamingModel(_StreamingModel):
 
 
 class TestConversationManagerBuffer(unittest.IsolatedAsyncioTestCase):
+    async def test_mixed_language_pause_tags_survive_every_stream_split(self):
+        response = "$lang: ru$ Первое. <[small]> Второе. $lang: en$ First. <[large]> Second."
+        chunkings = [[response[:cut], response[cut:]] for cut in range(len(response) + 1)] + [list(response)]
+        with (
+            patch("src.conversation_manager.WebSearcher"),
+            patch("src.conversation_manager.ClaudeAIModel"),
+            patch("src.conversation_manager.get_tool_usage_stats", return_value=None),
+            patch.object(ConversationManager, "load_facts", return_value=[]),
+            patch.object(ConversationManager, "load_rules", return_value=[]),
+            patch.object(ConversationManager, "save_rules"),
+        ):
+            for buffering in (True, False):
+                for chunks in chunkings:
+                    with self.subTest(buffering=buffering, chunks=chunks):
+                        manager = ConversationManager(self._config(sentence_buffer_enabled=buffering),
+                            _StreamingModel(chunks), timezone="UTC", enabled_tools=[])
+                        items = [item async for batch in manager.get_response("Check") for item in batch]
+                        russian = " ".join(item["text"] for item in items if item["language"] == "ru")
+                        english = " ".join(item["text"] for item in items if item["language"] == "en")
+                        self.assertEqual(" ".join(russian.split()), "Первое. <[small]> Второе.")
+                        self.assertEqual(" ".join(english.split()), "First. <[large]> Second.")
+                        self.assertNotIn("<[", manager.message_history[-1]["content"])
+                        self.assertIn("any language", manager._get_tts_rules("english"))
+
     async def test_stream_history_and_extraction_log_each_malformed_tag_once(self):
         variants = [
             ('$emotion:{} Neutral reply.', 'missing_delimiter'),
