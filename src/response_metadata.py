@@ -10,6 +10,8 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 
+from src.speech_markup import incomplete_pause_start, normalize_pause_markup
+
 _NAMES = ("emotion", "lang", "remember", "rule", "speaker", "tool_filler")
 _OPENING = re.compile(r"\$(" + "|".join(_NAMES) + r"):", re.IGNORECASE)
 _PREFIXES = tuple("$" + name + ":" for name in _NAMES)
@@ -257,6 +259,14 @@ def split_complete_meta_tag_prefix(
     Currency has no special meaning. Completed sentence chunks can pass through;
     partial words wait so an arbitrary network split cannot introduce a space.
     """
+    def pause_tail(ready: str, pending: str) -> tuple[str, str]:
+        start = incomplete_pause_start(ready)
+        if start is None or any(tag.start <= start < tag.end for tag in iter_service_tags(ready)):
+            return ready, pending
+        if final:
+            return normalize_pause_markup(ready, log_errors=log_errors), pending
+        return ready[:start], ready[start:] + pending
+
     tags = list(iter_service_tags(text, final=final))
     if final:
         pieces = []
@@ -268,14 +278,14 @@ def split_complete_meta_tag_prefix(
                 pieces.append(text[pos:tag.start])
                 pos = tag.end
         pieces.append(text[pos:])
-        return "".join(pieces), ""
+        return pause_tail("".join(pieces), "")
     for tag in tags:
         if not tag.complete:
             if log_errors:
                 for committed in tags:
                     if committed.end <= tag.start:
                         report_malformed_metadata(committed, text)
-            return text[:tag.start], text[tag.start:]
+            return pause_tail(text[:tag.start], text[tag.start:])
     if not text:
         return text, ""
 
@@ -295,4 +305,4 @@ def split_complete_meta_tag_prefix(
         for tag in tags:
             if tag.end <= safe:
                 report_malformed_metadata(tag, text)
-    return text[:safe], text[safe:]
+    return pause_tail(text[:safe], text[safe:])
